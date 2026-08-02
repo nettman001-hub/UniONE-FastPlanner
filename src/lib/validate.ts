@@ -30,8 +30,9 @@ export const LEVEL_LABEL: Record<IssueLevel, string> = {
 
 export function validatePlan(plan: Plan): Issue[] {
   const issues: Issue[] = [];
+  /** 대상이 하나도 없는 규칙은 통과한 것이므로 보고하지 않는다. */
   const add = (issue: Issue) => {
-    if (issue.targets.length > 0 || issue.level === 'error') issues.push(issue);
+    if (issue.targets.length > 0) issues.push(issue);
   };
 
   /* PRD ------------------------------------------------------------ */

@@ -25,6 +25,26 @@ function resolveCssVars(markup: string): string {
   });
 }
 
+/**
+ * 컨테이너 안에서 실제 도표에 해당하는 SVG 를 고른다.
+ * 툴바의 아이콘도 SVG 라서 첫 번째 요소를 그냥 쓰면 안 된다 — 가장 큰 것을 고른다.
+ */
+export function findChartSvg(root: HTMLElement | null): SVGSVGElement | null {
+  if (!root) return null;
+  let best: SVGSVGElement | null = null;
+  let bestArea = 0;
+  for (const svg of Array.from(root.querySelectorAll('svg'))) {
+    const box = svg.getBoundingClientRect();
+    const area = box.width * box.height;
+    if (area > bestArea) {
+      bestArea = area;
+      best = svg as SVGSVGElement;
+    }
+  }
+  // 아이콘 크기(대개 24px 이하)만 있으면 도표가 없는 것으로 본다.
+  return bestArea > 4000 ? best : null;
+}
+
 export function serializeSvg(svg: SVGSVGElement): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');

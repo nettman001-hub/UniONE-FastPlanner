@@ -33,6 +33,8 @@
 | **AI 에이전트** | 현재 문서 전체를 읽고 답하거나, 요청대로 산출물을 다시 만들어 반영 |
 | **정합성 검사** | 배치되지 않은 기능, 도달 불가 플로우 단계, 분기가 하나뿐인 조건, 중복 경로 등을 자동 탐지 |
 | **내보내기** | 마크다운 · 기능명세서 CSV · IA CSV · 플랜 JSON · **코딩 에이전트 번들** · Mermaid |
+| **이미지** | 와이어프레임과 플로우차트를 SVG·PNG로 (디자인 전달용) |
+| **공유** | 문서를 링크에 담아 전달하는 보기 전용 페이지 — 서버를 거치지 않음 |
 | **협업** | 항목별 코멘트와 해결 처리, 버전 스냅샷 저장/복원 |
 | **크레딧** | 산출물별 크레딧 차감, 매일 자동 충전 |
 
@@ -83,6 +85,7 @@ src/
       layout.tsx                 워크스페이스 셸 (사이드바 · 크레딧 · AI 에이전트)
       page.tsx                   개요 — 파이프라인 · 정합성 검사 · 버전 · 코멘트
       prd/ fs/ ia/ flow/ wireframe/ export/
+    share/page.tsx               보기 전용 공유 (URL 해시에서 문서를 읽음)
     api/
       generate/route.ts          산출물 생성 (AI 또는 내장 생성기)
       chat/route.ts              AI 에이전트 대화 + 문서 패치
@@ -92,6 +95,8 @@ src/
     store.ts                     zustand + localStorage 영속화
     validate.ts                  정합성 검사 규칙
     export.ts                    마크다운 / CSV / JSON / Mermaid / 에이전트 번들
+    image-export.ts              와이어프레임·플로우차트 SVG / PNG
+    share.ts                     보기 전용 링크 인코딩
     ai/
       schemas.ts                 구조화 출력 JSON 스키마
       prompts.ts                 시스템 프롬프트 · 단계별 컨텍스트 구성

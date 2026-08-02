@@ -9,7 +9,6 @@ import {
   pickDocuments,
   type ArtifactKey,
   type ChatMessage,
-  type Comment,
   type CommentTarget,
   type Feature,
   type IaPage,

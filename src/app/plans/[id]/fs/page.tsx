@@ -219,7 +219,7 @@ export default function FsPage() {
       })
       .filter((node) => node.keep || node.features.length > 0)
       .map(({ req, features: list }) => ({ req, features: list }));
-  }, [requirements, features, specifications, query, priorityFilter, statusFilter]);
+  }, [plan, query, priorityFilter, statusFilter]);
 
   const searching = query.trim() !== '' || priorityFilter !== 'all' || statusFilter !== 'all';
   const isReqOpen = (id: string) => searching || openReqs.includes(id);
@@ -448,10 +448,9 @@ export default function FsPage() {
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <select
-              className="select"
-              style={{ width: 'auto' }}
+              className="select min-w-0 flex-1 sm:flex-none sm:w-auto"
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value as 'all' | Priority)}
               aria-label="우선순위 필터"
@@ -464,8 +463,7 @@ export default function FsPage() {
               ))}
             </select>
             <select
-              className="select"
-              style={{ width: 'auto' }}
+              className="select min-w-0 flex-1 sm:flex-none sm:w-auto"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as 'all' | WorkStatus)}
               aria-label="상태 필터"

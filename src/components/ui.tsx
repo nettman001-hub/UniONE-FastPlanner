@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useId,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -392,8 +391,12 @@ export function useConfirm() {
             취소
           </button>
           <button
-            className={state.danger ? 'btn btn-primary' : 'btn btn-primary'}
-            style={state.danger ? { background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff' } : undefined}
+            className="btn btn-primary"
+            style={
+              state.danger
+                ? { background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff' }
+                : undefined
+            }
             onClick={() => close(true)}
           >
             {state.confirmLabel}
@@ -407,5 +410,7 @@ export function useConfirm() {
     </Modal>
   );
 
-  return useMemo(() => ({ confirm, dialog }), [confirm, dialog]);
+  // confirm 은 useCallback 으로 고정되어 있고 dialog 는 매 렌더 새로 만들어지는 엘리먼트라
+  // 메모이제이션할 대상이 아니다. 그대로 돌려준다.
+  return { confirm, dialog };
 }
