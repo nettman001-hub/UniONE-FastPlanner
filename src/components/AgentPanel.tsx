@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Bot, CornerDownLeft, Eraser, Sparkles, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, CornerDownLeft, Eraser, Sparkles, Target, X } from 'lucide-react';
 import { usePlannerStore } from '@/lib/store';
+import { selectableItems, useSelectionStore } from '@/lib/selection';
 import { CHAT_CREDIT_COST, type Plan, type PlanDocuments } from '@/lib/types';
 import { Spinner, useToast } from './ui';
 
@@ -20,8 +21,13 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
   const clearChat = usePlannerStore((s) => s.clearChat);
   const applyDocuments = usePlannerStore((s) => s.applyDocuments);
   const spendCredits = usePlannerStore((s) => s.spendCredits);
+  const credits = usePlannerStore((s) => s.credits);
+  const selected = useSelectionStore((s) => s.selected);
+  const setSelected = useSelectionStore((s) => s.setSelected);
   const toast = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const items = useMemo(() => selectableItems(plan), [plan]);
+  const outOfCredits = credits < CHAT_CREDIT_COST;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,15 +42,20 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
       return;
     }
 
+    // 선택한 항목이 있으면 무엇을 가리키는 요청인지 앞에 붙여 준다.
+    const scoped = selected
+      ? `[대상: ${selected.kind} ${selected.id} "${selected.label}"]\n${message}`
+      : message;
+
     setInput('');
-    appendChat(plan.id, { role: 'user', content: message });
+    appendChat(plan.id, { role: 'user', content: scoped });
     setBusy(true);
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plan, message }),
+        body: JSON.stringify({ plan, message: scoped }),
       });
       const data = (await response.json()) as {
         reply?: string;
@@ -170,12 +181,52 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
       </div>
 
       <div className="border-t border-[var(--border)] p-3">
+        {/* 요청 범위를 좁힐 대상 — 선택하면 입력창 위에 표시된다 */}
+        {selected ? (
+          <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-[var(--primary-border)] bg-[var(--primary-soft)] px-2.5 py-1.5">
+            <Target size={12} className="shrink-0 text-[var(--primary)]" />
+            <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold text-[var(--primary)]">
+              {selected.kind} {selected.id} · {selected.label}
+            </span>
+            <button
+              className="btn btn-ghost btn-sm shrink-0 !h-5 !px-1"
+              onClick={() => setSelected(null)}
+              aria-label="대상 해제"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ) : (
+          items.length > 0 && (
+            <select
+              className="select mb-2 text-[11.5px]"
+              value=""
+              onChange={(e) => {
+                const item = items.find((i) => i.id === e.target.value);
+                if (item) setSelected(item);
+              }}
+            >
+              <option value="">대상 항목 선택 (선택 사항)</option>
+              {items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  [{item.kind}] {item.id} {item.label}
+                </option>
+              ))}
+            </select>
+          )
+        )}
+
         <div className="relative">
           <textarea
             className="textarea pr-11 text-[12.5px]"
             rows={3}
-            placeholder="문서에 대해 묻거나, 고쳐달라고 요청하세요"
+            placeholder={
+              outOfCredits
+                ? '크레딧을 모두 사용했습니다. 내일 다시 충전됩니다.'
+                : '문서에 대해 묻거나, 고쳐달라고 요청하세요'
+            }
             value={input}
+            disabled={outOfCredits}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -187,7 +238,7 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
           <button
             className="btn btn-primary btn-sm absolute right-2 bottom-2"
             onClick={() => void send(input)}
-            disabled={busy || !input.trim()}
+            disabled={busy || outOfCredits || !input.trim()}
             aria-label="보내기"
           >
             {busy ? <Spinner size={13} /> : <CornerDownLeft size={13} />}
