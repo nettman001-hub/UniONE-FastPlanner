@@ -9,15 +9,21 @@ import {
   LayoutList,
   ListTree,
   MousePointerClick,
+  Network,
   Plus,
   Search,
   Sparkles,
   Table2,
   Trash2,
+  X,
 } from 'lucide-react';
 import { EmptyState, Field, InlineText, ListEditor, Spinner, useConfirm } from '@/components/ui';
+import { BRANCH_HUES, FsMindmap } from '@/components/FsMindmap';
+import { NewBadge, ReviewBar } from '@/components/ReviewBar';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
+import { buildFsTree, byOrder, isFiltering, type FsTreeNode } from '@/lib/fs-tree';
+import { collectPending, isPending, type PendingItem } from '@/lib/fs-review';
 import { useGenerate } from '@/lib/useGenerate';
 import {
   PRIORITY_LABEL,
@@ -56,18 +62,8 @@ type Selection =
   | { kind: 'specification'; id: string }
   | null;
 
-interface TreeFeature {
-  feature: Feature;
-  specs: Specification[];
-}
-interface TreeNode {
-  req: Requirement;
-  features: TreeFeature[];
-}
-
-function byOrder<T extends { order: number }>(a: T, b: T) {
-  return a.order - b.order;
-}
+/** 마인드맵 · 리스트 · 표 — 같은 데이터를 보는 세 가지 방식. */
+type View = 'map' | 'list' | 'table';
 
 function PriorityBadge({ value }: { value: Priority }) {
   return (
@@ -156,17 +152,24 @@ export default function FsPage() {
   const addSpecification = usePlannerStore((s) => s.addSpecification);
   const updateSpecification = usePlannerStore((s) => s.updateSpecification);
   const removeSpecification = usePlannerStore((s) => s.removeSpecification);
+  const approveReview = usePlannerStore((s) => s.approveReview);
+  const rejectReview = usePlannerStore((s) => s.rejectReview);
+  const approveAllReview = usePlannerStore((s) => s.approveAllReview);
+  const rejectAllReview = usePlannerStore((s) => s.rejectAllReview);
 
   const { generate, pending } = useGenerate(plan);
   const { confirm, dialog } = useConfirm();
 
-  const [view, setView] = useState<'tree' | 'table'>('tree');
+  const [view, setView] = useState<View>('map');
   const [query, setQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<'all' | Priority>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | WorkStatus>('all');
   const [selection, setSelection] = useState<Selection>(null);
-  const [openReqs, setOpenReqs] = useState<string[]>([]);
   const [openFeatures, setOpenFeatures] = useState<string[]>([]);
+  /** 리스트 보기 1열에서 고른 요구사항. 2열에 그 하위만 보여 준다. */
+  const [focusedReq, setFocusedReq] = useState<string | null>(null);
+  /** 하단 검토 바에서 지금 보고 있는 순번. */
+  const [reviewIndex, setReviewIndex] = useState(0);
 
   const requirements = plan?.requirements ?? [];
   const features = plan?.features ?? [];
@@ -174,61 +177,30 @@ export default function FsPage() {
   const iaPages = plan?.iaPages ?? [];
 
   /* 필터링된 트리 --------------------------------------------------- */
-  const tree = useMemo<TreeNode[]>(() => {
-    const reqs = plan?.requirements ?? [];
-    const fns = plan?.features ?? [];
-    const sps = plan?.specifications ?? [];
-    const q = query.trim().toLowerCase();
-    const hit = (...parts: string[]) =>
-      q === '' || parts.some((part) => part.toLowerCase().includes(q));
-    const prioOk = (p: Priority) => priorityFilter === 'all' || priorityFilter === p;
-    const statusOk = (s: WorkStatus) => statusFilter === 'all' || statusFilter === s;
+  const tree = useMemo<FsTreeNode[]>(
+    () =>
+      buildFsTree(plan?.requirements ?? [], plan?.features ?? [], plan?.specifications ?? [], {
+        query,
+        priority: priorityFilter,
+        status: statusFilter,
+      }),
+    [plan, query, priorityFilter, statusFilter],
+  );
 
-    return [...reqs]
-      .sort(byOrder)
-      .map((req) => {
-        const reqHit = hit(req.id, req.title, req.description, req.category);
-        const nodes: TreeFeature[] = [...fns]
-          .filter((f) => f.requirementId === req.id)
-          .sort(byOrder)
-          .map((feature) => {
-            const featureHit = reqHit || hit(feature.id, feature.name, feature.description);
-            const specs = [...sps]
-              .filter((s) => s.featureId === feature.id)
-              .sort(byOrder)
-              .filter(
-                (s) =>
-                  (featureHit ||
-                    hit(
-                      s.id,
-                      s.title,
-                      s.actor,
-                      s.precondition,
-                      ...s.mainFlow,
-                      ...s.exceptions,
-                      ...s.acceptanceCriteria,
-                    )) &&
-                  prioOk(s.priority) &&
-                  statusOk(s.status),
-              );
-            return { feature, specs, keep: featureHit && prioOk(feature.priority) && statusOk(feature.status) };
-          })
-          .filter((node) => node.keep || node.specs.length > 0)
-          .map(({ feature, specs }) => ({ feature, specs }));
-
-        return { req, features: nodes, keep: reqHit && prioOk(req.priority) };
-      })
-      .filter((node) => node.keep || node.features.length > 0)
-      .map(({ req, features: list }) => ({ req, features: list }));
-  }, [plan, query, priorityFilter, statusFilter]);
-
-  const searching = query.trim() !== '' || priorityFilter !== 'all' || statusFilter !== 'all';
-  const isReqOpen = (id: string) => searching || openReqs.includes(id);
+  const searching = isFiltering({ query, priority: priorityFilter, status: statusFilter });
   const isFeatureOpen = (id: string) => searching || openFeatures.includes(id);
-  const toggleReq = (id: string) =>
-    setOpenReqs((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const toggleFeature = (id: string) =>
     setOpenFeatures((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  /** 리스트 2열이 보여 줄 요구사항. 아직 고른 게 없으면 첫 번째. */
+  const activeReq = tree.find((node) => node.req.id === focusedReq) ?? tree[0];
+
+  /* AI 제안 검토 ---------------------------------------------------- */
+  const pendingItems = useMemo(
+    () =>
+      collectPending(plan?.requirements ?? [], plan?.features ?? [], plan?.specifications ?? []),
+    [plan],
+  );
 
   const p0Count = features.filter((f) => f.priority === 'P0').length;
 
@@ -264,14 +236,14 @@ export default function FsPage() {
     if (!plan) return;
     const id = addRequirement(plan.id);
     setSelection({ kind: 'requirement', id });
-    setOpenReqs((prev) => [...prev, id]);
+    setFocusedReq(id);
   };
 
   const handleAddFeature = (requirementId: string) => {
     if (!plan) return;
     const id = addFeature(plan.id, requirementId);
     setSelection({ kind: 'feature', id });
-    setOpenReqs((prev) => (prev.includes(requirementId) ? prev : [...prev, requirementId]));
+    setFocusedReq(requirementId);
     setOpenFeatures((prev) => [...prev, id]);
   };
 
@@ -313,6 +285,68 @@ export default function FsPage() {
     setSelection(null);
   };
 
+  /* AI 제안 검토 ---------------------------------------------------- */
+
+  /** 검토 바에서 항목을 넘기면 그 항목을 화면에서도 선택해 준다. */
+  const focusPending = (item: PendingItem) => {
+    setSelection(
+      item.kind === 'specification'
+        ? { kind: 'specification', id: item.id }
+        : { kind: item.kind, id: item.id },
+    );
+    if (item.kind === 'requirement') setFocusedReq(item.id);
+    if (item.kind === 'feature') {
+      const feature = features.find((f) => f.id === item.id);
+      if (feature) setFocusedReq(feature.requirementId);
+      setOpenFeatures((prev) => (prev.includes(item.id) ? prev : [...prev, item.id]));
+    }
+    if (item.kind === 'specification') {
+      const spec = specifications.find((s) => s.id === item.id);
+      const feature = spec && features.find((f) => f.id === spec.featureId);
+      if (feature) {
+        setFocusedReq(feature.requirementId);
+        setOpenFeatures((prev) => (prev.includes(feature.id) ? prev : [...prev, feature.id]));
+      }
+    }
+  };
+
+  const handleApprove = (item: PendingItem) => {
+    if (!plan) return;
+    approveReview(plan.id, item);
+  };
+
+  /** 거절은 삭제다. 되돌리려면 개요에서 저장해 둔 버전으로 복원한다. */
+  const handleReject = (item: PendingItem) => {
+    if (!plan) return;
+    rejectReview(plan.id, item);
+    if (selection?.id === item.id) setSelection(null);
+  };
+
+  const handleApproveAll = async () => {
+    if (!plan) return;
+    const ok = await confirm({
+      title: `검토 대기 ${pendingItems.length}개를 모두 승인할까요?`,
+      message: '모든 신규 표시가 사라집니다. 내용은 그대로 남습니다.',
+      confirmLabel: '모두 승인',
+    });
+    if (!ok) return;
+    approveAllReview(plan.id);
+  };
+
+  const handleRejectAll = async () => {
+    if (!plan) return;
+    const ok = await confirm({
+      title: `검토 대기 ${pendingItems.length}개를 모두 거절할까요?`,
+      message:
+        '거절한 항목은 삭제됩니다. 하위 항목도 함께 지워지고, 정보구조도에 걸린 기능 연결도 정리됩니다. 되돌릴 수 없습니다.',
+      confirmLabel: '모두 거절',
+      danger: true,
+    });
+    if (!ok) return;
+    rejectAllReview(plan.id);
+    setSelection(null);
+  };
+
   const handleRemoveSpec = async (spec: Specification) => {
     if (!plan) return;
     const ok = await confirm({
@@ -339,6 +373,105 @@ export default function FsPage() {
     selection?.kind === 'specification'
       ? specifications.find((s) => s.id === selection.id)
       : undefined;
+
+  /** 지금 선택한 항목이 검토 대기면 그 정보. 아니면 null. */
+  const selectedPending: PendingItem | null =
+    selectedRequirement && isPending(selectedRequirement)
+      ? {
+          kind: 'requirement',
+          id: selectedRequirement.id,
+          label: selectedRequirement.title,
+          tag: selectedRequirement.id,
+        }
+      : selectedFeature && isPending(selectedFeature)
+        ? {
+            kind: 'feature',
+            id: selectedFeature.id,
+            label: selectedFeature.name,
+            tag: selectedFeature.id,
+          }
+        : selectedSpec && isPending(selectedSpec)
+          ? {
+              kind: 'specification',
+              id: selectedSpec.id,
+              label: selectedSpec.title,
+              tag: selectedSpec.id,
+            }
+          : null;
+
+  /* 상세 패널 — 마인드맵과 리스트가 함께 쓴다. */
+  const editorNode = selectedRequirement ? (
+    <RequirementEditor
+      key={selectedRequirement.id}
+      requirement={selectedRequirement}
+      featureCount={features.filter((f) => f.requirementId === selectedRequirement.id).length}
+      onChange={(patch) => updateRequirement(plan.id, selectedRequirement.id, patch)}
+      onAddFeature={() => handleAddFeature(selectedRequirement.id)}
+      onRemove={() => void handleRemoveRequirement(selectedRequirement)}
+    />
+  ) : selectedFeature ? (
+    <FeatureEditor
+      key={selectedFeature.id}
+      feature={selectedFeature}
+      requirements={[...requirements].sort(byOrder)}
+      placedPages={pagesOfFeature(selectedFeature.id)}
+      specCount={specifications.filter((s) => s.featureId === selectedFeature.id).length}
+      linkedSpecs={[...specifications]
+        .filter((s) => s.featureId === selectedFeature.id)
+        .sort(byOrder)}
+      onSelectSpec={(id) => setSelection({ kind: 'specification', id })}
+      onChange={(patch) => updateFeature(plan.id, selectedFeature.id, patch)}
+      onAddSpec={() => handleAddSpec(selectedFeature.id)}
+      onRemove={() => void handleRemoveFeature(selectedFeature)}
+    />
+  ) : selectedSpec ? (
+    <SpecificationEditor
+      key={selectedSpec.id}
+      spec={selectedSpec}
+      feature={features.find((f) => f.id === selectedSpec.featureId)}
+      pages={[...iaPages].sort(byOrder)}
+      onChange={(patch) => updateSpecification(plan.id, selectedSpec.id, patch)}
+      onRemove={() => void handleRemoveSpec(selectedSpec)}
+    />
+  ) : (
+    <div className="card">
+      <EmptyState
+        icon={<MousePointerClick size={24} />}
+        title="편집할 항목을 선택하세요"
+        description="요구사항·기능·상세 명세를 고르면 이곳에서 바로 편집할 수 있습니다."
+      />
+    </div>
+  );
+
+  const detailPanel = (
+    <div className="flex flex-col gap-2">
+      {selectedPending && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-2">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <NewBadge />
+            <span className="truncate text-[12px] text-[var(--fg-muted)]">
+              AI 가 만든 항목입니다. 검토해 주세요.
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              className="btn btn-sm"
+              onClick={() => handleReject(selectedPending)}
+              title="이 항목을 지웁니다"
+            >
+              <X size={13} />
+              거절
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={() => handleApprove(selectedPending)}>
+              <Check size={13} />
+              승인
+            </button>
+          </span>
+        </div>
+      )}
+      {editorNode}
+    </div>
+  );
 
   /* ---------------------------------------------------------------- */
   /* 미생성 상태                                                       */
@@ -389,7 +522,7 @@ export default function FsPage() {
   /* 본 화면                                                           */
   /* ---------------------------------------------------------------- */
   return (
-    <div className={`mx-auto w-full ${view === 'table' ? 'max-w-6xl' : 'max-w-5xl'} p-4 sm:p-6`}>
+    <div className={`mx-auto w-full ${view === 'map' ? 'max-w-[1560px]' : 'max-w-6xl'} p-4 sm:p-6`}>
       {dialog}
 
       {/* 상단 툴바 */}
@@ -404,21 +537,39 @@ export default function FsPage() {
               <span className="chip chip-danger" title="우선순위 P0 기능 수">
                 필수(P0) {p0Count}
               </span>
+              {pendingItems.length > 0 && (
+                <span
+                  className="chip chip-primary"
+                  title="AI 가 만들었고 아직 승인하지 않은 항목 수"
+                >
+                  검토 대기 {pendingItems.length}
+                </span>
+              )}
             </div>
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-1.5">
             <div className="flex overflow-hidden rounded-lg border border-[var(--border-strong)]">
               <button
-                className={`btn btn-sm rounded-none border-0 ${view === 'tree' ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setView('tree')}
+                className={`btn btn-sm rounded-none border-0 ${view === 'map' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setView('map')}
+                title="PRD → 요구사항 → 기능 → 상세명세를 한눈에"
+              >
+                <Network size={13} />
+                마인드맵
+              </button>
+              <button
+                className={`btn btn-sm rounded-none border-0 ${view === 'list' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setView('list')}
+                title="3단 목록으로 훑으며 편집"
               >
                 <ListTree size={13} />
-                트리
+                리스트
               </button>
               <button
                 className={`btn btn-sm rounded-none border-0 ${view === 'table' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setView('table')}
+                title="요구사항·기능을 한 표로"
               >
                 <LayoutList size={13} />
                 <span>표</span>
@@ -544,7 +695,11 @@ export default function FsPage() {
                           <button
                             className="id-tag cursor-pointer hover:text-[var(--primary)]"
                             onClick={() => {
-                              setView('tree');
+                              setView('list');
+                              setFocusedReq(child.feature.requirementId);
+                              setOpenFeatures((prev) =>
+                                prev.includes(child.feature.id) ? prev : [...prev, child.feature.id],
+                              );
                               setSelection({ kind: 'feature', id: child.feature.id });
                             }}
                           >
@@ -585,156 +740,223 @@ export default function FsPage() {
             </tbody>
           </table>
         </div>
+      ) : view === 'map' ? (
+        /* ---------------- 마인드맵 보기 ---------------- */
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          <div className="min-w-0 flex-1">
+            <FsMindmap
+              planId={planId}
+              tree={tree}
+              selection={selection}
+              onSelect={setSelection}
+              onAddRequirement={handleAddRequirement}
+              onAddFeature={handleAddFeature}
+              onAddSpec={handleAddSpec}
+            />
+          </div>
+          {selection && (
+            <section className="min-w-0 xl:sticky xl:top-4 xl:w-[400px] xl:shrink-0">
+              <div className="mb-2 flex justify-end">
+                <button className="btn btn-ghost btn-sm" onClick={() => setSelection(null)}>
+                  <X size={13} />
+                  닫기
+                </button>
+              </div>
+              {detailPanel}
+            </section>
+          )}
+        </div>
       ) : (
-        /* ---------------- 트리 + 편집 ---------------- */
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          {/* 좌: 요구사항 트리 */}
-          <aside className="card w-full shrink-0 overflow-hidden lg:sticky lg:top-4 lg:w-[260px]">
-            <div className="max-h-[52vh] overflow-y-auto p-2 lg:max-h-[calc(100dvh-9rem)]">
+        /* ---------------- 리스트 보기 (3단) ---------------- */
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          {/* 1열 — 요구사항 */}
+          <aside className="card w-full shrink-0 overflow-hidden xl:sticky xl:top-4 xl:w-[232px]">
+            <header className="flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+              <h2 className="section-title">요구사항</h2>
+              <button
+                className="btn btn-ghost btn-sm px-1.5"
+                onClick={handleAddRequirement}
+                aria-label="요구사항 추가"
+                title="요구사항 추가"
+              >
+                <Plus size={13} />
+              </button>
+            </header>
+            <div className="max-h-[36vh] overflow-y-auto p-1.5 xl:max-h-[calc(100dvh-11rem)]">
               {tree.length === 0 ? (
                 <p className="px-2 py-8 text-center text-[12.5px] text-[var(--fg-muted)]">
                   조건에 맞는 항목이 없습니다.
                 </p>
               ) : (
                 <ul className="flex flex-col gap-0.5">
-                  {tree.map((node) => {
-                    const open = isReqOpen(node.req.id);
-                    const active = selection?.kind === 'requirement' && selection.id === node.req.id;
+                  {tree.map((node, index) => {
+                    const focused = activeReq?.req.id === node.req.id;
+                    const selected =
+                      selection?.kind === 'requirement' && selection.id === node.req.id;
                     const featureCount = features.filter(
                       (f) => f.requirementId === node.req.id,
                     ).length;
                     return (
                       <li key={node.req.id}>
+                        <button
+                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left ${
+                            focused ? 'bg-[var(--primary-soft)]' : 'hover:bg-[var(--surface-2)]'
+                          }`}
+                          onClick={() => {
+                            setFocusedReq(node.req.id);
+                            setSelection({ kind: 'requirement', id: node.req.id });
+                          }}
+                        >
+                          <span
+                            className="flex size-[18px] shrink-0 items-center justify-center rounded-md text-[10.5px] font-bold tabular-nums"
+                            style={{
+                              background: `hsl(${BRANCH_HUES[index % BRANCH_HUES.length]} 68% 50% / 0.18)`,
+                            }}
+                          >
+                            {index + 1}
+                          </span>
+                          <span
+                            className={`min-w-0 flex-1 truncate text-[12.5px] font-bold ${
+                              selected ? 'text-[var(--primary)]' : ''
+                            }`}
+                          >
+                            {node.req.title}
+                          </span>
+                          {isPending(node.req) && <NewBadge />}
+                          <PriorityBadge value={node.req.priority} />
+                          {featureCount > 0 && (
+                            <span
+                              className="shrink-0 text-[10.5px] font-semibold tabular-nums text-[var(--fg-subtle)]"
+                              title="하위 기능 개수"
+                            >
+                              {featureCount}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </aside>
+
+          {/* 2열 — 기능 / 상세 기능 */}
+          <aside className="card w-full shrink-0 overflow-hidden xl:sticky xl:top-4 xl:w-[286px]">
+            <header className="flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+              <h2 className="section-title truncate">기능 / 상세 기능</h2>
+              <button
+                className="btn btn-ghost btn-sm shrink-0 px-1.5"
+                onClick={() => activeReq && handleAddFeature(activeReq.req.id)}
+                disabled={!activeReq}
+                aria-label="기능 추가"
+                title="기능 추가"
+              >
+                <Plus size={13} />
+              </button>
+            </header>
+            <div className="max-h-[36vh] overflow-y-auto p-1.5 xl:max-h-[calc(100dvh-11rem)]">
+              {!activeReq ? (
+                <p className="px-2 py-8 text-center text-[12.5px] text-[var(--fg-muted)]">
+                  왼쪽에서 요구사항을 고르세요.
+                </p>
+              ) : activeReq.features.length === 0 ? (
+                <div className="px-2 py-6 text-center">
+                  <p className="text-[12.5px] text-[var(--fg-muted)]">아직 기능이 없습니다.</p>
+                  <button
+                    className="btn btn-sm mt-2"
+                    onClick={() => handleAddFeature(activeReq.req.id)}
+                  >
+                    <Plus size={12} />
+                    핵심 기능 추가
+                  </button>
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-0.5">
+                  {activeReq.features.map((child, fi) => {
+                    const open = isFeatureOpen(child.feature.id);
+                    const active =
+                      selection?.kind === 'feature' && selection.id === child.feature.id;
+                    const specCount = specifications.filter(
+                      (s) => s.featureId === child.feature.id,
+                    ).length;
+                    return (
+                      <li key={child.feature.id}>
                         <div
                           className={`flex items-center gap-1 rounded-lg px-1 py-1 ${
                             active ? 'bg-[var(--primary-soft)]' : 'hover:bg-[var(--surface-2)]'
                           }`}
                         >
+                          <span className="w-4 shrink-0 text-center text-[10.5px] font-semibold tabular-nums text-[var(--fg-subtle)]">
+                            {fi + 1}
+                          </span>
                           <button
                             className="btn btn-ghost btn-sm shrink-0 px-1"
-                            onClick={() => toggleReq(node.req.id)}
+                            onClick={() => toggleFeature(child.feature.id)}
                             aria-label={open ? '접기' : '펼치기'}
                           >
-                            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                            {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                           </button>
                           <button
-                            className="min-w-0 flex-1 cursor-pointer py-0.5 text-left"
-                            onClick={() => setSelection({ kind: 'requirement', id: node.req.id })}
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 py-0.5 text-left"
+                            onClick={() => setSelection({ kind: 'feature', id: child.feature.id })}
                           >
-                            <span className="flex items-center gap-1.5">
-                              <span className="id-tag">{node.req.id}</span>
-                              <PriorityBadge value={node.req.priority} />
-                            </span>
+                            <StatusDot value={child.feature.status} />
                             <span
-                              className={`mt-0.5 block truncate text-[12.5px] font-bold ${
+                              className={`min-w-0 flex-1 truncate text-[12px] font-semibold ${
                                 active ? 'text-[var(--primary)]' : ''
                               }`}
                             >
-                              {node.req.title}
+                              {child.feature.name}
                             </span>
+                            {isPending(child.feature) && <NewBadge />}
                           </button>
-                          <span className="chip shrink-0" title="하위 기능 개수">
-                            {featureCount}
-                          </span>
+                          {specCount > 0 && (
+                            <span
+                              className="shrink-0 pr-1 text-[10.5px] font-semibold tabular-nums text-[var(--fg-subtle)]"
+                              title="상세 기능 개수"
+                            >
+                              {specCount}
+                            </span>
+                          )}
                         </div>
 
                         {open && (
-                          <ul className="mb-1 ml-3.5 flex flex-col gap-0.5 border-l border-[var(--border)] pl-1.5">
-                            {node.features.map((child) => {
-                              const fOpen = isFeatureOpen(child.feature.id);
-                              const fActive =
-                                selection?.kind === 'feature' && selection.id === child.feature.id;
+                          <ul className="mb-1 ml-6 flex flex-col gap-0.5 border-l border-[var(--border)] pl-1.5">
+                            {child.specs.map((spec, si) => {
+                              const sActive =
+                                selection?.kind === 'specification' && selection.id === spec.id;
                               return (
-                                <li key={child.feature.id}>
-                                  <div
-                                    className={`flex items-center gap-1 rounded-lg px-1 py-1 ${
-                                      fActive
-                                        ? 'bg-[var(--primary-soft)]'
+                                <li key={spec.id}>
+                                  <button
+                                    className={`flex w-full cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-left ${
+                                      sActive
+                                        ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
                                         : 'hover:bg-[var(--surface-2)]'
                                     }`}
+                                    onClick={() =>
+                                      setSelection({ kind: 'specification', id: spec.id })
+                                    }
                                   >
-                                    <button
-                                      className="btn btn-ghost btn-sm shrink-0 px-1"
-                                      onClick={() => toggleFeature(child.feature.id)}
-                                      aria-label={fOpen ? '접기' : '펼치기'}
-                                    >
-                                      {fOpen ? (
-                                        <ChevronDown size={12} />
-                                      ) : (
-                                        <ChevronRight size={12} />
-                                      )}
-                                    </button>
-                                    <button
-                                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 py-0.5 text-left"
-                                      onClick={() =>
-                                        setSelection({ kind: 'feature', id: child.feature.id })
-                                      }
-                                    >
-                                      <StatusDot value={child.feature.status} />
-                                      <span className="min-w-0 flex-1">
-                                        <span className="id-tag block">{child.feature.id}</span>
-                                        <span
-                                          className={`block truncate text-[12px] font-semibold ${
-                                            fActive ? 'text-[var(--primary)]' : ''
-                                          }`}
-                                        >
-                                          {child.feature.name}
-                                        </span>
-                                      </span>
-                                    </button>
-                                  </div>
-
-                                  {fOpen && (
-                                    <ul className="mb-1 ml-3 flex flex-col gap-0.5 border-l border-[var(--border)] pl-1.5">
-                                      {child.specs.map((spec) => {
-                                        const sActive =
-                                          selection?.kind === 'specification' &&
-                                          selection.id === spec.id;
-                                        return (
-                                          <li key={spec.id}>
-                                            <button
-                                              className={`flex w-full cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-left ${
-                                                sActive
-                                                  ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
-                                                  : 'hover:bg-[var(--surface-2)]'
-                                              }`}
-                                              onClick={() =>
-                                                setSelection({
-                                                  kind: 'specification',
-                                                  id: spec.id,
-                                                })
-                                              }
-                                            >
-                                              <StatusDot value={spec.status} />
-                                              <span className="id-tag shrink-0">{spec.id}</span>
-                                              <span className="min-w-0 flex-1 truncate text-[12px]">
-                                                {spec.title}
-                                              </span>
-                                            </button>
-                                          </li>
-                                        );
-                                      })}
-                                      <li>
-                                        <button
-                                          className="btn btn-ghost btn-sm w-full justify-start"
-                                          onClick={() => handleAddSpec(child.feature.id)}
-                                        >
-                                          <Plus size={12} />
-                                          상세명세
-                                        </button>
-                                      </li>
-                                    </ul>
-                                  )}
+                                    <span className="w-4 shrink-0 text-[10.5px] font-semibold tabular-nums text-[var(--fg-subtle)]">
+                                      {si + 1}
+                                    </span>
+                                    <StatusDot value={spec.status} />
+                                    <span className="min-w-0 flex-1 truncate text-[12px]">
+                                      {spec.title}
+                                    </span>
+                                    {isPending(spec) && <NewBadge />}
+                                  </button>
                                 </li>
                               );
                             })}
                             <li>
                               <button
                                 className="btn btn-ghost btn-sm w-full justify-start"
-                                onClick={() => handleAddFeature(node.req.id)}
+                                onClick={() => handleAddSpec(child.feature.id)}
                               >
                                 <Plus size={12} />
-                                기능
+                                상세 기능 추가
                               </button>
                             </li>
                           </ul>
@@ -745,57 +967,26 @@ export default function FsPage() {
                 </ul>
               )}
             </div>
-            <div className="border-t border-[var(--border)] p-2">
-              <button className="btn btn-sm w-full" onClick={handleAddRequirement}>
-                <Plus size={13} />
-                요구사항 추가
-              </button>
-            </div>
           </aside>
 
-          {/* 우: 편집 패널 */}
-          <section className="min-w-0 flex-1">
-            {selectedRequirement ? (
-              <RequirementEditor
-                key={selectedRequirement.id}
-                requirement={selectedRequirement}
-                featureCount={features.filter((f) => f.requirementId === selectedRequirement.id).length}
-                onChange={(patch) => updateRequirement(plan.id, selectedRequirement.id, patch)}
-                onAddFeature={() => handleAddFeature(selectedRequirement.id)}
-                onRemove={() => void handleRemoveRequirement(selectedRequirement)}
-              />
-            ) : selectedFeature ? (
-              <FeatureEditor
-                key={selectedFeature.id}
-                feature={selectedFeature}
-                requirements={[...requirements].sort(byOrder)}
-                placedPages={pagesOfFeature(selectedFeature.id)}
-                specCount={specifications.filter((s) => s.featureId === selectedFeature.id).length}
-                onChange={(patch) => updateFeature(plan.id, selectedFeature.id, patch)}
-                onAddSpec={() => handleAddSpec(selectedFeature.id)}
-                onRemove={() => void handleRemoveFeature(selectedFeature)}
-              />
-            ) : selectedSpec ? (
-              <SpecificationEditor
-                key={selectedSpec.id}
-                spec={selectedSpec}
-                feature={features.find((f) => f.id === selectedSpec.featureId)}
-                pages={[...iaPages].sort(byOrder)}
-                onChange={(patch) => updateSpecification(plan.id, selectedSpec.id, patch)}
-                onRemove={() => void handleRemoveSpec(selectedSpec)}
-              />
-            ) : (
-              <div className="card">
-                <EmptyState
-                  icon={<MousePointerClick size={24} />}
-                  title="왼쪽에서 항목을 선택하세요"
-                  description="요구사항·기능·상세 명세를 고르면 이곳에서 바로 편집할 수 있습니다."
-                />
-              </div>
-            )}
-          </section>
+          {/* 3열 — 상세 */}
+          <section className="min-w-0 flex-1">{detailPanel}</section>
         </div>
       )}
+
+      <ReviewBar
+        items={pendingItems}
+        index={reviewIndex}
+        onIndexChange={(next) => {
+          setReviewIndex(next);
+          const item = pendingItems[next];
+          if (item) focusPending(item);
+        }}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onApproveAll={() => void handleApproveAll()}
+        onRejectAll={() => void handleRejectAll()}
+      />
     </div>
   );
 }
@@ -908,6 +1099,8 @@ function FeatureEditor({
   requirements,
   placedPages,
   specCount,
+  linkedSpecs,
+  onSelectSpec,
   onChange,
   onAddSpec,
   onRemove,
@@ -916,6 +1109,8 @@ function FeatureEditor({
   requirements: Requirement[];
   placedPages: IaPage[];
   specCount: number;
+  linkedSpecs: Specification[];
+  onSelectSpec: (id: string) => void;
   onChange: (patch: Partial<Feature>) => void;
   onAddSpec: () => void;
   onRemove: () => void;
@@ -983,6 +1178,44 @@ function FeatureEditor({
               </span>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* 연결된 상세 기능 — 눌러서 바로 그 명세로 넘어간다. */}
+      <div>
+        <span className="label">연결된 상세 기능</span>
+        {linkedSpecs.length === 0 ? (
+          <p className="text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
+            아직 상세 기능이 없습니다. 아래 버튼으로 추가해 주세요.
+          </p>
+        ) : (
+          <ol className="flex flex-col gap-1.5">
+            {linkedSpecs.map((spec, index) => (
+              <li key={spec.id}>
+                <button
+                  className="w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2.5 text-left transition hover:border-[var(--primary-border)]"
+                  onClick={() => onSelectSpec(spec.id)}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold tabular-nums text-[var(--fg-subtle)]">
+                      {index + 1}.
+                    </span>
+                    <StatusDot value={spec.status} />
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">
+                      {spec.title}
+                    </span>
+                    {isPending(spec) && <NewBadge />}
+                    <span className="id-tag shrink-0">{spec.id}</span>
+                  </span>
+                  {spec.mainFlow.length > 0 && (
+                    <span className="mt-1 block line-clamp-2 text-[12px] leading-relaxed text-[var(--fg-muted)]">
+                      {spec.mainFlow.join(' → ')}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ol>
         )}
       </div>
 

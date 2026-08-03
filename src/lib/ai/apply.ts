@@ -126,6 +126,8 @@ export function applyFs(draft: FsDraft): FsResult {
     category: r.category || '공통',
     priority: toPriority(r.priority),
     order: i,
+    // AI 가 만든 항목은 검토 전이다. 사용자가 승인해야 배지가 사라진다.
+    review: 'pending',
   }));
 
   // 상위 요구사항 인덱스가 범위를 벗어나면 첫 요구사항에 붙인다.
@@ -145,6 +147,7 @@ export function applyFs(draft: FsDraft): FsResult {
       priority: toPriority(f.priority),
       status: '작성중',
       order,
+      review: 'pending',
     };
   });
 
@@ -169,6 +172,7 @@ export function applyFs(draft: FsDraft): FsResult {
       priority: toPriority(s.priority),
       status: '작성중',
       order,
+      review: 'pending',
     };
   });
 

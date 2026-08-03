@@ -113,7 +113,21 @@ export interface Prd {
 /* FS — 기능명세서 (요구사항 → 기능 → 상세명세)                          */
 /* ------------------------------------------------------------------ */
 
-export interface Requirement {
+/**
+ * AI 가 만들어 아직 검토하지 않은 항목의 표시.
+ *
+ * `'pending'` 이면 화면에 `신규` 배지가 붙고 승인/거절 대상이 된다.
+ * **승인하면 필드를 지운다.** 값이 없으면 승인된 것으로 보므로,
+ * 이 필드가 없던 시절에 저장된 플랜도 마이그레이션 없이 그대로 열린다.
+ * 사용자가 직접 추가한 항목에는 붙이지 않는다 — 자기가 만든 것을 다시 승인할 이유가 없다.
+ */
+export type ReviewState = 'pending';
+
+export interface Reviewable {
+  review?: ReviewState;
+}
+
+export interface Requirement extends Reviewable {
   /** REQ-001 */
   id: string;
   /** 요구사항명 */
@@ -125,7 +139,7 @@ export interface Requirement {
   order: number;
 }
 
-export interface Feature {
+export interface Feature extends Reviewable {
   /** FN-001 */
   id: string;
   /** 상위 요구사항 ID */
@@ -138,7 +152,7 @@ export interface Feature {
   order: number;
 }
 
-export interface Specification {
+export interface Specification extends Reviewable {
   /** SP-001 */
   id: string;
   /** 상위 기능 ID */
