@@ -54,8 +54,9 @@ export function ReviewBar({
     <div className="pointer-events-none sticky bottom-3 z-20 mt-4 flex justify-center">
       <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1.5 shadow-lg">
         <div className="flex items-center gap-1 border-r border-[var(--border)] pr-1.5">
+          {/* 한 번에 끝낼 수 있는 길이라 눈에 띄어야 한다. 흐린 ghost 로는 잘 안 보였다. */}
           <button
-            className="btn btn-ghost btn-sm"
+            className="btn btn-primary btn-sm"
             onClick={onApproveAll}
             title={`검토 대기 ${items.length}개를 모두 승인합니다`}
           >
