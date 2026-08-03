@@ -19,6 +19,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  BookOpen,
   Wand2,
 } from 'lucide-react';
 
@@ -652,6 +653,10 @@ export default function HomePage() {
             <Upload size={15} />
             플랜 가져오기
           </button>
+          <Link href="/docs" className="btn btn-lg">
+            <BookOpen size={15} />
+            설명서
+          </Link>
           <input
             ref={fileRef}
             type="file"

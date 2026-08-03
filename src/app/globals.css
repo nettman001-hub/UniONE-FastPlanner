@@ -15,6 +15,7 @@
   --fg-muted: #5c6472;
   --fg-subtle: #8b93a3;
   --primary: #4f46e5;
+  --primary-strong: #3730a3;
   --primary-fg: #ffffff;
   --primary-soft: #eef0ff;
   --primary-border: #c9cdf7;
@@ -41,6 +42,7 @@
     --fg-muted: #a0a8b8;
     --fg-subtle: #737d8f;
     --primary: #7c78f0;
+    --primary-strong: #a5a2f7;
     --primary-fg: #0d0f13;
     --primary-soft: #1e1f3a;
     --primary-border: #383a72;
@@ -67,6 +69,7 @@
   --color-muted: var(--fg-muted);
   --color-subtle: var(--fg-subtle);
   --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
   --color-primary-fg: var(--primary-fg);
   --color-primary-soft: var(--primary-soft);
   --color-primary-border: var(--primary-border);
@@ -172,6 +175,19 @@ pre,
   .btn-primary:hover:not(:disabled) {
     background: var(--primary);
     filter: brightness(1.08);
+  }
+  /*
+   * 생성 중인 버튼.
+   *
+   * 눌러도 반응이 없는 상태라 잠긴 것처럼 흐려 보이면 곤란하다.
+   * 더 진한 색을 주어 "지금 일하는 중"임이 드러나게 한다.
+   */
+  .btn-primary.is-busy,
+  .btn-primary.is-busy:disabled {
+    background: var(--primary-strong);
+    border-color: var(--primary-strong);
+    color: var(--primary-fg);
+    opacity: 1;
   }
   .btn-ghost {
     border-color: transparent;

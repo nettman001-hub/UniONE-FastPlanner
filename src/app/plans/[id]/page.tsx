@@ -343,12 +343,12 @@ function PlanOverview() {
           description="PRD부터 와이어프레임까지 순서대로 만들어 나갑니다."
           action={
             <button
-              className="btn btn-primary btn-sm"
+              className={`btn btn-primary btn-sm${running ? ' is-busy' : ''}`}
               disabled={busy}
               onClick={() => void handleGenerateAll()}
             >
               {running ? <Spinner size={13} /> : <Wand2 size={13} />}
-              {running && autoStep ? `${ARTIFACT_LABEL[autoStep]} 생성 중` : '전체 자동 생성'}
+              {running && autoStep ? `${ARTIFACT_LABEL[autoStep]} 생성중` : '전체 자동 생성'}
             </button>
           }
         >
@@ -413,13 +413,13 @@ function PlanOverview() {
 
                     <div className="flex shrink-0 items-center gap-1.5 sm:justify-end">
                       <button
-                        className="btn btn-primary btn-sm"
+                        className={`btn btn-primary btn-sm${pending === key ? ' is-busy' : ''}`}
                         disabled={busy || reason !== null}
                         title={reason ?? undefined}
                         onClick={() => void handleGenerate(key)}
                       >
                         {pending === key ? <Spinner size={13} /> : <Sparkles size={13} />}
-                        {done ? '다시 생성' : 'AI로 생성'}
+                        {pending === key ? '생성중' : done ? '다시 생성' : 'AI로 생성'}
                       </button>
                       <Link className="btn btn-sm" href={`/plans/${planId}${STEP_PATH[key]}`}>
                         열기

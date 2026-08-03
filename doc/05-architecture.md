@@ -25,6 +25,7 @@ src/
       page.tsx                   개요 — 파이프라인·정합성·버전·코멘트
       prd/ fs/ ia/ flow/ wireframe/ export/
     share/page.tsx               보기 전용 공유
+    docs/                        설명서 — doc/ 마크다운을 빌드 때 읽어 정적 생성
     api/
       generate/route.ts          생성 — 결과를 NDJSON 으로 흘려보냄
       chat/route.ts              AI 에이전트 대화 + 문서 패치
@@ -60,6 +61,7 @@ src/
     FsMindmap.tsx                기능명세서 마인드맵 캔버스
     ReviewBar.tsx                AI 제안 검토 바 · 신규 배지
     ResumeBanner.tsx             멈춘 작업 이어서 만들기 안내
+    DocsNav.tsx                  설명서 목차
     GeneratingState.tsx          생성 중 안내
     AgentPanel.tsx               AI 에이전트 패널
     FlowCanvas.tsx               플로우차트 SVG 렌더러
@@ -193,6 +195,21 @@ add({
 ```
 
 `add()` 는 `targets` 가 비어 있으면 보고하지 않습니다. 즉 규칙을 통과한 것으로 봅니다.
+
+## 설명서 화면
+
+`/docs` 는 `doc/` 폴더의 마크다운과 `manifest.json` 을 **그대로** 읽습니다.
+같은 내용을 두 벌 관리하지 않으므로, 문서를 고치면 화면도 함께 바뀝니다.
+
+**빌드 시점에만 읽습니다.** `generateStaticParams` 로 목차에 있는 문서를 모두 미리 만들고
+`dynamicParams = false` 로 두어, 실행 중에는 파일을 건드리지 않습니다. 서버리스에 올려도
+파일이 없어 깨질 일이 없습니다.
+
+문서 사이의 `./06-troubleshooting.md` 같은 링크는 `docLinkMap()` 이 `/docs/troubleshooting`
+으로 바꿔 줍니다. 대응표에 없는 상대 경로(`./manifest.json` 처럼 저장소 안의 파일)는
+링크가 아니라 **글자로만** 보여 줍니다 — 웹에서 열 수 없는 주소를 눌러 404 가 나지 않도록.
+
+문서를 추가하려면 `doc/` 에 파일을 넣고 `manifest.json` 에 한 줄 더하면 됩니다.
 
 ## 스타일 규칙
 

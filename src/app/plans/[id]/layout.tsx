@@ -6,6 +6,7 @@ import { useState, type ReactNode } from 'react';
 import {
   Bot,
   ChevronLeft,
+  BookOpen,
   Download,
   FileText,
   GitBranch,
@@ -44,6 +45,9 @@ const NAV: NavItem[] = [
   },
   { href: '/export', label: '내보내기', icon: <Download size={15} /> },
 ];
+
+/** 플랜 밖으로 나가는 링크. 산출물 메뉴와 구분해 아래쪽에 따로 둔다. */
+const EXTERNAL_NAV = [{ href: '/docs', label: '설명서', icon: <BookOpen size={15} /> }];
 
 export default function PlanLayout({ children }: { children: ReactNode }) {
   const params = useParams<{ id: string }>();
@@ -146,6 +150,19 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
+
+          <div className="my-1.5 border-t border-[var(--border)]" />
+
+          {EXTERNAL_NAV.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-semibold text-[var(--fg-muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
+            >
+              <span className="shrink-0">{item.icon}</span>
+              <span className="flex-1 truncate">{item.label}</span>
+            </Link>
+          ))}
         </nav>
 
         {/* 모바일 탭 */}
@@ -170,6 +187,16 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
+          {EXTERNAL_NAV.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex min-w-16 flex-1 flex-col items-center gap-1 px-2 py-2 text-[10px] font-semibold text-[var(--fg-muted)]"
+            >
+              {item.icon}
+              <span className="whitespace-nowrap">{item.label}</span>
+            </Link>
+          ))}
         </div>
 
         <main className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0">

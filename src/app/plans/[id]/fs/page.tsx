@@ -504,12 +504,12 @@ export default function FsPage() {
             action={
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <button
-                  className="btn btn-primary btn-sm"
+                  className={`btn btn-primary btn-sm${generating ? ' is-busy' : ''}`}
                   disabled={pending !== null}
                   onClick={() => void handleGenerate()}
                 >
                   {generating ? <Spinner size={13} /> : <Sparkles size={13} />}
-                  AI로 생성
+                  {generating ? '생성중' : 'AI로 생성'}
                 </button>
                 <button className="btn btn-sm" onClick={handleAddRequirement}>
                   <Plus size={13} />
@@ -581,12 +581,12 @@ export default function FsPage() {
               </button>
             </div>
             <button
-              className="btn btn-primary btn-sm"
+              className={`btn btn-primary btn-sm${generating ? ' is-busy' : ''}`}
               disabled={pending !== null}
               onClick={() => void handleGenerate()}
             >
               {generating ? <Spinner size={13} /> : <Sparkles size={13} />}
-              {plan.generated.fs ? '다시 생성' : 'AI로 생성'}
+              {generating ? '생성중' : plan.generated.fs ? '다시 생성' : 'AI로 생성'}
             </button>
             <NextStepButton planId={planId} current="fs" />
           </div>

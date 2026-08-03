@@ -128,12 +128,12 @@ export default function PrdPage() {
 
   const generateButton = (
     <button
-      className="btn btn-primary btn-sm"
+      className={`btn btn-primary btn-sm${pending === 'prd' ? ' is-busy' : ''}`}
       disabled={pending !== null}
       onClick={() => void handleGenerate()}
     >
       {pending === 'prd' ? <Spinner size={13} /> : <Sparkles size={13} />}
-      {plan.generated.prd ? '다시 생성' : 'AI로 생성'}
+      {pending === 'prd' ? '생성중' : plan.generated.prd ? '다시 생성' : 'AI로 생성'}
     </button>
   );
 
