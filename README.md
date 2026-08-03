@@ -33,6 +33,7 @@
 | **정보구조도 (IA)** | 최대 3 depth 화면 트리 / 표 / 사이트맵 3가지 보기. 화면별 접근 역할과 **상세 기능 연결** |
 | **유저 플로우** | 시작·화면·행동·분기·시스템·종료 노드로 구성된 플로우차트. 직접 그린 SVG 캔버스 + Mermaid 코드 내보내기 |
 | **와이어프레임** | IA 화면마다 저해상도 목업 생성. 모바일/데스크톱 프레임, 17종 블록 |
+| **AI 제안 검토** | AI 가 만든 항목에 `신규` 배지. 하나씩 넘겨 보며 승인·거절하거나 일괄 처리 |
 | **AI 에이전트** | 현재 문서 전체를 읽고 답하거나, 요청대로 산출물을 다시 만들어 반영 |
 | **정합성 검사** | 배치되지 않은 기능, 도달 불가 플로우 단계, 분기가 하나뿐인 조건, 중복 경로 등을 자동 탐지 |
 | **내보내기** | 마크다운 · 기능명세서 CSV · IA CSV · 플랜 JSON · **코딩 에이전트 번들** · Mermaid |
@@ -122,6 +123,7 @@ src/
     store.ts                     zustand + localStorage 영속화
     validate.ts                  정합성 검사 규칙
     fs-tree.ts                   기능명세서 트리 (마인드맵·리스트·표 공유)
+    fs-review.ts                 AI 제안 승인/거절 + 삭제 캐스케이드
     export.ts                    마크다운 / CSV / JSON / Mermaid / 에이전트 번들
     image-export.ts              와이어프레임·플로우차트 SVG / PNG
     share.ts                     보기 전용 링크 인코딩
@@ -136,6 +138,7 @@ src/
   components/
     ui.tsx                       토스트 · 모달 · 인라인 편집기 · 리스트 편집기
     FsMindmap.tsx                기능명세서 마인드맵 캔버스
+    ReviewBar.tsx                AI 제안 검토 바 · 신규 배지
     AgentPanel.tsx               AI 에이전트 패널
     FlowCanvas.tsx               플로우차트 SVG 렌더러
     WireframeView.tsx            와이어프레임 렌더러

@@ -15,6 +15,8 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ExternalLink, Maximize2, Plus, ZoomIn, ZoomOut } from 'lucide-react';
+import { NewBadge } from './ReviewBar';
+import { isPending } from '@/lib/fs-review';
 import type { FsTreeNode } from '@/lib/fs-tree';
 import type { WorkStatus } from '@/lib/types';
 
@@ -68,6 +70,8 @@ interface MapNode {
   /** 1 / 1.1 / 1.1.1 */
   no?: string;
   status?: WorkStatus;
+  /** AI 가 만들어 아직 검토하지 않은 항목 */
+  pending?: boolean;
   hue: number | null;
   x: number;
   y: number;
@@ -156,6 +160,7 @@ function buildLayout(tree: FsTreeNode[]) {
               label: spec.title,
               no: `${ri + 1}.${fi + 1}.${si + 1}`,
               status: spec.status,
+              pending: isPending(spec),
               hue,
               x: X_SPEC,
               y: cursor,
@@ -176,6 +181,7 @@ function buildLayout(tree: FsTreeNode[]) {
           label: child.feature.name,
           no: `${ri + 1}.${fi + 1}`,
           status: child.feature.status,
+          pending: isPending(child.feature),
           hue,
           x: X_FEATURE,
           y: (featureTop + cursor - ROW_H) / 2,
@@ -199,6 +205,7 @@ function buildLayout(tree: FsTreeNode[]) {
       domainId: node.req.id,
       label: node.req.title,
       no: String(ri + 1),
+      pending: isPending(node.req),
       hue,
       x: X_REQ,
       y: (first.y + last.y + NODE_H - REQ_H) / 2,
@@ -452,6 +459,7 @@ export function FsMindmap({
                       >
                         {node.label}
                       </span>
+                      {node.pending && <NewBadge />}
                       {node.no && (
                         <span className="shrink-0 text-[10px] font-semibold tabular-nums text-[var(--fg-subtle)]">
                           {node.no}

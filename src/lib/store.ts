@@ -4,6 +4,16 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nextId, uid } from './ids';
 import {
+  approveIn,
+  isPending,
+  rejectIn,
+  removeFeatureFrom,
+  removeRequirementFrom,
+  removeSpecificationFrom,
+  stripReview,
+  type ReviewTarget,
+} from './fs-review';
+import {
   ARTIFACT_CREDIT_COST,
   emptyDocuments,
   pickDocuments,
@@ -69,6 +79,12 @@ export interface PlannerState {
   addSpecification: (planId: string, featureId: string, value?: Partial<Specification>) => string;
   updateSpecification: (planId: string, id: string, patch: Partial<Specification>) => void;
   removeSpecification: (planId: string, id: string) => void;
+
+  /* 기능명세서 — AI 제안 검토 */
+  approveReview: (planId: string, target: ReviewTarget) => void;
+  rejectReview: (planId: string, target: ReviewTarget) => void;
+  approveAllReview: (planId: string) => void;
+  rejectAllReview: (planId: string) => void;
 
   /* 정보구조도 */
   addIaPage: (planId: string, parentId: string | null, value?: Partial<IaPage>) => string;
@@ -240,16 +256,7 @@ export const usePlannerStore = create<PlannerState>()(
 
         removeRequirement: (planId, id) =>
           mutate(planId, (plan) => {
-            const featureIds = plan.features.filter((f) => f.requirementId === id).map((f) => f.id);
-            plan.requirements = plan.requirements.filter((r) => r.id !== id);
-            plan.features = plan.features.filter((f) => f.requirementId !== id);
-            plan.specifications = plan.specifications.filter(
-              (s) => !featureIds.includes(s.featureId),
-            );
-            plan.iaPages = plan.iaPages.map((p) => ({
-              ...p,
-              featureIds: p.featureIds.filter((fid) => !featureIds.includes(fid)),
-            }));
+            removeRequirementFrom(plan, id);
           }),
 
         addFeature: (planId, requirementId, value) => {
@@ -277,12 +284,7 @@ export const usePlannerStore = create<PlannerState>()(
 
         removeFeature: (planId, id) =>
           mutate(planId, (plan) => {
-            plan.features = plan.features.filter((f) => f.id !== id);
-            plan.specifications = plan.specifications.filter((s) => s.featureId !== id);
-            plan.iaPages = plan.iaPages.map((p) => ({
-              ...p,
-              featureIds: p.featureIds.filter((fid) => fid !== id),
-            }));
+            removeFeatureFrom(plan, id);
           }),
 
         addSpecification: (planId, featureId, value) => {
@@ -317,7 +319,44 @@ export const usePlannerStore = create<PlannerState>()(
 
         removeSpecification: (planId, id) =>
           mutate(planId, (plan) => {
-            plan.specifications = plan.specifications.filter((s) => s.id !== id);
+            removeSpecificationFrom(plan, id);
+          }),
+
+        /* AI 제안 검토 -------------------------------------------------- */
+
+        approveReview: (planId, target) =>
+          mutate(planId, (plan) => {
+            approveIn(plan, target);
+          }),
+
+        /**
+         * 거절은 그 항목을 지운다 — 제안을 받지 않겠다는 뜻이므로.
+         * 하위 항목도 함께 사라지는 규칙은 일반 삭제와 같다.
+         */
+        rejectReview: (planId, target) =>
+          mutate(planId, (plan) => {
+            rejectIn(plan, target);
+          }),
+
+        approveAllReview: (planId) =>
+          mutate(planId, (plan) => {
+            plan.requirements = plan.requirements.map(stripReview);
+            plan.features = plan.features.map(stripReview);
+            plan.specifications = plan.specifications.map(stripReview);
+          }),
+
+        /**
+         * 전부 거절. 위에서부터 지우면 하위가 따라 사라지므로 요구사항 → 기능 → 명세 순으로 훑는다.
+         * 승인된 부모 아래에 있던 검토 대기 자식만 남기고 정리된다.
+         */
+        rejectAllReview: (planId) =>
+          mutate(planId, (plan) => {
+            for (const req of plan.requirements.filter(isPending))
+              rejectIn(plan, { kind: 'requirement', id: req.id });
+            for (const feature of plan.features.filter(isPending))
+              rejectIn(plan, { kind: 'feature', id: feature.id });
+            for (const spec of plan.specifications.filter(isPending))
+              rejectIn(plan, { kind: 'specification', id: spec.id });
           }),
 
         addIaPage: (planId, parentId, value) => {

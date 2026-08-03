@@ -19,9 +19,11 @@ import {
 } from 'lucide-react';
 import { EmptyState, Field, InlineText, ListEditor, Spinner, useConfirm } from '@/components/ui';
 import { BRANCH_HUES, FsMindmap } from '@/components/FsMindmap';
+import { NewBadge, ReviewBar } from '@/components/ReviewBar';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { buildFsTree, byOrder, isFiltering, type FsTreeNode } from '@/lib/fs-tree';
+import { collectPending, isPending, type PendingItem } from '@/lib/fs-review';
 import { useGenerate } from '@/lib/useGenerate';
 import {
   PRIORITY_LABEL,
@@ -150,6 +152,10 @@ export default function FsPage() {
   const addSpecification = usePlannerStore((s) => s.addSpecification);
   const updateSpecification = usePlannerStore((s) => s.updateSpecification);
   const removeSpecification = usePlannerStore((s) => s.removeSpecification);
+  const approveReview = usePlannerStore((s) => s.approveReview);
+  const rejectReview = usePlannerStore((s) => s.rejectReview);
+  const approveAllReview = usePlannerStore((s) => s.approveAllReview);
+  const rejectAllReview = usePlannerStore((s) => s.rejectAllReview);
 
   const { generate, pending } = useGenerate(plan);
   const { confirm, dialog } = useConfirm();
@@ -162,6 +168,8 @@ export default function FsPage() {
   const [openFeatures, setOpenFeatures] = useState<string[]>([]);
   /** 리스트 보기 1열에서 고른 요구사항. 2열에 그 하위만 보여 준다. */
   const [focusedReq, setFocusedReq] = useState<string | null>(null);
+  /** 하단 검토 바에서 지금 보고 있는 순번. */
+  const [reviewIndex, setReviewIndex] = useState(0);
 
   const requirements = plan?.requirements ?? [];
   const features = plan?.features ?? [];
@@ -186,6 +194,13 @@ export default function FsPage() {
 
   /** 리스트 2열이 보여 줄 요구사항. 아직 고른 게 없으면 첫 번째. */
   const activeReq = tree.find((node) => node.req.id === focusedReq) ?? tree[0];
+
+  /* AI 제안 검토 ---------------------------------------------------- */
+  const pendingItems = useMemo(
+    () =>
+      collectPending(plan?.requirements ?? [], plan?.features ?? [], plan?.specifications ?? []),
+    [plan],
+  );
 
   const p0Count = features.filter((f) => f.priority === 'P0').length;
 
@@ -270,6 +285,68 @@ export default function FsPage() {
     setSelection(null);
   };
 
+  /* AI 제안 검토 ---------------------------------------------------- */
+
+  /** 검토 바에서 항목을 넘기면 그 항목을 화면에서도 선택해 준다. */
+  const focusPending = (item: PendingItem) => {
+    setSelection(
+      item.kind === 'specification'
+        ? { kind: 'specification', id: item.id }
+        : { kind: item.kind, id: item.id },
+    );
+    if (item.kind === 'requirement') setFocusedReq(item.id);
+    if (item.kind === 'feature') {
+      const feature = features.find((f) => f.id === item.id);
+      if (feature) setFocusedReq(feature.requirementId);
+      setOpenFeatures((prev) => (prev.includes(item.id) ? prev : [...prev, item.id]));
+    }
+    if (item.kind === 'specification') {
+      const spec = specifications.find((s) => s.id === item.id);
+      const feature = spec && features.find((f) => f.id === spec.featureId);
+      if (feature) {
+        setFocusedReq(feature.requirementId);
+        setOpenFeatures((prev) => (prev.includes(feature.id) ? prev : [...prev, feature.id]));
+      }
+    }
+  };
+
+  const handleApprove = (item: PendingItem) => {
+    if (!plan) return;
+    approveReview(plan.id, item);
+  };
+
+  /** 거절은 삭제다. 되돌리려면 개요에서 저장해 둔 버전으로 복원한다. */
+  const handleReject = (item: PendingItem) => {
+    if (!plan) return;
+    rejectReview(plan.id, item);
+    if (selection?.id === item.id) setSelection(null);
+  };
+
+  const handleApproveAll = async () => {
+    if (!plan) return;
+    const ok = await confirm({
+      title: `검토 대기 ${pendingItems.length}개를 모두 승인할까요?`,
+      message: '모든 신규 표시가 사라집니다. 내용은 그대로 남습니다.',
+      confirmLabel: '모두 승인',
+    });
+    if (!ok) return;
+    approveAllReview(plan.id);
+  };
+
+  const handleRejectAll = async () => {
+    if (!plan) return;
+    const ok = await confirm({
+      title: `검토 대기 ${pendingItems.length}개를 모두 거절할까요?`,
+      message:
+        '거절한 항목은 삭제됩니다. 하위 항목도 함께 지워지고, 정보구조도에 걸린 기능 연결도 정리됩니다. 되돌릴 수 없습니다.',
+      confirmLabel: '모두 거절',
+      danger: true,
+    });
+    if (!ok) return;
+    rejectAllReview(plan.id);
+    setSelection(null);
+  };
+
   const handleRemoveSpec = async (spec: Specification) => {
     if (!plan) return;
     const ok = await confirm({
@@ -297,8 +374,33 @@ export default function FsPage() {
       ? specifications.find((s) => s.id === selection.id)
       : undefined;
 
+  /** 지금 선택한 항목이 검토 대기면 그 정보. 아니면 null. */
+  const selectedPending: PendingItem | null =
+    selectedRequirement && isPending(selectedRequirement)
+      ? {
+          kind: 'requirement',
+          id: selectedRequirement.id,
+          label: selectedRequirement.title,
+          tag: selectedRequirement.id,
+        }
+      : selectedFeature && isPending(selectedFeature)
+        ? {
+            kind: 'feature',
+            id: selectedFeature.id,
+            label: selectedFeature.name,
+            tag: selectedFeature.id,
+          }
+        : selectedSpec && isPending(selectedSpec)
+          ? {
+              kind: 'specification',
+              id: selectedSpec.id,
+              label: selectedSpec.title,
+              tag: selectedSpec.id,
+            }
+          : null;
+
   /* 상세 패널 — 마인드맵과 리스트가 함께 쓴다. */
-  const detailPanel = selectedRequirement ? (
+  const editorNode = selectedRequirement ? (
     <RequirementEditor
       key={selectedRequirement.id}
       requirement={selectedRequirement}
@@ -338,6 +440,36 @@ export default function FsPage() {
         title="편집할 항목을 선택하세요"
         description="요구사항·기능·상세 명세를 고르면 이곳에서 바로 편집할 수 있습니다."
       />
+    </div>
+  );
+
+  const detailPanel = (
+    <div className="flex flex-col gap-2">
+      {selectedPending && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-2">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <NewBadge />
+            <span className="truncate text-[12px] text-[var(--fg-muted)]">
+              AI 가 만든 항목입니다. 검토해 주세요.
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              className="btn btn-sm"
+              onClick={() => handleReject(selectedPending)}
+              title="이 항목을 지웁니다"
+            >
+              <X size={13} />
+              거절
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={() => handleApprove(selectedPending)}>
+              <Check size={13} />
+              승인
+            </button>
+          </span>
+        </div>
+      )}
+      {editorNode}
     </div>
   );
 
@@ -405,6 +537,14 @@ export default function FsPage() {
               <span className="chip chip-danger" title="우선순위 P0 기능 수">
                 필수(P0) {p0Count}
               </span>
+              {pendingItems.length > 0 && (
+                <span
+                  className="chip chip-primary"
+                  title="AI 가 만들었고 아직 승인하지 않은 항목 수"
+                >
+                  검토 대기 {pendingItems.length}
+                </span>
+              )}
             </div>
           </div>
 
@@ -682,6 +822,7 @@ export default function FsPage() {
                           >
                             {node.req.title}
                           </span>
+                          {isPending(node.req) && <NewBadge />}
                           <PriorityBadge value={node.req.priority} />
                           {featureCount > 0 && (
                             <span
@@ -768,6 +909,7 @@ export default function FsPage() {
                             >
                               {child.feature.name}
                             </span>
+                            {isPending(child.feature) && <NewBadge />}
                           </button>
                           {specCount > 0 && (
                             <span
@@ -803,6 +945,7 @@ export default function FsPage() {
                                     <span className="min-w-0 flex-1 truncate text-[12px]">
                                       {spec.title}
                                     </span>
+                                    {isPending(spec) && <NewBadge />}
                                   </button>
                                 </li>
                               );
@@ -830,6 +973,20 @@ export default function FsPage() {
           <section className="min-w-0 flex-1">{detailPanel}</section>
         </div>
       )}
+
+      <ReviewBar
+        items={pendingItems}
+        index={reviewIndex}
+        onIndexChange={(next) => {
+          setReviewIndex(next);
+          const item = pendingItems[next];
+          if (item) focusPending(item);
+        }}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onApproveAll={() => void handleApproveAll()}
+        onRejectAll={() => void handleRejectAll()}
+      />
     </div>
   );
 }
@@ -1047,6 +1204,7 @@ function FeatureEditor({
                     <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">
                       {spec.title}
                     </span>
+                    {isPending(spec) && <NewBadge />}
                     <span className="id-tag shrink-0">{spec.id}</span>
                   </span>
                   {spec.mainFlow.length > 0 && (

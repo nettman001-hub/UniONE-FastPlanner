@@ -35,6 +35,7 @@ src/
     brand.ts                     서비스명·로고 경로
     validate.ts                  정합성 검사 규칙
     fs-tree.ts                   기능명세서 트리 (세 보기가 공유)
+    fs-review.ts                 AI 제안 승인/거절 + 삭제 캐스케이드
     export.ts                    마크다운 / CSV / JSON / Mermaid / 번들
     image-export.ts              SVG / PNG 변환
     share.ts                     보기 전용 링크 인코딩
@@ -54,6 +55,7 @@ src/
     Logo.tsx                     로고 (파일 없으면 이니셜 마크)
     StepNav.tsx                  다음 단계로 버튼
     FsMindmap.tsx                기능명세서 마인드맵 캔버스
+    ReviewBar.tsx                AI 제안 검토 바 · 신규 배지
     AgentPanel.tsx               AI 에이전트 패널
     FlowCanvas.tsx               플로우차트 SVG 렌더러
     WireframeView.tsx            와이어프레임 렌더러
@@ -204,6 +206,24 @@ add({
 `.btn` `.btn-primary` `.btn-ghost` `.btn-sm` `.card` `.input` `.textarea` `.select`
 `.label` `.chip` `.chip-primary` `.chip-ok` `.chip-warn` `.chip-danger`
 `.table-wrap` `.data` `.id-tag` `.section-title` `.empty`
+
+## AI 제안 검토 상태
+
+AI 가 만든 요구사항·기능·상세명세에는 `review: 'pending'` 이 붙습니다.
+
+```ts
+export interface Reviewable {
+  review?: ReviewState;   // 'pending' | 없음
+}
+```
+
+**승인하면 필드를 지웁니다.** 값이 없는 상태가 곧 승인된 상태이므로,
+이 필드가 없던 시절에 저장된 플랜도 마이그레이션 없이 그대로 열립니다.
+사용자가 직접 추가한 항목에는 붙이지 않습니다.
+
+**거절은 삭제입니다.** 그래서 삭제 캐스케이드를 `fs-review.ts` 한 곳에 두고
+스토어의 `removeRequirement` · `removeFeature` · `removeSpecification` 도 같은 함수를 씁니다.
+두 곳에 나눠 두면 한쪽만 고쳐져 정보구조도의 기능 연결이 남는 식으로 어긋납니다.
 
 ## 저장 형식과 마이그레이션
 
