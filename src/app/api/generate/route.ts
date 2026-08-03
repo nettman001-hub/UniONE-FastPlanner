@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateJson, hasApiKey } from '@/lib/ai/client';
+import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { generateLocally } from '@/lib/ai/local-generator';
 import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
 import { buildPrompt } from '@/lib/ai/prompts';
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const useAi = hasApiKey();
+  const useAi = isAiEnabled();
 
   try {
     let draft: unknown;

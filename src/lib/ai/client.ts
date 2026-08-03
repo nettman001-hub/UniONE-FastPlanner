@@ -1,41 +1,67 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT } from './prompts';
+import { resolveProvider, type ProviderConfig } from './provider';
+import { generateJsonWithDeepSeek } from './deepseek';
 
-export const MODEL = 'claude-opus-5';
-
-/** API 키가 있으면 실제 모델을, 없으면 내장 생성기를 쓴다. */
-export function hasApiKey(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
-}
-
-let cached: Anthropic | null = null;
-
-function client(): Anthropic {
-  if (!cached) cached = new Anthropic();
-  return cached;
-}
+export { resolveProvider, isAiEnabled } from './provider';
+export type { ProviderConfig, ProviderId } from './provider';
 
 export interface GenerateOptions {
   prompt: string;
   schema: unknown;
-  /** 결과 분량에 따라 조절한다. */
+  /** 결과 분량에 따라 조절한다. 공급자별 상한으로 한 번 더 조인다. */
   maxTokens?: number;
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 /**
  * 스키마에 맞는 JSON 을 생성한다.
- * 출력이 길어질 수 있으므로 항상 스트리밍으로 호출한다.
+ * 어떤 공급자를 쓰는지는 호출부가 알 필요 없다.
  */
-export async function generateJson<T>({
-  prompt,
-  schema,
-  maxTokens = 32000,
-  effort = 'high',
-}: GenerateOptions): Promise<T> {
-  const stream = client().messages.stream({
-    model: MODEL,
-    max_tokens: maxTokens,
+export async function generateJson<T>(options: GenerateOptions): Promise<T> {
+  const config = resolveProvider();
+
+  if (config.id === 'deepseek') {
+    return generateJsonWithDeepSeek<T>({
+      config,
+      system: SYSTEM_PROMPT,
+      prompt: options.prompt,
+      schema: options.schema,
+      maxTokens: options.maxTokens ?? config.maxOutputTokens,
+    });
+  }
+
+  if (config.id === 'anthropic') {
+    return generateJsonWithClaude<T>(config, options);
+  }
+
+  throw new Error('AI 공급자가 설정되지 않았습니다.');
+}
+
+/* ------------------------------------------------------------------ */
+/* Anthropic                                                            */
+/* ------------------------------------------------------------------ */
+
+let cachedClaude: { key: string; client: Anthropic } | null = null;
+
+function claudeClient(config: ProviderConfig): Anthropic {
+  if (cachedClaude && cachedClaude.key === config.apiKey) return cachedClaude.client;
+  const instance = new Anthropic({
+    apiKey: config.apiKey || undefined,
+    ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
+  });
+  cachedClaude = { key: config.apiKey, client: instance };
+  return instance;
+}
+
+/** 출력이 길어질 수 있으므로 항상 스트리밍으로 호출한다. */
+async function generateJsonWithClaude<T>(
+  config: ProviderConfig,
+  { prompt, schema, maxTokens, effort = 'high' }: GenerateOptions,
+): Promise<T> {
+  const stream = claudeClient(config).messages.stream({
+    model: config.model,
+    max_tokens: Math.min(maxTokens ?? config.maxOutputTokens, config.maxOutputTokens),
     system: SYSTEM_PROMPT,
     thinking: { type: 'adaptive' },
     output_config: {

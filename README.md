@@ -54,24 +54,40 @@ requirements[].features[].specifications 를 구현 단위로 삼아 작업 계�
 
 ```bash
 npm install
-cp .env.example .env.local   # 선택: ANTHROPIC_API_KEY 입력
+cp .env.example .env.local   # DEEPSEEK_API_KEY 입력
+npm run check:ai             # 키·모델·연결 점검
 npm run dev
 ```
 
 http://localhost:3000 에서 열립니다.
 
-### AI 모드 / 내장 생성기 모드
+### AI 공급자
 
-| | AI 모드 | 내장 생성기 모드 |
-| --- | --- | --- |
-| 조건 | `ANTHROPIC_API_KEY` 설정됨 | 키 없음 (기본) |
-| 생성 주체 | Claude (`claude-opus-5`) | 규칙 기반 도메인 템플릿 |
-| AI 에이전트 채팅 | 문서를 실제로 수정 | 문서 현황 요약과 안내만 |
-| 그 외 모든 기능 | 동일 | 동일 |
+`.env.local` 로 정합니다. 키가 없으면 내장 생성기로 동작하며, 앱의 모든 기능은 그대로 쓸 수 있습니다.
 
-키가 없어도 앱은 완전히 동작합니다. 내장 생성기는 아이디어에서 도메인
-(커머스 · 커뮤니티 · 예약 · 교육 · 협업 · 헬스 · 금융 · 일반)을 추정해 그에 맞는 산출물을 만듭니다.
-AI 호출이 실패하면 자동으로 내장 생성기로 넘어가므로 작업 흐름이 끊기지 않습니다.
+```ini
+AI_PROVIDER=deepseek                       # deepseek | anthropic | local
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_BASE_URL=https://api.deepseek.com # OpenAI 호환 엔드포인트
+DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_MAX_TOKENS=8192                   # 응답이 잘리면 올리세요
+```
+
+| | DeepSeek | Anthropic | 내장 생성기 |
+| --- | --- | --- | --- |
+| 조건 | `DEEPSEEK_API_KEY` | `ANTHROPIC_API_KEY` | 키 없음 |
+| JSON 형식 강제 | JSON 모드 + 프롬프트 내 스키마 | 구조화 출력(`output_config.format`) | 해당 없음 |
+| AI 에이전트 채팅 | 문서를 실제로 수정 | 문서를 실제로 수정 | 문서 현황 요약만 |
+| 그 외 모든 기능 | 동일 | 동일 | 동일 |
+
+`AI_PROVIDER` 를 지정하지 않으면 `DEEPSEEK_API_KEY` → `ANTHROPIC_API_KEY` → 내장 생성기 순으로 고릅니다.
+
+내장 생성기는 아이디어에서 도메인(커머스 · 커뮤니티 · 예약 · 교육 · 협업 · 헬스 · 금융 · 일반)을
+추정해 그에 맞는 산출물을 만듭니다. **모델 호출이 실패하면 자동으로 내장 생성기로 넘어가고
+실패 사유를 화면에 알려주므로, 작업 흐름이 끊기지 않습니다.**
+
+`npm run check:ai` 는 실제로 한 번 호출해 보고 키·모델명·잔액·네트워크 중 무엇이 문제인지
+집어서 알려줍니다. 앱을 띄우기 전에 먼저 돌려 보세요.
 
 ---
 
@@ -98,9 +114,11 @@ src/
     image-export.ts              와이어프레임·플로우차트 SVG / PNG
     share.ts                     보기 전용 링크 인코딩
     ai/
-      schemas.ts                 구조화 출력 JSON 스키마
+      provider.ts                공급자 결정 (DeepSeek / Anthropic / 내장)
+      client.ts                  공급자 분기 + Anthropic 어댑터
+      deepseek.ts                DeepSeek 어댑터 (OpenAI 호환 + JSON 모드)
+      schemas.ts                 산출물 JSON 스키마
       prompts.ts                 시스템 프롬프트 · 단계별 컨텍스트 구성
-      client.ts                  Anthropic SDK 래퍼 (스트리밍 + 구조화 출력)
       local-generator.ts         키 없이 동작하는 규칙 기반 생성기
       apply.ts                   초안 → 도메인 객체 (ID 부여 · 참조 검증)
   components/
@@ -117,15 +135,23 @@ src/
   생기는 참조 깨짐을 원천적으로 막습니다.
 - **단계마다 앞 산출물을 컨텍스트로 넘깁니다.** IA를 만들 때는 이미 확정된 기능 ID 목록을
   주고, 그 안에서만 고르게 합니다 (`prompts.ts` → `contextBlock`).
-- **문서는 브라우저에만 저장됩니다.** 서버로 나가는 것은 AI 생성 요청 시점의 문서 내용뿐입니다.
+- **공급자는 갈아 끼울 수 있습니다.** 호출부는 `generateJson({prompt, schema})` 만 알고,
+  DeepSeek 은 JSON 모드로 Anthropic 은 구조화 출력으로 같은 계약을 지킵니다.
+  스키마를 벗어난 값이 와도 `apply.ts` 가 열거형·인덱스·참조를 정규화하므로 파이프라인이 깨지지 않습니다.
+- **문서는 브라우저에만 저장됩니다.** 서버로 나가는 것은 AI 생성 요청 시점의 문서 내용뿐이고,
+  API 키는 서버에만 있습니다.
 
 ---
 
 ## 스크립트
 
 ```bash
-npm run dev     # 개발 서버
-npm run build   # 프로덕션 빌드
-npm run start   # 프로덕션 서버
-npm run lint    # ESLint
+npm run dev       # 개발 서버
+npm run build     # 프로덕션 빌드
+npm run start     # 프로덕션 서버
+npm run lint      # ESLint
+npm run check:ai  # AI 공급자 연결 점검
 ```
+
+> 서버를 켜 둔 채 `npm run build` 를 다시 돌리면 브라우저가 이전 빌드의 청크를 찾다가
+> `Application error` 가 납니다. 빌드 후에는 서버를 재시작하세요.

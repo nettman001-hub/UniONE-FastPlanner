@@ -50,7 +50,7 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const plan = usePlannerStore((s) => s.plans.find((p) => p.id === planId));
   const credits = usePlannerStore((s) => s.credits);
-  const { mode, model } = useAiMode();
+  const { mode, label, model } = useAiMode();
   const [agentOpen, setAgentOpen] = useState(false);
 
   const base = `/plans/${planId}`;
@@ -75,12 +75,12 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
             className={`chip ${mode === 'ai' ? 'chip-primary' : ''}`}
             title={
               mode === 'ai'
-                ? `Claude 모델(${model})로 생성합니다.`
-                : 'ANTHROPIC_API_KEY 가 없어 내장 생성기로 만듭니다.'
+                ? `${label} · ${model} 모델로 생성합니다.`
+                : 'API 키가 없어 내장 생성기로 만듭니다.'
             }
           >
             <Sparkles size={11} />
-            {mode === 'ai' ? 'AI 생성' : mode === 'local' ? '내장 생성기' : '확인 중'}
+            {mode === 'ai' ? label : mode === 'local' ? '내장 생성기' : '확인 중'}
           </span>
           <ClientOnly>
             <span className="chip" title={`하루 ${DAILY_CREDIT_LIMIT} 크레딧이 충전됩니다.`}>

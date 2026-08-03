@@ -6,23 +6,38 @@ import { ARTIFACT_CREDIT_COST, ARTIFACT_LABEL, type ArtifactKey, type Plan, type
 import { useToast } from '@/components/ui';
 
 export type AiMode = 'ai' | 'local' | 'unknown';
+export type ProviderId = 'deepseek' | 'anthropic' | 'local';
 
-/** 헤더 등에서 현재 생성 모드를 보여주기 위한 훅. */
-export function useAiMode(): { mode: AiMode; model: string | null } {
-  const [state, setState] = useState<{ mode: AiMode; model: string | null }>({
-    mode: 'unknown',
-    model: null,
-  });
+export interface AiStatus {
+  mode: AiMode;
+  provider: ProviderId | null;
+  /** 공급자 표시명 (DeepSeek / Claude / 내장 생성기) */
+  label: string;
+  model: string | null;
+}
+
+const UNKNOWN: AiStatus = { mode: 'unknown', provider: null, label: '확인 중', model: null };
+const OFFLINE: AiStatus = { mode: 'local', provider: 'local', label: '내장 생성기', model: null };
+
+/** 헤더 등에서 현재 생성 공급자를 보여주기 위한 훅. */
+export function useAiMode(): AiStatus {
+  const [state, setState] = useState<AiStatus>(UNKNOWN);
 
   useEffect(() => {
     let alive = true;
     fetch('/api/status')
       .then((r) => r.json())
-      .then((data: { mode: AiMode; model: string | null }) => {
-        if (alive) setState({ mode: data.mode, model: data.model });
+      .then((data: Partial<AiStatus>) => {
+        if (!alive) return;
+        setState({
+          mode: data.mode ?? 'local',
+          provider: data.provider ?? 'local',
+          label: data.label ?? OFFLINE.label,
+          model: data.model ?? null,
+        });
       })
       .catch(() => {
-        if (alive) setState({ mode: 'local', model: null });
+        if (alive) setState(OFFLINE);
       });
     return () => {
       alive = false;

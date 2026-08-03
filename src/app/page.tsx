@@ -511,7 +511,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
 export default function HomePage() {
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
-  const { mode, model } = useAiMode();
+  const { mode, label, model } = useAiMode();
 
   const plans = usePlannerStore((s) => s.plans);
   const credits = usePlannerStore((s) => s.credits);
@@ -613,9 +613,10 @@ export default function HomePage() {
             UniONE
           </span>
           {mode === 'ai' && (
-            <span className="chip chip-primary">
+            <span className="chip chip-primary" title={`${label} 로 산출물을 생성합니다.`}>
               <Sparkles size={11} />
-              AI 생성{model ? ` · ${model}` : ''}
+              {label}
+              {model ? ` · ${model}` : ''}
             </span>
           )}
           {mode === 'local' && <span className="chip">내장 생성기</span>}
@@ -664,8 +665,8 @@ export default function HomePage() {
               color: 'var(--warn)',
             }}
           >
-            ANTHROPIC_API_KEY 를 설정하면 Claude 모델이 산출물을 만듭니다. 지금은 내장 생성기로
-            동작합니다.
+            .env.local 에 DEEPSEEK_API_KEY 를 넣으면 DeepSeek 모델이 산출물을 만듭니다. 지금은
+            내장 생성기로 동작합니다.
           </div>
         )}
       </header>

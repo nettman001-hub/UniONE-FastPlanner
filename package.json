@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:ai": "node scripts/check-ai.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
@@ -14,6 +15,7 @@
     "lucide-react": "^1.28.0",
     "nanoid": "^6.0.0",
     "next": "15.5.22",
+    "openai": "^7.3.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "zustand": "^5.0.14"

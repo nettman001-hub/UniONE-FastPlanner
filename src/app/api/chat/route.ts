@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateJson, hasApiKey } from '@/lib/ai/client';
+import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { CHAT_SCHEMA } from '@/lib/ai/schemas';
 import { buildChatPrompt } from '@/lib/ai/prompts';
 import { draftToPatch } from '@/lib/ai/apply';
@@ -47,7 +47,7 @@ function offlineReply(plan: Plan, message: string): { reply: string; changes: st
   }
 
   lines.push(
-    `요청하신 내용("${message.slice(0, 40)}${message.length > 40 ? '…' : ''}")을 문서에 자동 반영하려면 ANTHROPIC_API_KEY 를 설정해 AI 모드를 켜 주세요. 지금은 내장 생성기 모드라 문서 편집은 각 탭에서 직접 하실 수 있습니다.`,
+    `요청하신 내용("${message.slice(0, 40)}${message.length > 40 ? '…' : ''}")을 문서에 자동 반영하려면 .env.local 에 DEEPSEEK_API_KEY 를 설정해 AI 모드를 켜 주세요. 지금은 내장 생성기 모드라 문서 편집은 각 탭에서 직접 하실 수 있습니다.`,
   );
 
   return { reply: lines.join('\n\n'), changes: [] };
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '메시지를 입력해 주세요.' }, { status: 400 });
   }
 
-  if (!hasApiKey()) {
+  if (!isAiEnabled()) {
     return NextResponse.json({ ...offlineReply(plan, message), source: 'local' });
   }
 
@@ -97,7 +97,14 @@ export async function POST(request: Request) {
       source: 'ai',
     });
   } catch (error) {
-    const message2 = error instanceof Error ? error.message : '응답 생성에 실패했습니다.';
-    return NextResponse.json({ error: message2 }, { status: 500 });
+    // 모델 호출이 실패해도 대화가 끊기지 않도록, 이유를 밝히고 문서 현황이라도 돌려준다.
+    const reason = error instanceof Error ? error.message : '응답 생성에 실패했습니다.';
+    const fallback = offlineReply(plan, message);
+    return NextResponse.json({
+      reply: `${reason}\n\n대신 지금 문서 상태를 정리해 드립니다.\n\n${fallback.reply}`,
+      changes: [],
+      source: 'local',
+      warning: reason,
+    });
   }
 }
