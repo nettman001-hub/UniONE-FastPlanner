@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   Bot,
   ChevronLeft,
@@ -74,7 +74,16 @@ function PlanShell({ children }: { children: ReactNode }) {
     resume,
     discardInterrupted,
   } = useGenerate(plan);
-  const [agentOpen, setAgentOpen] = useState(false);
+  /**
+   * 에이전트 패널 상태는 스토어에 둔다.
+   *
+   * 여기(컴포넌트)에 두면 이 레이아웃이 다시 그려질 때마다 닫힌 상태로 되돌아간다.
+   * 대화를 시켜 놓고 다른 문서를 보러 가는 것이 정상적인 사용 방식이므로,
+   * 그때 패널이 닫히면 진행 상황을 볼 방법이 사라진다.
+   */
+  const agentOpen = usePlannerStore((s) => s.agentOpen);
+  const setAgentOpen = usePlannerStore((s) => s.setAgentOpen);
+  const agentBusy = usePlannerStore((s) => s.agentBusy === planId);
 
   const base = `/plans/${planId}`;
 
@@ -109,9 +118,11 @@ function PlanShell({ children }: { children: ReactNode }) {
           </ClientOnly>
           <button
             className={agentOpen ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
-            onClick={() => setAgentOpen((v) => !v)}
+            onClick={() => setAgentOpen(!agentOpen)}
+            title={agentBusy ? '에이전트가 답변을 만드는 중입니다' : 'AI 에이전트'}
           >
-            <Bot size={14} />
+            {/* 패널을 닫아 두었을 때도 답변을 기다리는 중이라는 것이 보여야 한다. */}
+            {agentBusy ? <Spinner size={14} /> : <Bot size={14} />}
             <span className="hidden md:inline">AI 에이전트</span>
           </button>
           <UserMenu />
