@@ -621,9 +621,13 @@ export default function HomePage() {
           )}
           {mode === 'local' && <span className="chip">내장 생성기</span>}
           <ClientOnly>
-            <span className="chip">
+            <span
+              className="chip"
+              title={`하루 ${DAILY_CREDIT_LIMIT} 크레딧이 충전됩니다. 임시로 열어 둔 한도입니다.`}
+            >
               <Coins size={11} />
               크레딧 {credits}/{DAILY_CREDIT_LIMIT}
+              <span className="font-normal text-[var(--fg-subtle)]">(임시)</span>
             </span>
           </ClientOnly>
         </div>

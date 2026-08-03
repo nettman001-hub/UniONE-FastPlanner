@@ -83,9 +83,13 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
             {mode === 'ai' ? label : mode === 'local' ? '내장 생성기' : '확인 중'}
           </span>
           <ClientOnly>
-            <span className="chip" title={`하루 ${DAILY_CREDIT_LIMIT} 크레딧이 충전됩니다.`}>
+            <span
+              className="chip"
+              title={`하루 ${DAILY_CREDIT_LIMIT} 크레딧이 충전됩니다. 임시로 열어 둔 한도입니다.`}
+            >
               <Zap size={11} />
               {credits} / {DAILY_CREDIT_LIMIT}
+              <span className="font-normal text-[var(--fg-subtle)]">(임시)</span>
             </span>
           </ClientOnly>
           <button

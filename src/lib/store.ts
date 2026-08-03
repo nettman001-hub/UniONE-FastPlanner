@@ -24,8 +24,16 @@ import {
 
 const STORAGE_KEY = 'unione-fastplaner:v1';
 
-/** STARTER 플랜 기준 일일 크레딧 */
-export const DAILY_CREDIT_LIMIT = 60;
+/**
+ * 일일 무료 크레딧.
+ *
+ * 임시로 넉넉하게 열어 둔 값이다. 정식 요금제를 붙일 때 플랜별 한도로 바꾼다.
+ * 화면에는 "(임시)" 표기를 함께 노출한다.
+ */
+export const DAILY_CREDIT_LIMIT = 200;
+
+/** 한도가 바뀌면 이 값을 올린다 — 저장된 잔량이 옛 한도에 묶이지 않도록. */
+const CREDIT_POLICY_VERSION = 2;
 
 export interface PlannerState {
   plans: Plan[];
@@ -503,18 +511,33 @@ export const usePlannerStore = create<PlannerState>()(
     {
       name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
+      version: CREDIT_POLICY_VERSION,
       partialize: (state) => ({
         plans: state.plans,
         credits: state.credits,
         creditResetAt: state.creditResetAt,
       }),
+      /**
+       * 한도가 바뀌면 저장된 잔량은 옛 한도 기준이라 그대로 쓸 수 없다.
+       * 플랜은 그대로 두고 크레딧만 새 한도로 채운다.
+       */
+      migrate: (persisted) => {
+        const previous = (persisted ?? {}) as Partial<PlannerState>;
+        return {
+          ...previous,
+          credits: DAILY_CREDIT_LIMIT,
+          creditResetAt: todayKey(),
+        } as PlannerState;
+      },
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        // 날짜가 지났으면 크레딧을 재충전한다.
+        // 날짜가 지났으면 재충전한다.
         if (state.creditResetAt !== todayKey()) {
           state.credits = DAILY_CREDIT_LIMIT;
           state.creditResetAt = todayKey();
         }
+        // 한도를 낮춘 경우 잔량이 한도를 넘지 않게 맞춘다.
+        if (state.credits > DAILY_CREDIT_LIMIT) state.credits = DAILY_CREDIT_LIMIT;
         state.hydrated = true;
       },
     },
