@@ -34,6 +34,7 @@ src/
     store.ts                     zustand 스토어 + 영속화
     brand.ts                     서비스명·로고 경로
     validate.ts                  정합성 검사 규칙
+    fs-tree.ts                   기능명세서 트리 (세 보기가 공유)
     export.ts                    마크다운 / CSV / JSON / Mermaid / 번들
     image-export.ts              SVG / PNG 변환
     share.ts                     보기 전용 링크 인코딩
@@ -52,6 +53,7 @@ src/
     ui.tsx                       토스트·모달·인라인 편집기·리스트 편집기
     Logo.tsx                     로고 (파일 없으면 이니셜 마크)
     StepNav.tsx                  다음 단계로 버튼
+    FsMindmap.tsx                기능명세서 마인드맵 캔버스
     AgentPanel.tsx               AI 에이전트 패널
     FlowCanvas.tsx               플로우차트 SVG 렌더러
     WireframeView.tsx            와이어프레임 렌더러
