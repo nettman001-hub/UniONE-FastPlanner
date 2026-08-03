@@ -51,6 +51,19 @@ export interface PlannerState {
   creditResetAt: string;
   hydrated: boolean;
 
+  /**
+   * 생성 진행 상태 — `planId:artifact` 형태.
+   *
+   * 화면 컴포넌트가 아니라 스토어에 두는 이유: 생성 중에 사이드바로 다른 메뉴에
+   * 넘어가면 그 페이지가 언마운트되면서 지역 상태가 사라져, 요청은 계속 도는데
+   * 화면에는 멈춘 것처럼 보였다. 스토어에 두면 어느 화면에서도 같은 상태를 본다.
+   *
+   * **저장하지 않는다.** 생성 도중 탭이 닫히면 영원히 진행 중으로 남기 때문이다.
+   */
+  generating: string[];
+  /** 전체 자동 생성이 돌고 있는 플랜. 같은 이유로 스토어에 둔다. */
+  autoRunPlanId: string | null;
+
   /* 플랜 */
   createPlan: (brief: PlanBrief) => string;
   importPlan: (plan: Plan) => string;
@@ -65,6 +78,12 @@ export interface PlannerState {
 
   /* 산출물 일괄 반영 */
   applyDocuments: (planId: string, patch: Partial<PlanDocuments>, generated?: ArtifactKey[]) => void;
+
+  /* 생성 진행 상태 */
+  /** 자리를 잡는다. 그 플랜이 이미 무언가 생성 중이면 false — 중복 실행·이중 과금을 막는다. */
+  beginGenerate: (planId: string, artifact: ArtifactKey) => boolean;
+  endGenerate: (planId: string, artifact: ArtifactKey) => void;
+  setAutoRun: (planId: string | null) => void;
 
   /* PRD */
   updatePrd: (planId: string, patch: Partial<Prd>) => void;
@@ -180,6 +199,8 @@ export const usePlannerStore = create<PlannerState>()(
         credits: DAILY_CREDIT_LIMIT,
         creditResetAt: todayKey(),
         hydrated: false,
+        generating: [],
+        autoRunPlanId: null,
 
         createPlan: (brief) => {
           const plan = createEmptyPlan(brief);
@@ -217,6 +238,21 @@ export const usePlannerStore = create<PlannerState>()(
         refillCredits: () => set({ credits: DAILY_CREDIT_LIMIT, creditResetAt: todayKey() }),
 
         costOf: (artifact) => ARTIFACT_CREDIT_COST[artifact],
+
+        beginGenerate: (planId, artifact) => {
+          const key = `${planId}:${artifact}`;
+          // 한 플랜에서 동시에 두 산출물을 만들지 않는다 — 앞 단계 결과를 컨텍스트로 쓰기 때문.
+          if (get().generating.some((k) => k.startsWith(`${planId}:`))) return false;
+          set((state) => ({ generating: [...state.generating, key] }));
+          return true;
+        },
+
+        endGenerate: (planId, artifact) =>
+          set((state) => ({
+            generating: state.generating.filter((k) => k !== `${planId}:${artifact}`),
+          })),
+
+        setAutoRun: (planId) => set({ autoRunPlanId: planId }),
 
         applyDocuments: (planId, patch, generated) =>
           mutate(planId, (plan) => {

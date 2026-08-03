@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { AgentPanel } from '@/components/AgentPanel';
 import { Logo } from '@/components/Logo';
-import { ClientOnly } from '@/components/ui';
+import { ClientOnly, Spinner } from '@/components/ui';
 import { DAILY_CREDIT_LIMIT, usePlannerStore } from '@/lib/store';
 import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
 
@@ -49,6 +49,14 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const plan = usePlannerStore((s) => s.plans.find((p) => p.id === planId));
   const credits = usePlannerStore((s) => s.credits);
+  /**
+   * 지금 생성 중인 산출물. 사이드바에 표시해, 생성 중에 다른 메뉴로 옮겨 가도
+   * 진행 중이라는 사실이 보이게 한다.
+   */
+  const generating = usePlannerStore((s) => s.generating);
+  const generatingArtifact = generating
+    .find((key) => key.startsWith(`${planId}:`))
+    ?.slice(planId.length + 1) as ArtifactKey | undefined;
   const [agentOpen, setAgentOpen] = useState(false);
 
   const base = `/plans/${planId}`;
@@ -108,13 +116,19 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
               >
                 <span className="shrink-0">{item.icon}</span>
                 <span className="flex-1 truncate">{item.label}</span>
-                {done !== undefined && (
-                  <span
-                    className={`size-1.5 shrink-0 rounded-full ${
-                      done ? 'bg-[var(--ok)]' : 'bg-[var(--border-strong)]'
-                    }`}
-                    title={done ? '생성 완료' : '미생성'}
-                  />
+                {item.artifact && generatingArtifact === item.artifact ? (
+                  <span className="shrink-0 text-[var(--primary)]" title="생성 중입니다">
+                    <Spinner size={12} />
+                  </span>
+                ) : (
+                  done !== undefined && (
+                    <span
+                      className={`size-1.5 shrink-0 rounded-full ${
+                        done ? 'bg-[var(--ok)]' : 'bg-[var(--border-strong)]'
+                      }`}
+                      title={done ? '생성 완료' : '미생성'}
+                    />
+                  )
                 )}
               </Link>
             );
@@ -134,7 +148,11 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
                   active ? 'text-[var(--primary)]' : 'text-[var(--fg-muted)]'
                 }`}
               >
-                {item.icon}
+                {item.artifact && generatingArtifact === item.artifact ? (
+                  <Spinner size={14} />
+                ) : (
+                  item.icon
+                )}
                 <span className="whitespace-nowrap">{item.label}</span>
               </Link>
             );

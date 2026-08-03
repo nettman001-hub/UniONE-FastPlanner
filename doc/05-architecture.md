@@ -40,7 +40,7 @@ src/
     image-export.ts              SVG / PNG 변환
     share.ts                     보기 전용 링크 인코딩
     selection.ts                 AI 에이전트 대상 항목 선택
-    useGenerate.ts               생성 훅 + 공급자 상태 훅
+    useGenerate.ts               생성 훅 (진행 상태는 스토어) + 공급자 상태 훅
     ids.ts                       REQ-001 같은 ID 발급 규칙
     ai/
       provider.ts                공급자 결정
@@ -206,6 +206,19 @@ add({
 `.btn` `.btn-primary` `.btn-ghost` `.btn-sm` `.card` `.input` `.textarea` `.select`
 `.label` `.chip` `.chip-primary` `.chip-ok` `.chip-warn` `.chip-danger`
 `.table-wrap` `.data` `.id-tag` `.section-title` `.empty`
+
+## 생성 진행 상태를 스토어에 두는 이유
+
+`generating: string[]`(`planId:artifact`)과 `autoRunPlanId` 는 스토어에 있습니다.
+화면 컴포넌트의 `useState` 로 두면 생성 중에 사이드바로 다른 메뉴에 넘어갈 때
+그 페이지가 언마운트되면서 진행 표시가 사라져, **요청은 도는데 멈춘 것처럼 보입니다.**
+
+두 값은 **저장하지 않습니다**(`partialize` 제외). 생성 도중 탭이 닫히면
+영원히 진행 중으로 남기 때문입니다.
+
+`generate()` 는 보낼 문서를 **호출 직전에 `getState()` 로 읽습니다.**
+클로저에 담긴 스냅샷을 보내면 앞 단계 결과가 빠진 채 나가고,
+전체 자동 생성 중 화면을 옮기면 정보구조도 차례에 409 로 파이프라인이 끊겼습니다.
 
 ## AI 제안 검토 상태
 

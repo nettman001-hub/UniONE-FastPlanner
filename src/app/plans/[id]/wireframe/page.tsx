@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { EmptyState, InlineText, ListEditor, Modal, Spinner, useConfirm } from '@/components/ui';
 import { WireframeView } from '@/components/WireframeView';
+import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
@@ -310,21 +311,25 @@ export default function WireframePage() {
           </p>
         </header>
         <div className="card">
-          <EmptyState
-            icon={<MonitorSmartphone size={26} />}
-            title="아직 와이어프레임이 없습니다"
-            description={
-              canGenerate
-                ? '정보구조도의 화면을 골라 블록 구성을 한 번에 만들어 드립니다. 빈 화면을 추가해 직접 그릴 수도 있습니다.'
-                : '정보구조도가 없어 와이어프레임을 만들 수 없습니다. 정보구조도를 먼저 만들어 주세요.'
-            }
-            action={
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {generateButton}
-                {canGenerate && addBlankControl}
-              </div>
-            }
-          />
+          {pending === 'wireframe' ? (
+            <GeneratingState artifact="wireframe" />
+          ) : (
+            <EmptyState
+              icon={<MonitorSmartphone size={26} />}
+              title="아직 와이어프레임이 없습니다"
+              description={
+                canGenerate
+                  ? '정보구조도의 화면을 골라 블록 구성을 한 번에 만들어 드립니다. 빈 화면을 추가해 직접 그릴 수도 있습니다.'
+                  : '정보구조도가 없어 와이어프레임을 만들 수 없습니다. 정보구조도를 먼저 만들어 주세요.'
+              }
+              action={
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {generateButton}
+                  {canGenerate && addBlankControl}
+                </div>
+              }
+            />
+          )}
         </div>
       </div>
     );

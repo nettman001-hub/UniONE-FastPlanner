@@ -161,8 +161,15 @@ function PlanOverview() {
   const { generate, pending } = useGenerate(plan);
 
   const [briefOpen, setBriefOpen] = useState(false);
-  const [autoStep, setAutoStep] = useState<ArtifactKey | null>(null);
-  const [running, setRunning] = useState(false);
+  /**
+   * 전체 자동 생성 진행 여부는 스토어에서 읽는다.
+   * 생성 중에 다른 메뉴로 갔다가 돌아와도 진행 상태가 그대로 보인다.
+   */
+  const autoRunPlanId = usePlannerStore((s) => s.autoRunPlanId);
+  const setAutoRun = usePlannerStore((s) => s.setAutoRun);
+  const running = autoRunPlanId === planId;
+  /** 자동 생성이 지금 어느 단계인지는 pending 이 알려 준다. */
+  const autoStep = running ? pending : null;
   const [versionOpen, setVersionOpen] = useState(false);
   const [versionLabel, setVersionLabel] = useState('');
   const [commentBody, setCommentBody] = useState('');
@@ -225,10 +232,9 @@ function PlanOverview() {
       if (!ok) return;
     }
 
-    setRunning(true);
+    setAutoRun(planId);
     try {
       for (const key of STEP_ORDER) {
-        setAutoStep(key);
         await tick();
         const ok = await generateRef.current(key);
         if (!ok) {
@@ -239,8 +245,7 @@ function PlanOverview() {
       }
       toast('5종 산출물을 모두 생성했습니다.', 'ok');
     } finally {
-      setAutoStep(null);
-      setRunning(false);
+      setAutoRun(null);
     }
   };
 
