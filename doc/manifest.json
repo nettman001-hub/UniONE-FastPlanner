@@ -43,6 +43,12 @@
       "file": "06-troubleshooting.md",
       "title": "문제 해결",
       "summary": "자주 겪는 오류와 해결법, 개발 도구 마크 안내"
+    },
+    {
+      "slug": "deploy",
+      "file": "07-deploy.md",
+      "title": "배포",
+      "summary": "Vercel 배포, 환경변수, 도메인 연결, 요금"
     }
   ]
 }
