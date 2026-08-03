@@ -1,4 +1,4 @@
-# 7. 배포 (Vercel + 도메인 연결)
+# 3. 배포 (Vercel + 도메인 연결)
 
 이 앱을 인터넷에 올려 다른 사람도 쓰게 하는 방법입니다.
 
@@ -141,7 +141,7 @@ postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.
 
 표는 서버가 처음 뜰 때 자동으로 만들어집니다. SQL 을 직접 실행할 필요가 없습니다.
 
-자세한 내용은 [계정과 데이터 저장](./08-accounts.md) 을 보세요.
+자세한 내용은 [계정과 데이터 저장](./06-accounts.md) 을 보세요.
 
 ---
 
@@ -255,4 +255,4 @@ DeepSeek API 요금은 Vercel 과 별개로 DeepSeek 쪽에 청구됩니다.
 | 도메인이 안 붙음 | DNS 반영 대기 중이거나 레코드 값 오타. Vercel Domains 화면의 안내 문구 확인 |
 | AI 생성이 계속 내장 생성기로 넘어감 | 화면에 표시되는 실패 사유 확인. 키 잔액·모델명 문제가 대부분입니다 |
 
-저장소 안에서 실행하는 점검은 [6. 문제 해결](./06-troubleshooting.md) 을 보세요.
+저장소 안에서 실행하는 점검은 [6. 문제 해결](./05-troubleshooting.md) 을 보세요.

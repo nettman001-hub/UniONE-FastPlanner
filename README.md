@@ -6,9 +6,12 @@
 [docs.manyfast.io/plan/plan](https://docs.manyfast.io/plan/plan) 의 "기획하기" 워크플로를 분석해
 동일한 기능을 수행하도록 만든 웹 애플리케이션입니다.
 
-> **자세한 사용 설명서는 [`doc/`](./doc/README.md) 폴더에 있습니다.**
-> 설치·화면별 사용법·AI 설정·내보내기·구조·문제 해결·배포·계정을 8개 문서로 나누어 정리했습니다.
-> 앱을 띄운 뒤 **`/docs`** 에서도 같은 내용을 읽을 수 있습니다.
+> 문서는 두 갈래입니다.
+>
+> | 대상 | 위치 | 내용 |
+> | --- | --- | --- |
+> | **서비스를 쓰는 사람** | [`doc/`](./doc/README.md) | 사용설명서 8종. 앱의 **`/docs`** 화면에 그대로 나옵니다 |
+> | **설치·배포·운영하는 사람** | [`doc/dev/`](./doc/dev/README.md) | 설치, 구조, 배포, AI 설정, 운영 |
 
 ---
 
@@ -118,7 +121,7 @@ src/
       prd/ fs/ ia/ flow/ wireframe/ export/
     share/page.tsx               보기 전용 공유 (URL 해시에서 문서를 읽음)
     login/page.tsx               로그인 · 회원가입
-    docs/                        설명서 — doc/ 마크다운을 빌드 때 읽어 정적 생성
+    docs/                        사용설명서 — doc/ 마크다운을 빌드 때 읽어 정적 생성
     api/
       generate/route.ts          생성 — 결과를 NDJSON 으로 흘려보냄
       chat/route.ts              AI 에이전트 대화 + 문서 패치
@@ -204,5 +207,5 @@ npm run check:ai  # AI 공급자 연결 점검
 권장은 **Vercel** 입니다. 저장소를 연결하고 환경변수만 넣으면 되고,
 쓰던 도메인은 DNS 만 바꿔 그대로 붙일 수 있습니다.
 
-단계별 안내는 [`doc/07-deploy.md`](./doc/07-deploy.md) 를 보세요.
+단계별 안내는 [`doc/dev/03-deploy.md`](./doc/dev/03-deploy.md) 를 보세요.
 환경변수 이름, Fluid compute 설정, 도메인 레코드, 요금까지 정리해 두었습니다.
