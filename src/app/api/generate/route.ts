@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { after } from 'next/server';
-import { enqueue, precondition } from '@/lib/jobs/queue';
-import { ARTIFACT_CREDIT_COST, type ArtifactKey, type Plan } from '@/lib/types';
+import { precondition, runPipeline } from '@/lib/jobs/queue';
+import type { ArtifactKey, Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -23,10 +22,10 @@ interface GenerateBody {
 }
 
 /**
- * 생성 작업을 맡긴다.
+ * 산출물을 만들며 결과를 **한 줄에 하나씩(NDJSON) 흘려보낸다.**
  *
- * 결과를 기다리지 않고 작업 번호만 돌려준다. 브라우저는 `/api/jobs/{id}` 로
- * 받아 가며, 탭을 닫아도 서버는 끝까지 만든다.
+ * 브라우저는 단계가 끝나는 대로 받아 문서에 반영하므로, 5단계가 다 끝나기를 기다리지
+ * 않는다. 창을 닫으면 연결이 끊기고 서버는 다음 단계로 넘어가지 않는다.
  */
 export async function POST(request: Request) {
   let body: GenerateBody;
@@ -46,28 +45,51 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '플랜 정보가 없습니다.' }, { status: 400 });
   }
 
-  // 첫 단계는 지금 바로 판단할 수 있다. 뒤 단계는 앞 결과에 달렸으므로 작업 안에서 본다.
+  // 첫 단계는 지금 바로 판단할 수 있다. 뒤 단계는 앞 결과에 달렸으므로 흐름 안에서 본다.
   const blocked = precondition(plan, artifacts[0]);
   if (blocked) {
     const status = plan.brief?.idea?.trim() ? 409 : 400;
     return NextResponse.json({ error: blocked }, { status });
   }
 
-  const cost = artifacts.reduce((sum, a) => sum + ARTIFACT_CREDIT_COST[a], 0);
-  const { job, running } = await enqueue(plan.id, plan, artifacts, cost, {
-    extra: body.extra,
-    pageIds: body.pageIds,
-    merge: body.merge,
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const event of runPipeline(
+          plan,
+          artifacts,
+          { extra: body.extra, pageIds: body.pageIds, merge: body.merge },
+          request.signal,
+        )) {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        }
+      } catch (error) {
+        // 연결이 끊긴 뒤의 쓰기 실패는 정상 종료로 본다.
+        if (!request.signal.aborted) {
+          const message = error instanceof Error ? error.message : '생성 중 오류가 발생했습니다.';
+          try {
+            controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'error', message })}\n`));
+          } catch {
+            /* 이미 닫힌 스트림 */
+          }
+        }
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          /* 이미 닫힌 스트림 */
+        }
+      }
+    },
   });
 
-  /*
-   * 응답을 보낸 뒤에도 실행이 살아 있어야 한다.
-   * 서버리스에서는 응답과 함께 인스턴스가 얼어붙을 수 있어 after() 로 붙잡아 둔다.
-   * 일반 Node 서버에서는 없어도 돌지만, 두 환경에서 같게 동작하도록 항상 건다.
-   */
-  after(async () => {
-    await running;
+  return new Response(stream, {
+    headers: {
+      'content-type': 'application/x-ndjson; charset=utf-8',
+      'cache-control': 'no-store, no-transform',
+      // 프록시가 스트림을 모아서 한 번에 보내지 않도록.
+      'x-accel-buffering': 'no',
+    },
   });
-
-  return NextResponse.json({ jobId: job.id, status: job.status }, { status: 202 });
 }

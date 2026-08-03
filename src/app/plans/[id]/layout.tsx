@@ -18,7 +18,6 @@ import {
 import { AgentPanel } from '@/components/AgentPanel';
 import { Logo } from '@/components/Logo';
 import { ClientOnly, Spinner } from '@/components/ui';
-import { JobWatcher } from '@/components/JobWatcher';
 import { ResumeBanner } from '@/components/ResumeBanner';
 import { DAILY_CREDIT_LIMIT, usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
@@ -56,7 +55,12 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
    * 지금 생성 중인 산출물. 사이드바에 표시해, 생성 중에 다른 메뉴로 옮겨 가도
    * 진행 중이라는 사실이 보이게 한다. 상태는 서버 작업에서 온다.
    */
-  const { pending: generatingArtifact, pausedJob, resume, discardPaused } = useGenerate(plan);
+  const {
+    pending: generatingArtifact,
+    interrupted,
+    resume,
+    discardInterrupted,
+  } = useGenerate(plan);
   const [agentOpen, setAgentOpen] = useState(false);
 
   const base = `/plans/${planId}`;
@@ -97,15 +101,12 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {/* 서버 큐를 확인해 끝난 결과를 받아 온다. 화면 어디에 있든 하나만 돈다. */}
-      <JobWatcher planId={planId} />
-
-      {/* 창을 닫아 멈춘 전체 자동 생성이 있으면 어느 화면에서든 이어 갈 수 있게 한다. */}
-      {pausedJob && (
+      {/* 중간에 끊긴 전체 자동 생성이 있으면 어느 화면에서든 이어 갈 수 있게 한다. */}
+      {interrupted && (
         <ResumeBanner
-          job={pausedJob}
+          run={interrupted}
           onResume={() => void resume()}
-          onDiscard={() => void discardPaused()}
+          onDiscard={discardInterrupted}
         />
       )}
 
