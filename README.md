@@ -40,6 +40,7 @@
 | **이미지** | 와이어프레임과 플로우차트를 SVG·PNG로 (디자인 전달용) |
 | **공유** | 문서를 링크에 담아 전달하는 보기 전용 페이지 — 서버를 거치지 않음 |
 | **협업** | 항목별 코멘트와 해결 처리, 버전 스냅샷 저장/복원 |
+| **작업 큐** | 생성이 서버에서 돌아 탭을 닫아도 끝까지 진행. 돌아오면 결과를 받아 옵니다 |
 | **크레딧** | 산출물별 크레딧 차감, 매일 자동 충전 (현재 하루 200 — 임시 한도) |
 
 ### 코딩 에이전트 연동
@@ -115,7 +116,9 @@ src/
       prd/ fs/ ia/ flow/ wireframe/ export/
     share/page.tsx               보기 전용 공유 (URL 해시에서 문서를 읽음)
     api/
-      generate/route.ts          산출물 생성 (AI 또는 내장 생성기)
+      generate/route.ts          생성 작업 접수 (202 + jobId)
+      jobs/route.ts              플랜의 작업 목록
+      jobs/[id]/route.ts         작업 진행 상태
       chat/route.ts              AI 에이전트 대화 + 문서 패치
       status/route.ts            현재 생성 모드
   lib/
@@ -124,6 +127,7 @@ src/
     validate.ts                  정합성 검사 규칙
     fs-tree.ts                   기능명세서 트리 (마인드맵·리스트·표 공유)
     fs-review.ts                 AI 제안 승인/거절 + 삭제 캐스케이드
+    jobs/                        생성 작업 큐 (저장소 · 실행 · 진행 사본)
     export.ts                    마크다운 / CSV / JSON / Mermaid / 에이전트 번들
     image-export.ts              와이어프레임·플로우차트 SVG / PNG
     share.ts                     보기 전용 링크 인코딩
@@ -139,6 +143,7 @@ src/
     ui.tsx                       토스트 · 모달 · 인라인 편집기 · 리스트 편집기
     FsMindmap.tsx                기능명세서 마인드맵 캔버스
     ReviewBar.tsx                AI 제안 검토 바 · 신규 배지
+    JobWatcher.tsx               서버 큐 확인 · 결과 반영
     AgentPanel.tsx               AI 에이전트 패널
     FlowCanvas.tsx               플로우차트 SVG 렌더러
     WireframeView.tsx            와이어프레임 렌더러
@@ -154,6 +159,9 @@ src/
 - **공급자는 갈아 끼울 수 있습니다.** 호출부는 `generateJson({prompt, schema})` 만 알고,
   DeepSeek 은 JSON 모드로 Anthropic 은 구조화 출력으로 같은 계약을 지킵니다.
   스키마를 벗어난 값이 와도 `apply.ts` 가 열거형·인덱스·참조를 정규화하므로 파이프라인이 깨지지 않습니다.
+- **생성은 서버 큐에서 돕니다.** 브라우저는 작업을 맡기고(`202 jobId`) 결과를 가지러 옵니다.
+  화면을 옮기거나 탭을 닫아도 끊기지 않고, 전체 자동 생성 5단계는 서버가 이어서 돕니다.
+  실패하면 못 만든 단계만큼 크레딧을 돌려줍니다.
 - **문서는 브라우저에만 저장됩니다.** 서버로 나가는 것은 AI 생성 요청 시점의 문서 내용뿐이고,
   API 키는 서버에만 있습니다.
 

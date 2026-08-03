@@ -26,7 +26,9 @@ src/
       prd/ fs/ ia/ flow/ wireframe/ export/
     share/page.tsx               보기 전용 공유
     api/
-      generate/route.ts          산출물 생성
+      generate/route.ts          생성 작업 접수 (202 + jobId)
+      jobs/route.ts              플랜의 작업 목록
+      jobs/[id]/route.ts         작업 진행 상태
       chat/route.ts              AI 에이전트 대화 + 문서 패치
       status/route.ts            현재 공급자 상태
   lib/
@@ -36,11 +38,14 @@ src/
     validate.ts                  정합성 검사 규칙
     fs-tree.ts                   기능명세서 트리 (세 보기가 공유)
     fs-review.ts                 AI 제안 승인/거절 + 삭제 캐스케이드
+    jobs/store.ts                작업 저장소 (메모리 / 파일)
+    jobs/queue.ts                작업 실행 — 5단계를 서버가 이어서 돈다
+    jobs/progress.ts             브라우저가 들고 있는 진행 사본
     export.ts                    마크다운 / CSV / JSON / Mermaid / 번들
     image-export.ts              SVG / PNG 변환
     share.ts                     보기 전용 링크 인코딩
     selection.ts                 AI 에이전트 대상 항목 선택
-    useGenerate.ts               생성 훅 (진행 상태는 스토어) + 공급자 상태 훅
+    useGenerate.ts               생성 훅 (작업을 큐에 맡긴다) + 공급자 상태 훅
     ids.ts                       REQ-001 같은 ID 발급 규칙
     ai/
       provider.ts                공급자 결정
@@ -56,6 +61,8 @@ src/
     StepNav.tsx                  다음 단계로 버튼
     FsMindmap.tsx                기능명세서 마인드맵 캔버스
     ReviewBar.tsx                AI 제안 검토 바 · 신규 배지
+    JobWatcher.tsx               서버 큐 확인 · 결과 반영
+    GeneratingState.tsx          생성 중 안내
     AgentPanel.tsx               AI 에이전트 패널
     FlowCanvas.tsx               플로우차트 SVG 렌더러
     WireframeView.tsx            와이어프레임 렌더러
@@ -207,18 +214,66 @@ add({
 `.label` `.chip` `.chip-primary` `.chip-ok` `.chip-warn` `.chip-danger`
 `.table-wrap` `.data` `.id-tag` `.section-title` `.empty`
 
-## 생성 진행 상태를 스토어에 두는 이유
+## 생성 작업 큐
 
-`generating: string[]`(`planId:artifact`)과 `autoRunPlanId` 는 스토어에 있습니다.
-화면 컴포넌트의 `useState` 로 두면 생성 중에 사이드바로 다른 메뉴에 넘어갈 때
-그 페이지가 언마운트되면서 진행 표시가 사라져, **요청은 도는데 멈춘 것처럼 보입니다.**
+생성은 **서버 큐에서 돕니다.** 브라우저는 작업을 맡기고 결과를 가지러 올 뿐이라,
+화면을 옮기거나 탭을 닫아도 작업이 끊기지 않습니다.
 
-두 값은 **저장하지 않습니다**(`partialize` 제외). 생성 도중 탭이 닫히면
-영원히 진행 중으로 남기 때문입니다.
+```
+브라우저                         서버
+   │  POST /api/generate          │
+   │  { artifacts, plan }         │
+   │ ───────────────────────────▶ │  작업 등록
+   │ ◀─────────────────────────── │  202 { jobId }   ← 곧바로 응답
+   │                              │
+   │                              │  ① PRD → ② 기능명세서 → ③ 정보구조도
+   │                              │  → ④ 유저 플로우 → ⑤ 와이어프레임
+   │                              │  앞 단계 결과를 서버 사본에 반영해
+   │                              │  다음 단계 컨텍스트로 넘긴다
+   │  GET /api/jobs/{id}          │
+   │ ───────────────────────────▶ │
+   │ ◀─────────────────────────── │  { status, current, done, patch }
+   │  스토어에 반영                 │
+```
 
-`generate()` 는 보낼 문서를 **호출 직전에 `getState()` 로 읽습니다.**
-클로저에 담긴 스냅샷을 보내면 앞 단계 결과가 빠진 채 나가고,
-전체 자동 생성 중 화면을 옮기면 정보구조도 차례에 409 로 파이프라인이 끊겼습니다.
+| 경로 | 하는 일 |
+| --- | --- |
+| `POST /api/generate` | 작업을 맡기고 `202 { jobId }` 를 곧바로 돌려줍니다 |
+| `GET /api/jobs/{id}` | 그 작업의 진행 상태와 누적 결과 |
+| `GET /api/jobs?planId=` | 그 플랜에 남아 있는 작업 — 화면을 다시 열 때 찾습니다 |
+
+### 전체 자동 생성은 한 작업입니다
+
+5단계를 **서버가 이어서 돕니다.** 예전에는 브라우저가 단계마다 다시 요청했는데,
+화면을 옮기면 다음 단계를 아무도 시작하지 않아 끊겼습니다.
+
+### 폴링은 `JobWatcher` 한 곳에서만
+
+`src/components/JobWatcher.tsx` 가 플랜 화면에 하나만 떠서 결과를 받아 옵니다.
+화면을 열 때 `GET /api/jobs?planId=` 로 **서버에 남은 작업을 먼저 찾기** 때문에,
+다음이 모두 같은 경로를 탑니다.
+
+- 생성을 걸고 다른 메뉴로 이동
+- 새로고침
+- 탭을 닫았다가 나중에 다시 열기
+
+### 작업 저장소
+
+`src/lib/jobs/store.ts` 의 `JobStore` 인터페이스로 갈아 끼웁니다.
+
+| 저장소 | 조건 | 내구성 |
+| --- | --- | --- |
+| 메모리 (기본) | 없음 | 서버 프로세스가 사는 동안 |
+| 파일 | `JOB_STORE_DIR` | 서버를 재시작해도 남음 |
+
+**서버리스(Vercel) 주의** — 인스턴스가 흩어지고 `/tmp` 도 공유되지 않아 두 저장소 모두
+인스턴스 간에는 보장되지 않습니다. 그 환경에서 완전한 내구성이 필요하면 같은 인터페이스로
+외부 저장소(KV·Redis·DB) 어댑터를 만들어 `jobStore()` 에서 돌려주면 됩니다.
+
+### 크레딧
+
+작업을 맡길 때 차감하고, 실패하면 **못 만든 단계만큼 돌려줍니다.**
+작업이 사라졌을 때(서버 재시작 등)는 전액 돌려줍니다.
 
 ## AI 제안 검토 상태
 

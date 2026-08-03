@@ -18,6 +18,7 @@ import {
 import { AgentPanel } from '@/components/AgentPanel';
 import { Logo } from '@/components/Logo';
 import { ClientOnly, Spinner } from '@/components/ui';
+import { JobWatcher } from '@/components/JobWatcher';
 import { DAILY_CREDIT_LIMIT, usePlannerStore } from '@/lib/store';
 import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
 
@@ -51,12 +52,13 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
   const credits = usePlannerStore((s) => s.credits);
   /**
    * 지금 생성 중인 산출물. 사이드바에 표시해, 생성 중에 다른 메뉴로 옮겨 가도
-   * 진행 중이라는 사실이 보이게 한다.
+   * 진행 중이라는 사실이 보이게 한다. 상태는 서버 작업에서 온다.
    */
-  const generating = usePlannerStore((s) => s.generating);
-  const generatingArtifact = generating
-    .find((key) => key.startsWith(`${planId}:`))
-    ?.slice(planId.length + 1) as ArtifactKey | undefined;
+  const jobs = usePlannerStore((s) => s.jobs);
+  const activeJob = Object.values(jobs).find((job) => job.planId === planId);
+  const generatingArtifact: ArtifactKey | undefined = activeJob
+    ? (activeJob.current ?? activeJob.artifacts.find((a) => !activeJob.done.includes(a)))
+    : undefined;
   const [agentOpen, setAgentOpen] = useState(false);
 
   const base = `/plans/${planId}`;
@@ -96,6 +98,9 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
           </button>
         </div>
       </header>
+
+      {/* 서버 큐를 확인해 끝난 결과를 받아 온다. 화면 어디에 있든 하나만 돈다. */}
+      <JobWatcher planId={planId} />
 
       <div className="flex min-h-0 flex-1">
         {/* 사이드바 */}

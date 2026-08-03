@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePlannerStore } from './store';
-import { ARTIFACT_CREDIT_COST, ARTIFACT_LABEL, type ArtifactKey, type Plan, type PlanDocuments } from './types';
+import { isPipeline } from './jobs/progress';
+import {
+  ARTIFACT_CREDIT_COST,
+  ARTIFACT_LABEL,
+  type ArtifactKey,
+  type Plan,
+} from './types';
 import { useToast } from '@/components/ui';
 
 export type AiMode = 'ai' | 'local' | 'unknown';
@@ -53,96 +59,107 @@ interface GenerateArgs {
   extra?: string;
 }
 
+/** 전체 자동 생성 순서. */
+export const PIPELINE_ORDER: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
+
 /**
  * 산출물 생성 훅.
  *
- * 진행 상태는 **스토어**에 있다. 생성 중에 사이드바로 다른 메뉴에 넘어가도
- * 요청은 계속 돌고, 옮겨 간 화면에서도 같은 진행 표시를 본다.
- * (예전에는 지역 `useState` 라 페이지가 언마운트되면서 멈춘 것처럼 보였다.)
+ * **작업을 서버 큐에 맡기기만 한다.** 결과를 받아 오는 폴링은 `JobWatcher` 가 한다.
+ * 그래서 요청을 건 화면이 사라져도, 심지어 탭을 닫았다가 다시 열어도 작업은 끝까지 돌고
+ * 결과는 돌아왔을 때 반영된다.
  */
 export function useGenerate(plan: Plan | undefined) {
-  const generating = usePlannerStore((s) => s.generating);
-  const applyDocuments = usePlannerStore((s) => s.applyDocuments);
+  const jobs = usePlannerStore((s) => s.jobs);
   const spendCredits = usePlannerStore((s) => s.spendCredits);
-  const beginGenerate = usePlannerStore((s) => s.beginGenerate);
-  const endGenerate = usePlannerStore((s) => s.endGenerate);
+  const refundCredits = usePlannerStore((s) => s.refundCredits);
+  const trackJob = usePlannerStore((s) => s.trackJob);
   const toast = useToast();
-
-  const pending = useMemo<ArtifactKey | null>(() => {
-    if (!plan) return null;
-    const hit = generating.find((key) => key.startsWith(`${plan.id}:`));
-    return hit ? (hit.slice(plan.id.length + 1) as ArtifactKey) : null;
-  }, [generating, plan]);
 
   const planId = plan?.id;
 
-  const generate = useCallback(
-    async (artifact: ArtifactKey, args: GenerateArgs = {}) => {
+  /** 이 플랜에서 도는 작업. */
+  const job = useMemo(
+    () => Object.values(jobs).find((j) => j.planId === planId),
+    [jobs, planId],
+  );
+
+  /**
+   * 지금 만들고 있는 산출물.
+   *
+   * 아직 시작 전(queued)이면 첫 번째 산출물을 가리켜, 버튼을 누른 직후에도
+   * 곧바로 진행 표시가 뜨게 한다.
+   */
+  const pending: ArtifactKey | null = job
+    ? (job.current ?? job.artifacts.find((a) => !job.done.includes(a)) ?? null)
+    : null;
+
+  /** 전체 자동 생성이 도는 중인지. */
+  const autoRunning = job ? isPipeline(job) : false;
+
+  const enqueue = useCallback(
+    async (artifacts: ArtifactKey[], args: GenerateArgs = {}) => {
       if (!planId) return false;
 
-      // 자리를 먼저 원자적으로 잡는다. 클로저에 갇힌 옛 pending 값을 보지 않으므로
-      // 화면을 옮겨 다녀도 중복 실행이 생기지 않는다.
-      if (!beginGenerate(planId, artifact)) return false;
+      // 한 플랜에서 두 작업을 동시에 돌리지 않는다 — 앞 단계 결과를 컨텍스트로 쓰기 때문.
+      if (usePlannerStore.getState().isPlanBusy(planId)) return false;
 
-      const cost = ARTIFACT_CREDIT_COST[artifact];
+      const cost = artifacts.reduce((sum, a) => sum + ARTIFACT_CREDIT_COST[a], 0);
       if (!spendCredits(cost)) {
-        endGenerate(planId, artifact);
         toast(
-          `크레딧이 부족합니다. ${ARTIFACT_LABEL[artifact]} 생성에는 ${cost} 크레딧이 필요합니다. 내일 다시 충전됩니다.`,
+          `크레딧이 부족합니다. ${artifacts.length > 1 ? '전체 자동 생성' : ARTIFACT_LABEL[artifacts[0]]} 에는 ${cost} 크레딧이 필요합니다. 내일 다시 충전됩니다.`,
           'warn',
         );
         return false;
       }
 
-      try {
-        /*
-         * 보낼 문서는 **호출 직전에 스토어에서 읽는다.**
-         *
-         * 클로저에 담긴 스냅샷을 보내면 앞 단계 결과가 빠진 채로 나간다.
-         * 전체 자동 생성 도중 다른 메뉴로 넘어가면 개요가 언마운트되면서
-         * 스냅샷이 그 시점에 얼어붙어, 정보구조도 차례에 "기능명세서를 먼저
-         * 생성해 주세요"(409) 로 파이프라인이 끊겼다.
-         */
-        const current = usePlannerStore.getState().getPlan(planId);
-        if (!current) return false;
+      // 보낼 문서는 **지금** 스토어에서 읽는다. 클로저에 갇힌 옛 스냅샷을 보내지 않는다.
+      const current = usePlannerStore.getState().getPlan(planId);
+      if (!current) {
+        refundCredits(cost);
+        return false;
+      }
 
+      try {
         const response = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ artifact, plan: current, ...args }),
+          body: JSON.stringify({ artifacts, plan: current, ...args }),
         });
-        const data = (await response.json()) as {
-          patch?: Partial<PlanDocuments>;
-          source?: string;
-          warning?: string;
-          error?: string;
-        };
+        const data = (await response.json()) as { jobId?: string; error?: string };
 
-        if (!response.ok || !data.patch) {
-          toast(data.error ?? '생성에 실패했습니다.', 'danger');
+        if (!response.ok || !data.jobId) {
+          refundCredits(cost);
+          toast(data.error ?? '생성 요청에 실패했습니다.', 'danger');
           return false;
         }
 
-        applyDocuments(planId, data.patch, [artifact]);
-
-        if (data.warning) {
-          toast(`AI 호출에 실패해 내장 생성기로 만들었습니다.\n${data.warning}`, 'warn');
-        } else {
-          toast(
-            `${ARTIFACT_LABEL[artifact]}을(를) ${data.source === 'ai' ? 'AI로' : '내장 생성기로'} 만들었습니다. (-${cost} 크레딧)`,
-            'ok',
-          );
-        }
+        trackJob({
+          id: data.jobId,
+          planId,
+          artifacts,
+          current: null,
+          done: [],
+          status: 'queued',
+          cost,
+        });
         return true;
       } catch {
-        toast('네트워크 오류로 생성에 실패했습니다.', 'danger');
+        refundCredits(cost);
+        toast('네트워크 오류로 생성 요청에 실패했습니다.', 'danger');
         return false;
-      } finally {
-        endGenerate(planId, artifact);
       }
     },
-    [planId, applyDocuments, spendCredits, beginGenerate, endGenerate, toast],
+    [planId, spendCredits, refundCredits, trackJob, toast],
   );
 
-  return { generate, pending };
+  const generate = useCallback(
+    (artifact: ArtifactKey, args: GenerateArgs = {}) => enqueue([artifact], args),
+    [enqueue],
+  );
+
+  /** PRD 부터 와이어프레임까지 한 작업으로 맡긴다. 이어 달리는 것은 서버가 한다. */
+  const generateAll = useCallback(() => enqueue(PIPELINE_ORDER), [enqueue]);
+
+  return { generate, generateAll, pending, autoRunning, job };
 }
