@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { deletePlan, getPlan, savePlan } from '@/lib/db/plans';
+import { serverErrorMessage } from '@/lib/api-error';
 import type { Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -64,6 +65,7 @@ export async function DELETE(_request: Request, { params }: Context) {
   }
 }
 
+/** 원문은 서버 로그에만 남기고 화면에는 안전한 문장을 보낸다. */
 function describe(error: unknown): string {
-  return error instanceof Error ? error.message : '저장소에 접근하지 못했습니다.';
+  return serverErrorMessage('plans', error);
 }
