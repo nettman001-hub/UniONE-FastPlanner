@@ -14,8 +14,8 @@ LTS 버전을 설치하세요.
 ## 내려받기
 
 ```bash
-git clone -b claude/manyfast-plan-app-d9q2c7 https://github.com/nettman001-hub/UniONE-FastPlaner.git
-cd UniONE-FastPlaner
+git clone -b claude/manyfast-plan-app-d9q2c7 https://github.com/nettman001-hub/UniONE-FastPlanner.git
+cd UniONE-FastPlanner
 npm install
 ```
 

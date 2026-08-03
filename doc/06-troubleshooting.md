@@ -72,14 +72,14 @@ const nextConfig: NextConfig = {
 
 ```bash
 cd C:\dev
-git clone -b claude/manyfast-plan-app-d9q2c7 https://github.com/nettman001-hub/UniONE-FastPlaner.git
-cd UniONE-FastPlaner
+git clone -b claude/manyfast-plan-app-d9q2c7 https://github.com/nettman001-hub/UniONE-FastPlanner.git
+cd UniONE-FastPlanner
 npm install
 ```
 
 ### `npm install` 이 `package.json` 을 못 찾음
 
-프로젝트 폴더 밖에서 실행한 경우입니다. `cd UniONE-FastPlaner` 로 들어간 뒤 실행하세요.
+프로젝트 폴더 밖에서 실행한 경우입니다. `cd UniONE-FastPlanner` 로 들어간 뒤 실행하세요.
 
 ### `Application error: a client-side exception has occurred`
 
