@@ -1,0 +1,54 @@
+{
+  "$comment": "설명서를 웹(/docs)에서 렌더링할 때 쓸 목차. 파일을 추가하면 여기에도 한 줄 넣어 주세요.",
+  "title": "UniONE FastPlanner 설명서",
+  "pages": [
+    {
+      "slug": "index",
+      "file": "README.md",
+      "title": "설명서 홈",
+      "summary": "전체 목차와 기획 흐름 요약"
+    },
+    {
+      "slug": "getting-started",
+      "file": "01-getting-started.md",
+      "title": "설치와 실행",
+      "summary": "내려받기, 실행, 환경변수, 첫 플랜 만들기"
+    },
+    {
+      "slug": "screens",
+      "file": "02-screens.md",
+      "title": "화면별 사용법",
+      "summary": "9개 화면을 버튼 단위로 설명"
+    },
+    {
+      "slug": "ai-providers",
+      "file": "03-ai-providers.md",
+      "title": "AI 공급자와 크레딧",
+      "summary": "DeepSeek·Anthropic·내장 생성기, 크레딧 정책"
+    },
+    {
+      "slug": "export-and-share",
+      "file": "04-export-and-share.md",
+      "title": "내보내기와 공유",
+      "summary": "마크다운·CSV·이미지·에이전트 번들·공유 링크"
+    },
+    {
+      "slug": "architecture",
+      "file": "05-architecture.md",
+      "title": "구조와 데이터 모델",
+      "summary": "폴더 구조, 도메인 모델, 확장 방법"
+    },
+    {
+      "slug": "troubleshooting",
+      "file": "06-troubleshooting.md",
+      "title": "문제 해결",
+      "summary": "자주 겪는 오류와 해결법, 개발 도구 마크 안내"
+    },
+    {
+      "slug": "deploy",
+      "file": "07-deploy.md",
+      "title": "배포",
+      "summary": "Vercel 배포, 환경변수, 도메인 연결, 요금"
+    }
+  ]
+}
