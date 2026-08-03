@@ -24,6 +24,7 @@ import {
   Spinner,
   useConfirm,
 } from '@/components/ui';
+import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
 import type { Comment, Prd, PrdGoal, PrdMetric, PrdPersona, PrdRole } from '@/lib/types';
@@ -184,6 +185,7 @@ export default function PrdPage() {
             </button>
           </div>
           {generateButton}
+          <NextStepButton planId={planId} current="prd" />
         </div>
       </div>
 

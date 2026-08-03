@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { EmptyState, InlineText, ListEditor, Modal, Spinner, useConfirm } from '@/components/ui';
 import { WireframeView } from '@/components/WireframeView';
+import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
 import { pageTree } from '@/lib/export';
@@ -351,7 +352,10 @@ export default function WireframePage() {
             </span>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5">{generateButton}</div>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          {generateButton}
+          <NextStepButton planId={planId} current="wireframe" />
+        </div>
       </header>
 
       {!canGenerate && (

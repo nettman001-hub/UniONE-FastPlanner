@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { EmptyState, Field, InlineText, ListEditor, Spinner, useConfirm } from '@/components/ui';
+import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
 import {
@@ -431,6 +432,7 @@ export default function FsPage() {
               {generating ? <Spinner size={13} /> : <Sparkles size={13} />}
               {plan.generated.fs ? '다시 생성' : 'AI로 생성'}
             </button>
+            <NextStepButton planId={planId} current="fs" />
           </div>
         </div>
 

@@ -12,14 +12,13 @@ import {
   LayoutDashboard,
   ListTree,
   MonitorSmartphone,
-  Sparkles,
   Table2,
   Zap,
 } from 'lucide-react';
 import { AgentPanel } from '@/components/AgentPanel';
+import { Logo } from '@/components/Logo';
 import { ClientOnly } from '@/components/ui';
 import { DAILY_CREDIT_LIMIT, usePlannerStore } from '@/lib/store';
-import { useAiMode } from '@/lib/useGenerate';
 import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
 
 interface NavItem {
@@ -50,7 +49,6 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const plan = usePlannerStore((s) => s.plans.find((p) => p.id === planId));
   const credits = usePlannerStore((s) => s.credits);
-  const { mode, label, model } = useAiMode();
   const [agentOpen, setAgentOpen] = useState(false);
 
   const base = `/plans/${planId}`;
@@ -60,9 +58,9 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
       {/* 상단 바 */}
       <header className="no-print flex h-13 shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <Link href="/" className="btn btn-ghost btn-sm shrink-0">
+          <Link href="/" className="btn btn-ghost btn-sm shrink-0" title="플랜 목록으로">
             <ChevronLeft size={14} />
-            <span className="hidden sm:inline">플랜 목록</span>
+            <Logo size={18} />
           </Link>
           <span className="hidden shrink-0 text-[var(--fg-subtle)] sm:inline">/</span>
           <h1 className="truncate text-[13.5px] font-extrabold tracking-tight">
@@ -71,17 +69,6 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={`chip ${mode === 'ai' ? 'chip-primary' : ''}`}
-            title={
-              mode === 'ai'
-                ? `${label} · ${model} 모델로 생성합니다.`
-                : 'API 키가 없어 내장 생성기로 만듭니다.'
-            }
-          >
-            <Sparkles size={11} />
-            {mode === 'ai' ? label : mode === 'local' ? '내장 생성기' : '확인 중'}
-          </span>
           <ClientOnly>
             <span
               className="chip"

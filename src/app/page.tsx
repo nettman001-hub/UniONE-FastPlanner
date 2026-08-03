@@ -34,6 +34,8 @@ import {
 } from '@/lib/types';
 import { download, slugify, toJson } from '@/lib/export';
 import { ClientOnly, EmptyState, Field, Modal, Spinner, useConfirm, useToast } from '@/components/ui';
+import { Logo } from '@/components/Logo';
+import { BRAND_NAME, BRAND_SHORT, BRAND_TAGLINE } from '@/lib/brand';
 
 /* ------------------------------------------------------------------ */
 /* 상수                                                                 */
@@ -511,7 +513,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
 export default function HomePage() {
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
-  const { mode, label, model } = useAiMode();
+  const { mode } = useAiMode();
 
   const plans = usePlannerStore((s) => s.plans);
   const credits = usePlannerStore((s) => s.credits);
@@ -534,7 +536,7 @@ export default function HomePage() {
     for (const file of list) {
       const parsed = parsePlan(await file.text());
       if (!parsed) {
-        toast(`${file.name} 은(는) FastPlaner 플랜 형식이 아닙니다.`, 'danger');
+        toast(`${file.name} 은(는) ${BRAND_SHORT} 플랜 형식이 아닙니다.`, 'danger');
         continue;
       }
       importPlan(parsed);
@@ -609,14 +611,13 @@ export default function HomePage() {
       <header className="flex flex-col gap-4 py-6 sm:py-10">
         <div className="flex flex-wrap items-center gap-2">
           <span className="chip chip-primary">
-            <Wand2 size={11} />
+            <Logo size={12} />
             UniONE
           </span>
           {mode === 'ai' && (
-            <span className="chip chip-primary" title={`${label} 로 산출물을 생성합니다.`}>
+            <span className="chip chip-primary" title="AI 가 산출물을 생성합니다.">
               <Sparkles size={11} />
-              {label}
-              {model ? ` · ${model}` : ''}
+              AI 생성
             </span>
           )}
           {mode === 'local' && <span className="chip">내장 생성기</span>}
@@ -633,11 +634,12 @@ export default function HomePage() {
         </div>
 
         <div>
-          <h1 className="text-[26px] font-extrabold leading-tight tracking-tight sm:text-[34px]">
-            UniONE FastPlaner
+          <h1 className="flex items-center gap-3 text-[26px] font-extrabold leading-tight tracking-tight sm:text-[34px]">
+            <Logo size={40} className="sm:!size-12" />
+            {BRAND_NAME}
           </h1>
           <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--fg-muted)] sm:text-[15px]">
-            아이디어만 입력하면 PRD부터 와이어프레임까지, 한 번에 정리해 드립니다.
+            {BRAND_TAGLINE}
           </p>
         </div>
 

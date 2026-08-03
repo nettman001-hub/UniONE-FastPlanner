@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { Eye, FileText, Printer } from 'lucide-react';
 import { MarkdownView } from '@/components/MarkdownView';
 import { EmptyState } from '@/components/ui';
+import { Logo } from '@/components/Logo';
+import { BRAND_NAME } from '@/lib/brand';
 import { readSharedPlan } from '@/lib/share';
 import { toMarkdown } from '@/lib/export';
 import { PLATFORM_LABEL, type Plan } from '@/lib/types';
@@ -33,7 +35,7 @@ export default function SharePage() {
           description="링크가 잘리거나 손상되었을 수 있습니다. 공유한 사람에게 링크를 다시 받아 주세요."
           action={
             <Link href="/" className="btn btn-primary btn-sm">
-              FastPlaner 홈으로
+              {BRAND_NAME} 홈으로
             </Link>
           }
         />
@@ -46,6 +48,7 @@ export default function SharePage() {
       <header className="no-print sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--surface)]">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
+            <Logo size={20} />
             <span className="chip chip-primary">
               <Eye size={11} />
               보기 전용

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { FlowCanvas } from '@/components/FlowCanvas';
 import { EmptyState, Field, InlineText, Spinner, useConfirm, useToast } from '@/components/ui';
+import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
 import { slugify, toMermaid } from '@/lib/export';
@@ -297,6 +298,7 @@ export default function FlowPage() {
             <Plus size={13} />
             플로우 추가
           </button>
+          <NextStepButton planId={planId} current="flow" />
         </div>
       </div>
 

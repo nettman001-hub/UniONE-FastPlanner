@@ -24,6 +24,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { EmptyState, InlineText, Modal, Spinner, useConfirm } from '@/components/ui';
+import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
 import { pageTree } from '@/lib/export';
@@ -353,6 +354,7 @@ export default function IaArchitecturePage() {
               </button>
             </div>
             {generateButton}
+            <NextStepButton planId={planId} current="ia" />
           </div>
         </div>
 
