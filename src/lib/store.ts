@@ -86,6 +86,24 @@ export interface PlannerState {
    */
   interrupted: InterruptedRun | null;
 
+  /**
+   * AI 에이전트 패널이 열려 있는가.
+   *
+   * **저장한다.** 화면 컴포넌트가 아니라 여기에 두어야 메뉴를 옮겨도, 새로고침해도
+   * 열린 채로 남는다. 대화를 시켜 놓고 다른 문서를 보러 가는 것이 정상적인 사용
+   * 방식이므로, 그때 패널이 닫히면 진행 상황을 볼 방법이 사라진다.
+   */
+  agentOpen: boolean;
+
+  /**
+   * 지금 에이전트 답변을 기다리는 플랜.
+   *
+   * **저장하지 않는다** — 창이 사라지면 그 요청도 함께 끝나므로, 남겨 두면
+   * 영원히 "생각하는 중" 인 화면이 된다. 대신 답을 못 받은 대화는 화면에서
+   * 다시 보낼 수 있게 한다.
+   */
+  agentBusy: string | null;
+
   /* 플랜 */
   /** 서버에서 받아 온 목록으로 통째로 바꾼다. 동기화가 쓴다. */
   setPlans: (plans: Plan[], owner: string | null) => void;
@@ -106,6 +124,10 @@ export interface PlannerState {
   /* 생성 진행 */
   setActiveRun: (run: ActiveRun | null) => void;
   setInterrupted: (run: InterruptedRun | null) => void;
+
+  /* AI 에이전트 패널 */
+  setAgentOpen: (open: boolean) => void;
+  setAgentBusy: (planId: string | null) => void;
 
   /* PRD */
   updatePrd: (planId: string, patch: Partial<Prd>) => void;
@@ -224,6 +246,12 @@ export const usePlannerStore = create<PlannerState>()(
         activeRun: null,
         interrupted: null,
         owner: null,
+        agentOpen: false,
+        agentBusy: null,
+
+        setAgentOpen: (open) => set({ agentOpen: open }),
+
+        setAgentBusy: (planId) => set({ agentBusy: planId }),
 
         setPlans: (plans, owner) => set({ plans, owner }),
 
@@ -609,6 +637,8 @@ export const usePlannerStore = create<PlannerState>()(
         interrupted: state.interrupted,
         // 이 플랜들이 누구 것인지도 함께 남긴다.
         owner: state.owner,
+        // 에이전트 패널을 열어 뒀다면 다음에도 열린 채로 시작한다.
+        agentOpen: state.agentOpen,
       }),
       /**
        * 한도가 바뀌면 저장된 잔량은 옛 한도 기준이라 그대로 쓸 수 없다.

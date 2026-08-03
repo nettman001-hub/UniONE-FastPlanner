@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, CornerDownLeft, Eraser, Sparkles, Target, X } from 'lucide-react';
+import { Bot, CornerDownLeft, Eraser, RotateCw, Sparkles, Target, X } from 'lucide-react';
 import { usePlannerStore } from '@/lib/store';
+import { askAgent, unansweredQuestion } from '@/lib/agent/runner';
 import { selectableItems, useSelectionStore } from '@/lib/selection';
-import { CHAT_CREDIT_COST, type Plan, type PlanDocuments } from '@/lib/types';
+import { CHAT_CREDIT_COST, type Plan } from '@/lib/types';
 import { Spinner, useToast } from './ui';
 
 const SUGGESTIONS = [
@@ -16,12 +17,13 @@ const SUGGESTIONS = [
 
 export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void }) {
   const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
-  const appendChat = usePlannerStore((s) => s.appendChat);
   const clearChat = usePlannerStore((s) => s.clearChat);
-  const applyDocuments = usePlannerStore((s) => s.applyDocuments);
-  const spendCredits = usePlannerStore((s) => s.spendCredits);
   const credits = usePlannerStore((s) => s.credits);
+  /**
+   * 진행 상태를 이 컴포넌트가 아니라 스토어에서 읽는다.
+   * 요청은 컴포넌트 밖에서 도므로, 패널이 사라졌다 다시 그려져도 이어서 보인다.
+   */
+  const busy = usePlannerStore((s) => s.agentBusy === plan.id);
   const selected = useSelectionStore((s) => s.selected);
   const setSelected = useSelectionStore((s) => s.setSelected);
   const toast = useToast();
@@ -29,67 +31,31 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
   const items = useMemo(() => selectableItems(plan), [plan]);
   const outOfCredits = credits < CHAT_CREDIT_COST;
 
+  /** 답을 받지 못한 채 남은 질문 — 새로고침이나 연결 끊김으로 요청이 사라진 경우. */
+  const stranded = busy ? null : unansweredQuestion(plan.chat);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [plan.chat.length, busy]);
 
+  const handle = (result: string) => {
+    if (result === 'no-credits') toast('크레딧이 부족합니다. 내일 다시 충전됩니다.', 'warn');
+    if (result === 'busy') toast('앞선 요청이 끝난 뒤에 보낼 수 있습니다.', 'warn');
+  };
+
   const send = async (text: string) => {
-    const message = text.trim();
-    if (!message || busy) return;
-
-    if (!spendCredits(CHAT_CREDIT_COST)) {
-      toast('크레딧이 부족합니다. 내일 다시 충전됩니다.', 'warn');
-      return;
-    }
-
+    if (!text.trim() || busy) return;
     // 선택한 항목이 있으면 무엇을 가리키는 요청인지 앞에 붙여 준다.
     const scoped = selected
-      ? `[대상: ${selected.kind} ${selected.id} "${selected.label}"]\n${message}`
-      : message;
-
+      ? `[대상: ${selected.kind} ${selected.id} "${selected.label}"]\n${text.trim()}`
+      : text.trim();
     setInput('');
-    appendChat(plan.id, { role: 'user', content: scoped });
-    setBusy(true);
+    handle(await askAgent(plan.id, scoped));
+  };
 
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plan, message: scoped }),
-      });
-      const data = (await response.json()) as {
-        reply?: string;
-        changes?: string[];
-        patch?: Partial<PlanDocuments>;
-        error?: string;
-      };
-
-      if (!response.ok || !data.reply) {
-        appendChat(plan.id, {
-          role: 'assistant',
-          content: data.error ?? '응답을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.',
-        });
-        return;
-      }
-
-      if (data.patch && Object.keys(data.patch).length > 0) {
-        applyDocuments(plan.id, data.patch);
-      }
-
-      appendChat(plan.id, {
-        role: 'assistant',
-        content: data.reply,
-        changes: data.changes,
-        credits: CHAT_CREDIT_COST,
-      });
-    } catch {
-      appendChat(plan.id, {
-        role: 'assistant',
-        content: '네트워크 오류로 응답을 받지 못했습니다.',
-      });
-    } finally {
-      setBusy(false);
-    }
+  const resend = async () => {
+    if (!stranded) return;
+    handle(await askAgent(plan.id, stranded, { resend: true }));
   };
 
   return (
@@ -150,7 +116,11 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
                   className={
                     message.role === 'user'
                       ? 'max-w-[88%] rounded-xl rounded-br-sm bg-[var(--primary)] px-3 py-2 text-[12.5px] leading-relaxed text-[var(--primary-fg)]'
-                      : 'max-w-[92%] rounded-xl rounded-bl-sm border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[12.5px] leading-relaxed'
+                      : `max-w-[92%] rounded-xl rounded-bl-sm border px-3 py-2 text-[12.5px] leading-relaxed ${
+                          message.failed
+                            ? 'border-transparent bg-[var(--danger-soft)] text-[var(--danger)]'
+                            : 'border-[var(--border)] bg-[var(--surface-2)]'
+                        }`
                   }
                 >
                   <p className="whitespace-pre-wrap">{message.content}</p>
@@ -173,6 +143,21 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
             {busy && (
               <div className="flex items-center gap-2 text-[12px] text-[var(--fg-muted)]">
                 <Spinner /> 생각하는 중…
+              </div>
+            )}
+            {/*
+              질문만 남고 답이 없다 — 창을 새로 고쳤거나 연결이 끊겨 요청이 사라진 경우다.
+              그대로 두면 막다른 길이 되므로 한 번에 다시 보낼 수 있게 한다.
+            */}
+            {stranded && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-2">
+                <p className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
+                  이 질문은 아직 답을 받지 못했습니다. 크레딧은 차감되지 않았습니다.
+                </p>
+                <button className="btn btn-sm" onClick={() => void resend()} disabled={outOfCredits}>
+                  <RotateCw size={12} />
+                  다시 보내기
+                </button>
               </div>
             )}
             <div ref={bottomRef} />
