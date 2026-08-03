@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nextId, uid } from './ids';
-import type { JobProgress } from './jobs/progress';
+import type { ActiveRun, InterruptedRun } from './jobs/progress';
 import {
   approveIn,
   isPending,
@@ -53,15 +53,20 @@ export interface PlannerState {
   hydrated: boolean;
 
   /**
-   * 서버에서 도는 생성 작업 (작업번호 → 진행 정보).
+   * 지금 도는 생성.
    *
-   * 실제 작업은 서버 큐에 있고 여기 있는 것은 그 사본이다. 화면 컴포넌트가 아니라
-   * 스토어에 두어야 사이드바로 다른 메뉴에 넘어가도 같은 진행 표시를 본다.
-   *
-   * **저장하지 않는다.** 새로 열 때 서버에 물어보고 다시 채우므로 저장할 이유가 없고,
-   * 저장하면 이미 끝난 작업이 진행 중인 것처럼 남는다.
+   * 화면 컴포넌트가 아니라 스토어에 두어야 사이드바로 다른 메뉴에 넘어가도
+   * 같은 진행 표시를 본다. **저장하지 않는다** — 페이지가 사라지면 그 생성도 끝난다.
    */
-  jobs: Record<string, JobProgress>;
+  activeRun: ActiveRun | null;
+
+  /**
+   * 다 만들지 못하고 끊긴 전체 자동 생성.
+   *
+   * **이건 저장한다.** 창을 닫았다 돌아와도 남은 단계부터 이어 갈 수 있어야 하기 때문이다.
+   * 시작할 때 적어 두고 단계마다 갱신하므로, 탭이 갑자기 사라져도 기록이 남는다.
+   */
+  interrupted: InterruptedRun | null;
 
   /* 플랜 */
   createPlan: (brief: PlanBrief) => string;
@@ -72,19 +77,15 @@ export interface PlannerState {
 
   /* 크레딧 */
   spendCredits: (amount: number) => boolean;
-  /** 작업이 실패하면 차감분을 돌려준다. 한도를 넘지 않는다. */
-  refundCredits: (amount: number) => void;
   refillCredits: () => void;
   costOf: (artifact: ArtifactKey) => number;
 
   /* 산출물 일괄 반영 */
   applyDocuments: (planId: string, patch: Partial<PlanDocuments>, generated?: ArtifactKey[]) => void;
 
-  /* 생성 작업 추적 */
-  trackJob: (job: JobProgress) => void;
-  untrackJob: (jobId: string) => void;
-  /** 그 플랜에 진행 중인 작업이 있는지 — 중복 실행·이중 과금을 막는 데 쓴다. */
-  isPlanBusy: (planId: string) => boolean;
+  /* 생성 진행 */
+  setActiveRun: (run: ActiveRun | null) => void;
+  setInterrupted: (run: InterruptedRun | null) => void;
 
   /* PRD */
   updatePrd: (planId: string, patch: Partial<Prd>) => void;
@@ -200,7 +201,8 @@ export const usePlannerStore = create<PlannerState>()(
         credits: DAILY_CREDIT_LIMIT,
         creditResetAt: todayKey(),
         hydrated: false,
-        jobs: {},
+        activeRun: null,
+        interrupted: null,
 
         createPlan: (brief) => {
           const plan = createEmptyPlan(brief);
@@ -235,30 +237,13 @@ export const usePlannerStore = create<PlannerState>()(
           return true;
         },
 
-        refundCredits: (amount) =>
-          set((state) => ({ credits: Math.min(DAILY_CREDIT_LIMIT, state.credits + amount) })),
-
         refillCredits: () => set({ credits: DAILY_CREDIT_LIMIT, creditResetAt: todayKey() }),
 
         costOf: (artifact) => ARTIFACT_CREDIT_COST[artifact],
 
-        trackJob: (job) => set((state) => ({ jobs: { ...state.jobs, [job.id]: job } })),
+        setActiveRun: (run) => set({ activeRun: run }),
 
-        untrackJob: (jobId) =>
-          set((state) => {
-            if (!state.jobs[jobId]) return {};
-            const next = { ...state.jobs };
-            delete next[jobId];
-            return { jobs: next };
-          }),
-
-        // 한 플랜에서 동시에 두 작업을 돌리지 않는다 — 앞 단계 결과를 컨텍스트로 쓰기 때문.
-        // 멈춘(paused) 작업은 돌고 있지 않으므로 새 작업을 막지 않는다.
-        isPlanBusy: (planId) =>
-          Object.values(get().jobs).some(
-            (job) =>
-              job.planId === planId && (job.status === 'queued' || job.status === 'running'),
-          ),
+        setInterrupted: (run) => set({ interrupted: run }),
 
         applyDocuments: (planId, patch, generated) =>
           mutate(planId, (plan) => {
@@ -597,6 +582,8 @@ export const usePlannerStore = create<PlannerState>()(
         plans: state.plans,
         credits: state.credits,
         creditResetAt: state.creditResetAt,
+        // 끊긴 생성은 저장한다 — 돌아왔을 때 이어서 만들 수 있어야 한다.
+        interrupted: state.interrupted,
       }),
       /**
        * 한도가 바뀌면 저장된 잔량은 옛 한도 기준이라 그대로 쓸 수 없다.

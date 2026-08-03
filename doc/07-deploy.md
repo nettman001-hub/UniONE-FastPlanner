@@ -8,8 +8,7 @@
 `npm run build` 결과에서 `ƒ` 표시가 붙은 라우트가 요청마다 서버에서 만들어지는 부분입니다.
 
 ```
-├ ƒ /api/generate      생성 작업 접수 — DeepSeek 키를 여기서만 사용
-├ ƒ /api/jobs          작업 진행 상태 조회
+├ ƒ /api/generate      생성 — DeepSeek 키를 여기서만 사용
 ├ ƒ /api/chat          AI 에이전트
 ├ ƒ /api/status        현재 공급자 상태
 ├ ƒ /plans/[id]        플랜 ID 가 실행 중에 생기는 동적 라우트
@@ -74,7 +73,6 @@ Production · Preview · Development 를 모두 체크하세요.
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | `deepseek-v4-pro` |
 | `DEEPSEEK_MAX_TOKENS` | `8192` |
-| `JOB_STORE_DIR` | (선택) 작업 기록을 파일로 남길 경로 — 아래 참고 |
 
 > **이름 앞에 `NEXT_PUBLIC_` 을 붙이지 마세요.**
 > 그 접두사가 붙은 환경변수는 브라우저로 그대로 내려가 키가 공개됩니다.
@@ -110,21 +108,13 @@ Production · Preview · Development 를 모두 체크하세요.
   - `src/app/api/generate/route.ts`
   - `src/app/api/chat/route.ts`
 
-### 생성 작업 큐
+### 생성 방식
 
-생성은 서버 큐에서 돌기 때문에 사용자가 탭을 닫아도 끝까지 만들어집니다.
-작업 기록을 어디에 둘지는 배포 형태에 따라 다릅니다.
+생성은 **한 요청 안에서 돌며 결과를 흘려보냅니다.** 서버가 작업을 기억하지 않으므로
+Vercel 처럼 인스턴스가 여러 개인 환경에서도 그대로 동작합니다. 추가 설정이 없습니다.
 
-| 배포 | 설정 | 결과 |
-| --- | --- | --- |
-| **Vercel** | 기본(메모리) | 대체로 동작하지만, 요청이 다른 인스턴스로 가면 결과를 못 찾을 수 있습니다 |
-| VPS·서버호스팅 등 단일 서버 | `JOB_STORE_DIR=.jobs` | 서버를 재시작해도 진행 중이던 작업이 남습니다 |
-
-결과를 못 찾으면 화면에 안내가 뜨고 **크레딧은 자동으로 반환**되므로 손해는 없습니다.
-다시 생성하면 됩니다.
-
-Vercel 에서 이것까지 확실히 하려면 `src/lib/jobs/store.ts` 의 `JobStore` 인터페이스를
-KV·Redis 로 구현해 `jobStore()` 에서 돌려주면 됩니다. 인터페이스는 4개 메서드뿐입니다.
+`maxDuration` 안에 5단계를 다 못 만들면 만든 데까지 저장되고, 화면에 이어서 만들기
+안내가 뜹니다. 크레딧은 받은 것에만 차감됩니다.
 
 ---
 
