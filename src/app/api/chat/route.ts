@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { CHAT_SCHEMA } from '@/lib/ai/schemas';
 import { buildChatPrompt } from '@/lib/ai/prompts';
@@ -54,6 +55,10 @@ function offlineReply(plan: Plan, message: string): { reply: string; changes: st
 }
 
 export async function POST(request: Request) {
+  // 생성 API 와 같은 이유로 로그인을 요구한다 — 주인의 AI 키를 쓰는 요청이다.
+  const { user, response } = await requireUser();
+  if (!user) return response;
+
   let body: ChatBody;
   try {
     body = (await request.json()) as ChatBody;

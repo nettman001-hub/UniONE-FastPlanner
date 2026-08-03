@@ -46,6 +46,24 @@ DEEPSEEK_MAX_TOKENS=8192
 > `.env.local` 은 `.gitignore` 에 걸려 있어 저장소에 올라가지 않습니다.
 > 키를 커밋하지 않도록 이 파일에만 넣으세요.
 
+### 로그인용 설정
+
+앱을 쓰려면 로그인해야 합니다. 로컬에서는 두 줄이면 됩니다.
+
+```ini
+AUTH_SECRET=아무거나-16자-이상-긴-문자열
+TESTER_EMAIL=me@example.com
+TESTER_PASSWORD=test1234
+```
+
+이 계정은 **처음 로그인할 때 자동으로 만들어집니다.** 미리 준비할 것이 없습니다.
+
+`DATABASE_URL` 을 넣지 않으면 PGlite(Postgres 를 WebAssembly 로 빌드한 것)가
+`.pglite` 폴더에 데이터를 넣습니다. 데이터베이스를 따로 설치할 필요가 없고,
+배포에서 쓰는 Postgres 와 같은 SQL 이 그대로 돕니다.
+
+자세한 내용은 [8. 계정과 데이터 저장](./08-accounts.md) 을 보세요.
+
 ## 연결 점검
 
 앱을 띄우기 전에 키·모델명·잔액·네트워크를 한 번에 확인합니다.

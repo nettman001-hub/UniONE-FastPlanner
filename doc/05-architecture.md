@@ -10,8 +10,11 @@
 | 상태 | zustand + localStorage 영속화 |
 | 아이콘 | lucide-react |
 | AI SDK | `openai` (DeepSeek 호환), `@anthropic-ai/sdk` |
+| 데이터베이스 | Postgres — 배포는 `pg` 드라이버, 로컬은 PGlite |
+| 로그인 | 자체 세션 쿠키 (scrypt 해시 + HMAC 서명) |
 
-서버 데이터베이스가 없습니다. 문서는 브라우저에만 저장됩니다.
+브라우저 저장소가 여전히 **정본**입니다. 계정이 붙으면 그 사본이 뒤에서 서버로
+올라갑니다 — 자세한 이유는 아래 "저장과 동기화" 를 보세요.
 
 ## 폴더 구조
 
@@ -37,6 +40,9 @@ src/
     validate.ts                  정합성 검사 규칙
     fs-tree.ts                   기능명세서 트리 (세 보기가 공유)
     fs-review.ts                 AI 제안 승인/거절 + 삭제 캐스케이드
+    sync.ts                      플랜을 서버와 맞춘다 (브라우저 우선, 뒤에서 올림)
+    auth/                        비밀번호 해시·세션 서명·가입 정책
+    db/                          스키마와 질의 (Postgres / PGlite 공용)
     jobs/queue.ts                생성 파이프라인 (서버) — 결과를 흘려보낸다
     jobs/runner.ts               스트림 읽기 (브라우저) — 화면과 무관하게 돈다
     jobs/progress.ts             진행 상태 타입
@@ -303,13 +309,83 @@ export interface Reviewable {
 스토어의 `removeRequirement` · `removeFeature` · `removeSpecification` 도 같은 함수를 씁니다.
 두 곳에 나눠 두면 한쪽만 고쳐져 정보구조도의 기능 연결이 남는 식으로 어긋납니다.
 
-## 저장 형식과 마이그레이션
+## 저장과 동기화
 
-localStorage 키는 `unione-fastplaner:v1` 입니다.
-**이 키를 바꾸면 사용자가 만든 플랜이 전부 사라집니다.** 서비스명을 바꿔도 그대로 두세요.
+### 왜 브라우저가 계속 정본인가
+
+계정이 붙었지만 편집은 **여전히 localStorage 에 먼저 쓴다.** 서버는 그 뒤에
+따라간다.
+
+```
+편집 → zustand → localStorage        (즉시, 예전과 동일)
+                    ↓ 1.2초 디바운스
+                 PUT /api/plans/:id   (뒤에서)
+```
+
+플랜을 서버 우선으로 바꾸면 생성 파이프라인·되돌리기·검토 워크플로가 전부
+네트워크에 묶인다. 지금 방식은 이 셋을 하나도 건드리지 않으면서, 연결이 끊겨도
+작업이 멈추지 않고, 올리기에 실패해도 내용이 사라지지 않는다.
+
+### 무엇이 최신인지 판단하는 규칙
+
+같은 플랜이 양쪽에 있으면 `updatedAt` 이 최신인 쪽이 이긴다. 서버도 같은 규칙을
+`on conflict ... where plans.updated_at <= excluded.updated_at` 로 한 번 더 건다.
+탭을 두 개 띄웠을 때 오래된 쪽의 저장이 늦게 도착해도 새 내용을 지우지 못한다.
+
+### 지운 것과 못 올린 것을 어떻게 구별하나
+
+`unione-fastplaner:synced:v1` 에 **서버로 올린 플랜의 ID 와 시각**을 남긴다.
+새로고침한 뒤 "로컬에는 있는데 서버에 없는 플랜" 을 만나면 이 기록으로 나눈다.
+
+| 올린 기록 | 판단 | 처리 |
+| --- | --- | --- |
+| 있음 | 다른 기기에서 지웠다 | 여기서도 지운다 |
+| 없음 | 연결이 끊긴 채 새로 만들었다 | 서버로 올린다 |
+
+이 기록이 없으면 둘을 구별할 수 없어 **한쪽 기기에서 지운 플랜이 다른 기기에서
+되살아난다.** 검증 중에 실제로 겪었다.
+
+### 계정이 바뀔 때
+
+로그인·로그아웃하면 브라우저의 플랜 사본을 비운다. 한 컴퓨터를 여러 명이 쓸 때
+앞사람 플랜이 뒷사람 계정으로 올라가는 사고를 막기 위해서다.
+
+로그인 **전에** 만든 플랜(`owner === null`)은 버리지 않고
+`unione-fastplaner:guest-backup` 으로 옮긴 뒤 화면에서 물어본다. 누르기 전까지
+서버로 올라가지 않는다.
+
+### 받아 오기와 올리기는 겹치지 않는다
+
+`sync.ts` 의 `serialize()` 가 둘을 한 줄로 세운다. 겹치면 올리기가 붙잡고 있던
+옛 목록을 기준으로 삭제를 판단해 방금 받아 온 플랜을 지운다.
+
+### 키
+
+| 키 | 내용 | 바꿔도 되나 |
+| --- | --- | --- |
+| `unione-fastplaner:v1` | 플랜·크레딧·중단된 생성 | **안 된다** — 바꾸면 사용자 플랜이 전부 사라진다 |
+| `unione-fastplaner:synced:v1` | 서버로 올린 기록 | 지워도 안전 (다음 동기화에서 다시 만든다) |
+| `unione-fastplaner:guest-backup` | 로그인 전 플랜 보관함 | 지우면 그 플랜은 사라진다 |
 
 크레딧 한도처럼 저장된 값의 의미가 달라지는 변경은 `store.ts` 의
-`CREDIT_POLICY_VERSION` 을 올리고 `migrate()` 에서 처리합니다.
+`CREDIT_POLICY_VERSION` 을 올리고 `migrate()` 에서 처리한다.
+
+## 데이터베이스 — 한 SQL, 두 엔진
+
+`lib/db/index.ts` 는 `DATABASE_URL` 유무로 백엔드를 고른다.
+
+| 환경 | 백엔드 |
+| --- | --- |
+| 배포 | Supabase 등 Postgres (`pg` 드라이버) |
+| 로컬·테스트 | PGlite — Postgres 를 WebAssembly 로 빌드한 것 |
+
+둘 다 진짜 Postgres 라서 **같은 SQL 이 양쪽에서 그대로 돈다.** Postgres 서버를
+띄울 수 없는 환경에서도 질의를 실제로 실행해 검증할 수 있고, Supabase 전용 SDK 를
+쓰지 않으므로 나중에 Neon·RDS 로 옮겨도 코드가 그대로다.
+
+스키마는 서버가 뜰 때 `create table if not exists` 로 만든다. 서버리스는
+인스턴스가 여러 개 동시에 뜨므로 `pg_advisory_xact_lock` 으로 한 번에 하나만
+들어가게 한다 — `if not exists` 만으로는 이 경쟁을 막지 못한다.
 
 ## 개발 명령
 

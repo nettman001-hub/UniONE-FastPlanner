@@ -66,6 +66,8 @@ git push
 Import 화면(또는 나중에 **Settings → Environment Variables**)에서 아래를 추가합니다.
 Production · Preview · Development 를 모두 체크하세요.
 
+### AI 공급자
+
 | Key | Value |
 | --- | --- |
 | `AI_PROVIDER` | `deepseek` |
@@ -74,12 +76,72 @@ Production · Preview · Development 를 모두 체크하세요.
 | `DEEPSEEK_MODEL` | `deepseek-v4-pro` |
 | `DEEPSEEK_MAX_TOKENS` | `8192` |
 
+### 로그인과 저장소
+
+| Key | Value | 없으면 |
+| --- | --- | --- |
+| `DATABASE_URL` | Postgres 접속 문자열 (아래 참고) | **플랜이 저장되지 않습니다** |
+| `AUTH_SECRET` | 16자 이상의 임의 문자열 | **로그인이 동작하지 않습니다** |
+| `TESTER_EMAIL` | 예: `tester@unione.app` | 공용 테스트 계정 없음 |
+| `TESTER_PASSWORD` | 지인에게 알려 줄 비밀번호 (8자 이상) | 공용 테스트 계정 없음 |
+| `SIGNUP_CODE` | 초대 코드 | 가입이 닫힙니다 |
+
+`AUTH_SECRET` 만들기:
+
+```powershell
+# PowerShell
+-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 48 | % {[char]$_})
+```
+```bash
+# 맥 · 리눅스
+openssl rand -base64 36
+```
+
+> `AUTH_SECRET` 을 나중에 바꾸면 **모든 사용자가 로그아웃**됩니다.
+> 계정과 플랜은 그대로 남습니다.
+
 > **이름 앞에 `NEXT_PUBLIC_` 을 붙이지 마세요.**
 > 그 접두사가 붙은 환경변수는 브라우저로 그대로 내려가 키가 공개됩니다.
 > 위 이름 그대로 써야 서버에만 남습니다.
 
 환경변수를 나중에 바꾸면 **Redeploy** 를 해야 반영됩니다.
-키를 넣지 않으면 내장 생성기로 동작하며, AI 생성 외 모든 기능은 그대로 쓸 수 있습니다.
+AI 키를 넣지 않으면 내장 생성기로 동작하며, AI 생성 외 모든 기능은 그대로 쓸 수 있습니다.
+
+---
+
+## 3-1단계 — 데이터베이스 (Supabase)
+
+플랜을 계정에 저장하려면 Postgres 가 필요합니다. Supabase 무료 플랜으로 충분합니다.
+
+1. https://supabase.com 에서 **New project**
+2. **Region** 은 `Northeast Asia (Seoul)`
+3. **Database password** 를 `Copy` 해서 따로 적어 둡니다 — 나중에 다시 볼 수 없습니다.
+   `@ : / ? # % &` 같은 기호가 들어가면 접속 문자열이 깨집니다. 영문·숫자만 쓰세요.
+4. **Security 의 체크 두 개를 모두 끕니다**
+
+   | 항목 | 값 |
+   | --- | --- |
+   | Enable Data API | 끔 |
+   | Automatically expose new tables | 끔 |
+
+   이 앱은 접속 문자열로 직접 붙으므로 REST API 가 필요 없습니다.
+   켜 두면 `users` 표(비밀번호 해시가 든 표)가 인터넷에서 열립니다.
+5. 프로젝트가 만들어지면 상단 **Connect** → **Direct (Connection string)** →
+   **Transaction pooler** 의 주소를 복사합니다.
+
+```
+postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres
+                          └── 대괄호까지 지우고 3번에서 정한 비밀번호를 넣습니다
+```
+
+완성한 한 줄을 `DATABASE_URL` 에 넣습니다.
+
+> **반드시 Transaction pooler(포트 6543)** 를 쓰세요.
+> 무료 플랜의 직접 연결(포트 5432)은 IPv6 전용이라 Vercel 에서 연결되지 않습니다.
+
+표는 서버가 처음 뜰 때 자동으로 만들어집니다. SQL 을 직접 실행할 필요가 없습니다.
+
+자세한 내용은 [계정과 데이터 저장](./08-accounts.md) 을 보세요.
 
 ---
 

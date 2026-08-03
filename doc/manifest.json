@@ -49,6 +49,12 @@
       "file": "07-deploy.md",
       "title": "배포",
       "summary": "Vercel 배포, 환경변수, 도메인 연결, 요금"
+    },
+    {
+      "slug": "accounts",
+      "file": "08-accounts.md",
+      "title": "계정과 데이터 저장",
+      "summary": "로그인, 기기 간 동기화, 가입 정책, 데이터베이스"
     }
   ]
 }
