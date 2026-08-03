@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePlannerStore } from './store';
-import { isPipeline } from './jobs/progress';
+import { isJobRunning, isPipeline, remainingOf, type JobProgress } from './jobs/progress';
 import {
   ARTIFACT_CREDIT_COST,
   ARTIFACT_LABEL,
@@ -78,9 +78,21 @@ export function useGenerate(plan: Plan | undefined) {
 
   const planId = plan?.id;
 
+  const untrackJob = usePlannerStore((s) => s.untrackJob);
+
   /** 이 플랜에서 도는 작업. */
   const job = useMemo(
-    () => Object.values(jobs).find((j) => j.planId === planId),
+    () => Object.values(jobs).find((j) => j.planId === planId && isJobRunning(j)),
+    [jobs, planId],
+  );
+
+  /**
+   * 브라우저가 사라져 멈춰 둔 작업.
+   *
+   * 만들어진 단계는 이미 반영돼 있고, 남은 단계를 이어서 만들 수 있다.
+   */
+  const pausedJob = useMemo(
+    () => Object.values(jobs).find((j) => j.planId === planId && j.status === 'paused'),
     [jobs, planId],
   );
 
@@ -161,5 +173,34 @@ export function useGenerate(plan: Plan | undefined) {
   /** PRD 부터 와이어프레임까지 한 작업으로 맡긴다. 이어 달리는 것은 서버가 한다. */
   const generateAll = useCallback(() => enqueue(PIPELINE_ORDER), [enqueue]);
 
-  return { generate, generateAll, pending, autoRunning, job };
+  /** 서버에서 멈춘 작업을 정리한다. 이어서 만들 때도, 그만둘 때도 거친다. */
+  const dropPaused = useCallback(
+    async (target: JobProgress) => {
+      untrackJob(target.id);
+      await fetch(`/api/jobs/${target.id}`, { method: 'DELETE' }).catch(() => {});
+    },
+    [untrackJob],
+  );
+
+  /**
+   * 멈춘 지점부터 이어서 만든다.
+   *
+   * 만들어진 단계는 이미 문서에 반영돼 있으므로, **남은 단계만** 새 작업으로 맡긴다.
+   * 그래서 앞부분을 다시 만들지 않고 크레딧도 남은 만큼만 든다.
+   */
+  const resume = useCallback(async () => {
+    if (!pausedJob) return false;
+    const rest = remainingOf(pausedJob);
+    await dropPaused(pausedJob);
+    if (rest.length === 0) return true;
+    return enqueue(rest);
+  }, [pausedJob, dropPaused, enqueue]);
+
+  /** 이어서 만들지 않고 멈춘 작업을 버린다. 만들어진 것은 그대로 남는다. */
+  const discardPaused = useCallback(async () => {
+    if (!pausedJob) return;
+    await dropPaused(pausedJob);
+  }, [pausedJob, dropPaused]);
+
+  return { generate, generateAll, pending, autoRunning, job, pausedJob, resume, discardPaused };
 }

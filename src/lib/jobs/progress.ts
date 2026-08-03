@@ -9,7 +9,11 @@
 
 import type { ArtifactKey } from '../types';
 
-export type JobStatus = 'queued' | 'running' | 'done' | 'error';
+/**
+ * `paused` — 브라우저가 사라져 이어 갈 곳이 없어진 상태.
+ * 진행 중이던 단계까지 마치고 결과를 보관한 채 멈춘다. 돌아오면 다음 단계부터 이어 간다.
+ */
+export type JobStatus = 'queued' | 'running' | 'paused' | 'done' | 'error';
 
 export interface JobProgress {
   id: string;
@@ -27,6 +31,16 @@ export interface JobProgress {
 
 export function isJobFinished(job: JobProgress) {
   return job.status === 'done' || job.status === 'error';
+}
+
+/** 지금 돌고 있는가. 멈춘 작업은 진행 중이 아니다. */
+export function isJobRunning(job: JobProgress) {
+  return job.status === 'queued' || job.status === 'running';
+}
+
+/** 이어서 만들 산출물. */
+export function remainingOf(job: JobProgress) {
+  return job.artifacts.filter((a) => !job.done.includes(a));
 }
 
 /** 전체 자동 생성인지 (여러 단계를 이어서 도는 작업) */

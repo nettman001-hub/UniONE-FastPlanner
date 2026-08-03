@@ -3,10 +3,16 @@ import { isStale, jobStore } from '@/lib/jobs/store';
 
 export const runtime = 'nodejs';
 
-/** 작업 하나의 현재 상태. 브라우저가 이걸 주기적으로 물어보며 결과를 받아 간다. */
+/**
+ * 작업 하나의 현재 상태.
+ *
+ * 이 호출 자체가 **"아직 보고 있다"는 신호**다. 시각을 기록해 두고, 작업 실행기는
+ * 단계 사이마다 이 값을 확인해 소식이 끊겼으면 다음 단계로 넘어가지 않고 멈춘다.
+ */
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  const job = await jobStore().get(id);
+  const store = jobStore();
+  const job = await store.get(id);
 
   if (!job) {
     // 서버가 재시작됐거나 보관 기간이 지난 경우. 브라우저는 이걸 보고 진행 표시를 푼다.
@@ -21,5 +27,13 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     });
   }
 
-  return NextResponse.json(job);
+  const touched = await store.update(id, { lastSeenAt: Date.now() });
+  return NextResponse.json(touched ?? job);
+}
+
+/** 멈춘 작업을 정리한다 — 이어서 만들었거나, 사용자가 그만두기를 골랐을 때. */
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  await jobStore().remove(id);
+  return NextResponse.json({ ok: true });
 }

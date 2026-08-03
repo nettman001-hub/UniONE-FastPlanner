@@ -44,6 +44,13 @@ export interface Job {
   cost: number;
   createdAt: number;
   updatedAt: number;
+  /**
+   * 브라우저가 마지막으로 상태를 물어본 시각.
+   *
+   * 단계 사이마다 이 값을 보고 **아직 보고 있는 사람이 있는지** 판단한다.
+   * 끊긴 지 오래면 다음 단계로 넘어가지 않고 멈춘다(`paused`).
+   */
+  lastSeenAt: number;
 }
 
 export interface JobStore {
@@ -52,6 +59,7 @@ export interface JobStore {
   get(id: string): Promise<Job | undefined>;
   /** 그 플랜의 작업을 최신순으로 */
   listByPlan(planId: string): Promise<Job[]>;
+  remove(id: string): Promise<void>;
 }
 
 /** 끝난 작업을 얼마나 남겨 둘지. 돌아온 사용자가 결과를 받아 갈 시간을 준다. */
@@ -60,7 +68,7 @@ const RETENTION_MS = 30 * 60 * 1000;
 const STALE_MS = 20 * 60 * 1000;
 
 export function isFinished(job: Job) {
-  return job.status === 'done' || job.status === 'error';
+  return job.status === 'done' || job.status === 'error' || job.status === 'paused';
 }
 
 /** 응답이 끊긴 채 방치된 작업인지. 화면이 영원히 "생성 중" 으로 남지 않게 한다. */
@@ -68,8 +76,13 @@ export function isStale(job: Job) {
   return !isFinished(job) && Date.now() - job.updatedAt > STALE_MS;
 }
 
+/** 멈춘 작업은 이어 하려는 사람을 기다려야 하므로 더 오래 보관한다. */
+const PAUSED_RETENTION_MS = 24 * 60 * 60 * 1000;
+
 function expired(job: Job) {
-  return isFinished(job) && Date.now() - job.updatedAt > RETENTION_MS;
+  if (!isFinished(job)) return false;
+  const keep = job.status === 'paused' ? PAUSED_RETENTION_MS : RETENTION_MS;
+  return Date.now() - job.updatedAt > keep;
 }
 
 /* 메모리 저장소 ----------------------------------------------------- */
@@ -103,6 +116,10 @@ class MemoryJobStore implements JobStore {
     return [...this.jobs.values()]
       .filter((job) => job.planId === planId)
       .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async remove(id: string) {
+    this.jobs.delete(id);
   }
 }
 
@@ -156,6 +173,10 @@ class FileJobStore implements JobStore {
       if (job?.planId === planId) jobs.push(job);
     }
     return jobs.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async remove(id: string) {
+    await unlink(this.file(id)).catch(() => {});
   }
 
   private async sweep() {

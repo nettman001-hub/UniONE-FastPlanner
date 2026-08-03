@@ -17,6 +17,23 @@ import { draftToPatch } from '@/lib/ai/apply';
 import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
 import { jobStore, type Job } from './store';
 
+/**
+ * 브라우저가 이만큼 소식이 없으면 보고 있는 사람이 없다고 본다.
+ *
+ * 감시자는 1.5초마다 물어보므로 몇 번을 놓쳐도 여유가 있다.
+ * 이 시간을 넘기면 **다음 단계로 넘어가지 않고 멈춘다.** 지금 돌던 단계는 마친다 —
+ * 이미 모델을 부른 뒤라 버리면 그만큼이 낭비다.
+ */
+const ABANDON_MS = 15000;
+
+/**
+ * 단계마다 넣을 지연(ms). 기본 0 — 평소에는 아무 영향이 없다.
+ *
+ * 키 없이 내장 생성기로 돌면 한 단계가 순식간에 끝나 진행 중 동작(멈춤·이어 하기)을
+ * 눈으로 확인할 수 없다. 시연하거나 검증할 때만 켠다.
+ */
+const STEP_DELAY_MS = Math.max(0, Number(process.env.GENERATE_STEP_DELAY_MS ?? 0) || 0);
+
 /** 산출물별 출력 분량이 크게 달라 토큰 상한을 따로 잡는다. */
 const MAX_TOKENS: Record<ArtifactKey, number> = {
   prd: 16000,
@@ -121,19 +138,29 @@ async function run(job: Job, basePlan: Plan, options: EnqueueOptions) {
     await store.update(job.id, { status: 'running', current: artifact });
 
     try {
+      if (STEP_DELAY_MS > 0) await new Promise((r) => setTimeout(r, STEP_DELAY_MS));
       const result = await runStep(working, artifact, options);
       merged = { ...merged, ...result.patch };
       working = withPatch(working, result.patch);
       done.push(artifact);
       if (result.warning) warnings.push(`${artifact}: ${result.warning}`);
 
+      const remaining = job.artifacts.length - done.length;
+      const latest = await store.get(job.id);
+      const abandoned =
+        remaining > 0 && Date.now() - (latest?.lastSeenAt ?? job.lastSeenAt) > ABANDON_MS;
+
       await store.update(job.id, {
+        // 아무도 안 보고 있으면 여기까지만 하고 멈춘다. 결과는 그대로 보관한다.
+        status: abandoned ? 'paused' : 'running',
         current: null,
         done: [...done],
         patch: merged,
         warnings: [...warnings],
         source: result.source,
       });
+
+      if (abandoned) return;
     } catch (error) {
       const message = error instanceof Error ? error.message : '생성 중 오류가 발생했습니다.';
       await store.update(job.id, {
@@ -179,6 +206,7 @@ export async function enqueue(
     cost,
     createdAt: now,
     updatedAt: now,
+    lastSeenAt: now,
   };
 
   await store.create(job);

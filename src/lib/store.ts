@@ -253,9 +253,11 @@ export const usePlannerStore = create<PlannerState>()(
           }),
 
         // 한 플랜에서 동시에 두 작업을 돌리지 않는다 — 앞 단계 결과를 컨텍스트로 쓰기 때문.
+        // 멈춘(paused) 작업은 돌고 있지 않으므로 새 작업을 막지 않는다.
         isPlanBusy: (planId) =>
           Object.values(get().jobs).some(
-            (job) => job.planId === planId && job.status !== 'done' && job.status !== 'error',
+            (job) =>
+              job.planId === planId && (job.status === 'queued' || job.status === 'running'),
           ),
 
         applyDocuments: (planId, patch, generated) =>

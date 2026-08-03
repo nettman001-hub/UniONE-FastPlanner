@@ -17,7 +17,7 @@
 import { useEffect, useRef } from 'react';
 import { useToast } from './ui';
 import { usePlannerStore } from '@/lib/store';
-import { isPipeline, type JobProgress } from '@/lib/jobs/progress';
+import { isPipeline, remainingOf, type JobProgress } from '@/lib/jobs/progress';
 import { ARTIFACT_LABEL, type ArtifactKey, type PlanDocuments } from '@/lib/types';
 
 /** 진행 중인 작업이 있을 때 확인 간격. */
@@ -41,16 +41,38 @@ export function JobWatcher({ planId }: { planId: string }) {
 
     const store = usePlannerStore;
 
-    /** 서버가 끝났다고 알려 준 작업을 스토어에 반영한다. */
+    /**
+     * 서버가 더 진행하지 않는다고 알려 준 작업을 스토어에 반영한다.
+     *
+     * `paused` 는 **여기서 지우지 않는다.** 이어서 만들 수 있게 화면에 남겨 두어야 하므로
+     * 만들어진 것만 반영하고 추적은 유지한다.
+     */
     const settle = (job: JobResponse) => {
       if (settled.current.has(job.id)) return;
-      settled.current.add(job.id);
 
-      const { applyDocuments, refundCredits, untrackJob } = store.getState();
+      const { applyDocuments, refundCredits, untrackJob, trackJob } = store.getState();
 
       if (job.patch && job.done.length > 0) {
         applyDocuments(planId, job.patch, job.done);
       }
+
+      if (job.status === 'paused') {
+        // 못 만든 단계는 값을 치르지 않은 셈이므로 돌려준다. 이어서 만들 때 다시 낸다.
+        const refund = remainingOf(job).reduce((sum, a) => sum + store.getState().costOf(a), 0);
+        if (refund > 0) refundCredits(refund);
+        trackJob({
+          id: job.id,
+          planId,
+          artifacts: job.artifacts,
+          current: null,
+          done: job.done,
+          status: 'paused',
+          cost: 0,
+        });
+        return;
+      }
+
+      settled.current.add(job.id);
 
       if (job.status === 'error') {
         // 못 만든 단계의 크레딧만 돌려준다. 만들어진 것은 값을 했으므로 차감을 유지한다.
@@ -91,7 +113,9 @@ export function JobWatcher({ planId }: { planId: string }) {
     const poll = async () => {
       if (!alive) return;
 
-      const tracked = Object.values(store.getState().jobs).filter((j) => j.planId === planId);
+      const tracked = Object.values(store.getState().jobs).filter(
+        (j) => j.planId === planId && j.status !== 'paused',
+      );
 
       for (const job of tracked) {
         try {
@@ -103,7 +127,7 @@ export function JobWatcher({ planId }: { planId: string }) {
           const data = (await response.json()) as JobResponse;
           if (!alive) return;
 
-          if (data.status === 'done' || data.status === 'error') {
+          if (data.status === 'done' || data.status === 'error' || data.status === 'paused') {
             settle(data);
           } else {
             store.getState().trackJob({
@@ -122,7 +146,9 @@ export function JobWatcher({ planId }: { planId: string }) {
       }
 
       if (!alive) return;
-      const stillRunning = Object.values(store.getState().jobs).some((j) => j.planId === planId);
+      const stillRunning = Object.values(store.getState().jobs).some(
+        (j) => j.planId === planId && j.status !== 'paused',
+      );
       timer = setTimeout(poll, stillRunning ? POLL_MS : POLL_MS * 4);
     };
 
@@ -134,7 +160,7 @@ export function JobWatcher({ planId }: { planId: string }) {
         if (!alive) return;
         for (const job of data.jobs ?? []) {
           if (settled.current.has(job.id)) continue;
-          if (job.status === 'done' || job.status === 'error') {
+          if (job.status === 'done' || job.status === 'error' || job.status === 'paused') {
             settle(job);
           } else {
             store.getState().trackJob({
