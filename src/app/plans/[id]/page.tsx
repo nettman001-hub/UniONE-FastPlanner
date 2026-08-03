@@ -97,10 +97,6 @@ function formatDateTime(iso: string): string {
   )}:${pad(date.getMinutes())}`;
 }
 
-function tick(ms = 90): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /** 산출물별 항목 수 요약. */
 function stepCount(plan: Plan, key: ArtifactKey): string {
   switch (key) {
@@ -158,16 +154,17 @@ function PlanOverview() {
   const toggleComment = usePlannerStore((s) => s.toggleComment);
   const removeComment = usePlannerStore((s) => s.removeComment);
 
-  const { generate, pending } = useGenerate(plan);
+  const { generate, generateAll, pending, autoRunning } = useGenerate(plan);
 
   const [briefOpen, setBriefOpen] = useState(false);
-  const [autoStep, setAutoStep] = useState<ArtifactKey | null>(null);
-  const [running, setRunning] = useState(false);
+  /** 전체 자동 생성 진행 여부·현재 단계는 서버 작업 상태에서 온다. */
+  const running = autoRunning;
+  const autoStep = running ? pending : null;
   const [versionOpen, setVersionOpen] = useState(false);
   const [versionLabel, setVersionLabel] = useState('');
   const [commentBody, setCommentBody] = useState('');
 
-  /* 항상 최신 generate 를 참조하기 위한 ref (순차 자동 생성용) */
+  /* ?autogen=prd 를 최초 1회 처리할 때만 쓴다 (효과 안에서 최신 generate 를 잡기 위해). */
   const generateRef = useRef(generate);
   useEffect(() => {
     generateRef.current = generate;
@@ -211,7 +208,12 @@ function PlanOverview() {
     await generate(key);
   };
 
-  /* 전체 자동 생성 — 순차 실행, 실패 시 중단 */
+  /*
+   * 전체 자동 생성.
+   *
+   * 5단계를 **한 작업으로 서버에 맡긴다.** 이어 달리는 것은 서버가 하므로
+   * 화면을 옮기거나 탭을 닫아도 끝까지 진행된다.
+   */
   const handleGenerateAll = async () => {
     if (busy) return;
     if (STEP_ORDER.some((key) => plan.generated[key])) {
@@ -224,24 +226,7 @@ function PlanOverview() {
       });
       if (!ok) return;
     }
-
-    setRunning(true);
-    try {
-      for (const key of STEP_ORDER) {
-        setAutoStep(key);
-        await tick();
-        const ok = await generateRef.current(key);
-        if (!ok) {
-          toast(`${ARTIFACT_LABEL[key]} 생성에서 멈췄습니다. 확인 후 다시 시도해 주세요.`, 'warn');
-          return;
-        }
-        await tick();
-      }
-      toast('5종 산출물을 모두 생성했습니다.', 'ok');
-    } finally {
-      setAutoStep(null);
-      setRunning(false);
-    }
+    await generateAll();
   };
 
   /* 버전 저장 */

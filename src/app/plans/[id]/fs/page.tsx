@@ -20,6 +20,7 @@ import {
 import { EmptyState, Field, InlineText, ListEditor, Spinner, useConfirm } from '@/components/ui';
 import { BRANCH_HUES, FsMindmap } from '@/components/FsMindmap';
 import { NewBadge, ReviewBar } from '@/components/ReviewBar';
+import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { buildFsTree, byOrder, isFiltering, type FsTreeNode } from '@/lib/fs-tree';
@@ -435,11 +436,15 @@ export default function FsPage() {
     />
   ) : (
     <div className="card">
-      <EmptyState
-        icon={<MousePointerClick size={24} />}
-        title="편집할 항목을 선택하세요"
-        description="요구사항·기능·상세 명세를 고르면 이곳에서 바로 편집할 수 있습니다."
-      />
+      {pending === 'fs' ? (
+        <GeneratingState artifact="fs" />
+      ) : (
+        <EmptyState
+          icon={<MousePointerClick size={24} />}
+          title="편집할 항목을 선택하세요"
+          description="요구사항·기능·상세 명세를 고르면 이곳에서 바로 편집할 수 있습니다."
+        />
+      )}
     </div>
   );
 

@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server';
-import { generateJson, isAiEnabled } from '@/lib/ai/client';
-import { generateLocally } from '@/lib/ai/local-generator';
-import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
-import { buildPrompt } from '@/lib/ai/prompts';
-import { draftToPatch } from '@/lib/ai/apply';
-import type { ArtifactKey, Plan } from '@/lib/types';
+import { after } from 'next/server';
+import { enqueue, precondition } from '@/lib/jobs/queue';
+import { ARTIFACT_CREDIT_COST, type ArtifactKey, type Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -12,7 +9,10 @@ export const maxDuration = 300;
 const VALID: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
 
 interface GenerateBody {
-  artifact: ArtifactKey;
+  /** 한 종만 만들 때 */
+  artifact?: ArtifactKey;
+  /** 순서대로 이어서 만들 때 (전체 자동 생성) */
+  artifacts?: ArtifactKey[];
   plan: Plan;
   /** 사용자가 추가로 준 지시 */
   extra?: string;
@@ -22,15 +22,12 @@ interface GenerateBody {
   merge?: boolean;
 }
 
-/** 산출물별 출력 분량이 크게 달라 토큰 상한을 따로 잡는다. */
-const MAX_TOKENS: Record<ArtifactKey, number> = {
-  prd: 16000,
-  fs: 32000,
-  ia: 20000,
-  flow: 20000,
-  wireframe: 32000,
-};
-
+/**
+ * 생성 작업을 맡긴다.
+ *
+ * 결과를 기다리지 않고 작업 번호만 돌려준다. 브라우저는 `/api/jobs/{id}` 로
+ * 받아 가며, 탭을 닫아도 서버는 끝까지 만든다.
+ */
 export async function POST(request: Request) {
   let body: GenerateBody;
   try {
@@ -39,71 +36,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '요청 본문을 읽지 못했습니다.' }, { status: 400 });
   }
 
-  const { artifact, plan } = body;
+  const { plan } = body;
+  const artifacts = body.artifacts ?? (body.artifact ? [body.artifact] : []);
 
-  if (!artifact || !VALID.includes(artifact)) {
+  if (artifacts.length === 0 || artifacts.some((a) => !VALID.includes(a))) {
     return NextResponse.json({ error: '지원하지 않는 산출물입니다.' }, { status: 400 });
   }
-  if (!plan?.brief?.idea?.trim()) {
-    return NextResponse.json(
-      { error: '서비스 아이디어가 비어 있어 생성할 수 없습니다.' },
-      { status: 400 },
-    );
-  }
-  if (artifact === 'ia' && plan.features.length === 0) {
-    return NextResponse.json(
-      { error: '정보구조도를 만들려면 기능명세서를 먼저 생성해 주세요.' },
-      { status: 409 },
-    );
-  }
-  if ((artifact === 'flow' || artifact === 'wireframe') && plan.iaPages.length === 0) {
-    return NextResponse.json(
-      { error: '이 산출물을 만들려면 정보구조도를 먼저 생성해 주세요.' },
-      { status: 409 },
-    );
+  if (!plan?.id) {
+    return NextResponse.json({ error: '플랜 정보가 없습니다.' }, { status: 400 });
   }
 
-  const useAi = isAiEnabled();
-
-  try {
-    let draft: unknown;
-
-    if (useAi) {
-      let prompt = buildPrompt(plan, artifact, body.extra);
-      if (artifact === 'wireframe') {
-        const targets =
-          body.pageIds && body.pageIds.length > 0
-            ? plan.iaPages.filter((p) => body.pageIds!.includes(p.id))
-            : plan.iaPages.slice(0, 10);
-        prompt += `\n\n## 와이어프레임을 만들 페이지\n${targets
-          .map((p) => `- ${p.id} ${p.name} (${p.path}) — ${p.description}`)
-          .join('\n')}`;
-      }
-      draft = await generateJson({
-        prompt,
-        schema: ARTIFACT_SCHEMA[artifact],
-        maxTokens: MAX_TOKENS[artifact],
-      });
-    } else {
-      draft = generateLocally(artifact, plan.brief, plan, { pageIds: body.pageIds });
-    }
-
-    const patch = draftToPatch(artifact, draft, plan, {
-      mergeWireframes: artifact === 'wireframe' && body.merge === true,
-    });
-
-    return NextResponse.json({ patch, source: useAi ? 'ai' : 'local' });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '생성 중 오류가 발생했습니다.';
-    // AI 호출이 실패해도 내장 생성기로 결과를 돌려주어 흐름이 끊기지 않게 한다.
-    try {
-      const draft = generateLocally(artifact, plan.brief, plan, { pageIds: body.pageIds });
-      const patch = draftToPatch(artifact, draft, plan, {
-        mergeWireframes: artifact === 'wireframe' && body.merge === true,
-      });
-      return NextResponse.json({ patch, source: 'local', warning: message });
-    } catch {
-      return NextResponse.json({ error: message }, { status: 500 });
-    }
+  // 첫 단계는 지금 바로 판단할 수 있다. 뒤 단계는 앞 결과에 달렸으므로 작업 안에서 본다.
+  const blocked = precondition(plan, artifacts[0]);
+  if (blocked) {
+    const status = plan.brief?.idea?.trim() ? 409 : 400;
+    return NextResponse.json({ error: blocked }, { status });
   }
+
+  const cost = artifacts.reduce((sum, a) => sum + ARTIFACT_CREDIT_COST[a], 0);
+  const { job, running } = await enqueue(plan.id, plan, artifacts, cost, {
+    extra: body.extra,
+    pageIds: body.pageIds,
+    merge: body.merge,
+  });
+
+  /*
+   * 응답을 보낸 뒤에도 실행이 살아 있어야 한다.
+   * 서버리스에서는 응답과 함께 인스턴스가 얼어붙을 수 있어 after() 로 붙잡아 둔다.
+   * 일반 Node 서버에서는 없어도 돌지만, 두 환경에서 같게 동작하도록 항상 건다.
+   */
+  after(async () => {
+    await running;
+  });
+
+  return NextResponse.json({ jobId: job.id, status: job.status }, { status: 202 });
 }

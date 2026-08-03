@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { FlowCanvas } from '@/components/FlowCanvas';
 import { EmptyState, Field, InlineText, Spinner, useConfirm, useToast } from '@/components/ui';
+import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
@@ -317,27 +318,31 @@ export default function FlowPage() {
 
       {flows.length === 0 ? (
         <div className="card mt-4">
-          <EmptyState
-            icon={<GitBranch size={26} />}
-            title="아직 유저 플로우가 없습니다"
-            description="정보구조도를 바탕으로 AI가 핵심 시나리오를 플로우차트로 만들어 줍니다. 직접 추가해 그릴 수도 있습니다."
-            action={
-              <div className="flex gap-1.5">
-                <button
-                  className="btn btn-primary btn-sm"
-                  disabled={pending !== null || !iaReady}
-                  onClick={() => void handleGenerate()}
-                >
-                  {pending === 'flow' ? <Spinner size={13} /> : <Sparkles size={13} />}
-                  AI로 생성
-                </button>
-                <button className="btn btn-sm" onClick={handleAddFlow}>
-                  <Plus size={13} />
-                  직접 추가
-                </button>
-              </div>
-            }
-          />
+          {pending === 'flow' ? (
+            <GeneratingState artifact="flow" />
+          ) : (
+            <EmptyState
+              icon={<GitBranch size={26} />}
+              title="아직 유저 플로우가 없습니다"
+              description="정보구조도를 바탕으로 AI가 핵심 시나리오를 플로우차트로 만들어 줍니다. 직접 추가해 그릴 수도 있습니다."
+              action={
+                <div className="flex gap-1.5">
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={pending !== null || !iaReady}
+                    onClick={() => void handleGenerate()}
+                  >
+                    <Sparkles size={13} />
+                    AI로 생성
+                  </button>
+                  <button className="btn btn-sm" onClick={handleAddFlow}>
+                    <Plus size={13} />
+                    직접 추가
+                  </button>
+                </div>
+              }
+            />
+          )}
         </div>
       ) : (
         flow && (

@@ -24,6 +24,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { EmptyState, InlineText, Modal, Spinner, useConfirm } from '@/components/ui';
+import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
@@ -276,24 +277,28 @@ export default function IaArchitecturePage() {
           </p>
         </header>
         <div className="card">
-          <EmptyState
-            icon={<ListTree size={26} />}
-            title="아직 정보구조도가 없습니다"
-            description={
-              canGenerate
-                ? '기능명세서를 기준으로 화면 계층과 기능 배치를 한 번에 만들어 드립니다. 직접 화면을 추가해 처음부터 작성할 수도 있습니다.'
-                : '기능명세서가 없어 AI 생성을 할 수 없습니다. 기능명세서를 먼저 만들거나, 화면을 직접 추가해 주세요.'
-            }
-            action={
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {generateButton}
-                <button className="btn btn-sm" onClick={() => handleAdd(null)}>
-                  <Plus size={13} />
-                  직접 추가
-                </button>
-              </div>
-            }
-          />
+          {pending === 'ia' ? (
+            <GeneratingState artifact="ia" />
+          ) : (
+            <EmptyState
+              icon={<ListTree size={26} />}
+              title="아직 정보구조도가 없습니다"
+              description={
+                canGenerate
+                  ? '기능명세서를 기준으로 화면 계층과 기능 배치를 한 번에 만들어 드립니다. 직접 화면을 추가해 처음부터 작성할 수도 있습니다.'
+                  : '기능명세서가 없어 AI 생성을 할 수 없습니다. 기능명세서를 먼저 만들거나, 화면을 직접 추가해 주세요.'
+              }
+              action={
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {generateButton}
+                  <button className="btn btn-sm" onClick={() => handleAdd(null)}>
+                    <Plus size={13} />
+                    직접 추가
+                  </button>
+                </div>
+              }
+            />
+          )}
         </div>
       </div>
     );

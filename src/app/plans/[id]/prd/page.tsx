@@ -24,6 +24,7 @@ import {
   Spinner,
   useConfirm,
 } from '@/components/ui';
+import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
@@ -214,20 +215,24 @@ export default function PrdPage() {
       <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
         {toolbar}
         <div className="card">
-          <EmptyState
-            icon={<FileText size={30} />}
-            title="아직 PRD가 없습니다"
-            description="서비스 아이디어를 바탕으로 AI가 초안을 만들어 드립니다. 생성 후에는 모든 항목을 직접 편집할 수 있습니다."
-            action={
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {generateButton}
-                <button className="btn btn-sm" onClick={() => patch({})}>
-                  <PencilLine size={13} />
-                  직접 작성하기
-                </button>
-              </div>
-            }
-          />
+          {pending === 'prd' ? (
+            <GeneratingState artifact="prd" />
+          ) : (
+            <EmptyState
+              icon={<FileText size={30} />}
+              title="아직 PRD가 없습니다"
+              description="서비스 아이디어를 바탕으로 AI가 초안을 만들어 드립니다. 생성 후에는 모든 항목을 직접 편집할 수 있습니다."
+              action={
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {generateButton}
+                  <button className="btn btn-sm" onClick={() => patch({})}>
+                    <PencilLine size={13} />
+                    직접 작성하기
+                  </button>
+                </div>
+              }
+            />
+          )}
         </div>
         {dialog}
       </div>

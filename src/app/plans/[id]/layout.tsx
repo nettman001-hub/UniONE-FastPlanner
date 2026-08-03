@@ -17,8 +17,11 @@ import {
 } from 'lucide-react';
 import { AgentPanel } from '@/components/AgentPanel';
 import { Logo } from '@/components/Logo';
-import { ClientOnly } from '@/components/ui';
+import { ClientOnly, Spinner } from '@/components/ui';
+import { JobWatcher } from '@/components/JobWatcher';
+import { ResumeBanner } from '@/components/ResumeBanner';
 import { DAILY_CREDIT_LIMIT, usePlannerStore } from '@/lib/store';
+import { useGenerate } from '@/lib/useGenerate';
 import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
 
 interface NavItem {
@@ -49,6 +52,11 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const plan = usePlannerStore((s) => s.plans.find((p) => p.id === planId));
   const credits = usePlannerStore((s) => s.credits);
+  /**
+   * 지금 생성 중인 산출물. 사이드바에 표시해, 생성 중에 다른 메뉴로 옮겨 가도
+   * 진행 중이라는 사실이 보이게 한다. 상태는 서버 작업에서 온다.
+   */
+  const { pending: generatingArtifact, pausedJob, resume, discardPaused } = useGenerate(plan);
   const [agentOpen, setAgentOpen] = useState(false);
 
   const base = `/plans/${planId}`;
@@ -89,6 +97,18 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
+      {/* 서버 큐를 확인해 끝난 결과를 받아 온다. 화면 어디에 있든 하나만 돈다. */}
+      <JobWatcher planId={planId} />
+
+      {/* 창을 닫아 멈춘 전체 자동 생성이 있으면 어느 화면에서든 이어 갈 수 있게 한다. */}
+      {pausedJob && (
+        <ResumeBanner
+          job={pausedJob}
+          onResume={() => void resume()}
+          onDiscard={() => void discardPaused()}
+        />
+      )}
+
       <div className="flex min-h-0 flex-1">
         {/* 사이드바 */}
         <nav className="no-print hidden w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)] p-3 md:flex">
@@ -108,13 +128,19 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
               >
                 <span className="shrink-0">{item.icon}</span>
                 <span className="flex-1 truncate">{item.label}</span>
-                {done !== undefined && (
-                  <span
-                    className={`size-1.5 shrink-0 rounded-full ${
-                      done ? 'bg-[var(--ok)]' : 'bg-[var(--border-strong)]'
-                    }`}
-                    title={done ? '생성 완료' : '미생성'}
-                  />
+                {item.artifact && generatingArtifact === item.artifact ? (
+                  <span className="shrink-0 text-[var(--primary)]" title="생성 중입니다">
+                    <Spinner size={12} />
+                  </span>
+                ) : (
+                  done !== undefined && (
+                    <span
+                      className={`size-1.5 shrink-0 rounded-full ${
+                        done ? 'bg-[var(--ok)]' : 'bg-[var(--border-strong)]'
+                      }`}
+                      title={done ? '생성 완료' : '미생성'}
+                    />
+                  )
                 )}
               </Link>
             );
@@ -134,7 +160,11 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
                   active ? 'text-[var(--primary)]' : 'text-[var(--fg-muted)]'
                 }`}
               >
-                {item.icon}
+                {item.artifact && generatingArtifact === item.artifact ? (
+                  <Spinner size={14} />
+                ) : (
+                  item.icon
+                )}
                 <span className="whitespace-nowrap">{item.label}</span>
               </Link>
             );
