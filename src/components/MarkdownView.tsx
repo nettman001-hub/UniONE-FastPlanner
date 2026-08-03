@@ -1,16 +1,40 @@
 'use client';
 
+import Link from 'next/link';
 import { Fragment, type ReactNode } from 'react';
 
 /**
- * 내보내기용 마크다운을 읽기 좋게 렌더링한다.
- * 라이브러리 없이 이 앱이 만들어 내는 형태(제목·표·목록·인용·코드블록)만 처리한다.
+ * 마크다운을 읽기 좋게 렌더링한다.
+ * 라이브러리 없이 이 앱이 다루는 형태(제목·표·목록·인용·코드블록·링크)만 처리한다.
  */
 
-function inline(text: string, keyPrefix: string): ReactNode[] {
-  // **굵게** 와 `코드` 만 처리한다.
+/**
+ * 파일명 → 앱 경로 대응표.
+ *
+ * 설명서를 앱 안에서 볼 때 `./06-troubleshooting.md` 같은 파일 간 링크를
+ * `/docs/troubleshooting` 으로 옮기는 데 쓴다. 서버에서 함수를 넘길 수 없으므로
+ * (이 파일은 클라이언트 컴포넌트다) 함수가 아니라 표를 받는다.
+ */
+export type LinkMap = Record<string, string>;
+
+/**
+ * `null` 이면 링크로 만들지 않는다.
+ *
+ * 대응표가 주어졌는데 거기 없는 상대 경로는 저장소 안의 파일을 가리키는 것이라
+ * 웹에서 열 수 없다. 링크로 두면 눌러서 404 가 나고, Next 가 미리 받아 오려다
+ * 콘솔 오류까지 남긴다. 그래서 글자로만 보여 준다.
+ */
+function resolveHref(href: string, map?: LinkMap): string | null {
+  if (/^https?:|^#|^mailto:/.test(href)) return href;
+  if (!map) return href;
+  const name = href.split('#')[0].split('/').pop();
+  return (name && map[name]) ?? null;
+}
+
+function inline(text: string, keyPrefix: string, map?: LinkMap): ReactNode[] {
+  // **굵게**, `코드`, [글자](주소) 만 처리한다.
   const parts: ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g;
   let last = 0;
   let match: RegExpExecArray | null;
   let index = 0;
@@ -24,6 +48,37 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
         <strong key={`${keyPrefix}-b${index}`} className="font-bold">
           {token.slice(2, -2)}
         </strong>,
+      );
+    } else if (token.startsWith('[')) {
+      const split = token.indexOf('](');
+      const label = token.slice(1, split);
+      const raw = token.slice(split + 2, -1);
+      const href = resolveHref(raw, map);
+      const external = href !== null && /^https?:/.test(href);
+      parts.push(
+        href === null ? (
+          <span key={`${keyPrefix}-a${index}`} className="font-semibold">
+            {label}
+          </span>
+        ) : external ? (
+          <a
+            key={`${keyPrefix}-a${index}`}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[var(--primary)] underline underline-offset-2"
+          >
+            {label}
+          </a>
+        ) : (
+          <Link
+            key={`${keyPrefix}-a${index}`}
+            href={href}
+            className="text-[var(--primary)] underline underline-offset-2"
+          >
+            {label}
+          </Link>
+        ),
       );
     } else {
       parts.push(
@@ -50,7 +105,7 @@ function splitRow(line: string): string[] {
 
 const isSeparator = (line: string) => /^\|?[\s:-]*\|[\s|:-]*$/.test(line) && line.includes('-');
 
-export function MarkdownView({ markdown }: { markdown: string }) {
+export function MarkdownView({ markdown, linkMap }: { markdown: string; linkMap?: LinkMap }) {
   const lines = markdown.split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -65,6 +120,13 @@ export function MarkdownView({ markdown }: { markdown: string }) {
     const line = lines[i];
 
     if (!line.trim()) {
+      i += 1;
+      continue;
+    }
+
+    // 구분선
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      push(<hr className="my-6 border-[var(--border)]" />);
       i += 1;
       continue;
     }
@@ -105,7 +167,7 @@ export function MarkdownView({ markdown }: { markdown: string }) {
             <thead>
               <tr>
                 {header.map((cell, ci) => (
-                  <th key={ci}>{inline(cell, `h${ci}`)}</th>
+                  <th key={ci}>{inline(cell, `h${ci}`, linkMap)}</th>
                 ))}
               </tr>
             </thead>
@@ -113,7 +175,7 @@ export function MarkdownView({ markdown }: { markdown: string }) {
               {rows.map((row, ri) => (
                 <tr key={ri}>
                   {row.map((cell, ci) => (
-                    <td key={ci}>{inline(cell, `r${ri}c${ci}`)}</td>
+                    <td key={ci}>{inline(cell, `r${ri}c${ci}`, linkMap)}</td>
                   ))}
                 </tr>
               ))}
@@ -136,7 +198,7 @@ export function MarkdownView({ markdown }: { markdown: string }) {
             level <= 2 ? 'border-b border-[var(--border)] pb-1.5' : ''
           }`}
         >
-          {inline(text, `hd${key}`)}
+          {inline(text, `hd${key}`, linkMap)}
         </p>,
       );
       i += 1;
@@ -152,7 +214,7 @@ export function MarkdownView({ markdown }: { markdown: string }) {
       }
       push(
         <blockquote className="my-3 border-l-2 border-[var(--primary)] bg-[var(--primary-soft)] px-3 py-2 text-[13px] leading-relaxed">
-          {inline(body.join(' '), `q${key}`)}
+          {inline(body.join(' '), `q${key}`, linkMap)}
         </blockquote>,
       );
       continue;
@@ -178,7 +240,7 @@ export function MarkdownView({ markdown }: { markdown: string }) {
         >
           {items.map((item, ii) => (
             <li key={ii} className="mb-1">
-              {inline(item, `li${key}-${ii}`)}
+              {inline(item, `li${key}-${ii}`, linkMap)}
             </li>
           ))}
         </ListTag>,
@@ -196,14 +258,15 @@ export function MarkdownView({ markdown }: { markdown: string }) {
       !lines[i].startsWith('> ') &&
       !lines[i].trim().startsWith('|') &&
       !/^\s*[-*]\s+/.test(lines[i]) &&
-      !/^\s*\d+\.\s+/.test(lines[i])
+      !/^\s*\d+\.\s+/.test(lines[i]) &&
+      !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[i])
     ) {
       body.push(lines[i]);
       i += 1;
     }
     push(
       <p className="my-2 text-[13px] leading-[1.75] text-[var(--fg)]">
-        {inline(body.join(' '), `p${key}`)}
+        {inline(body.join(' '), `p${key}`, linkMap)}
       </p>,
     );
   }

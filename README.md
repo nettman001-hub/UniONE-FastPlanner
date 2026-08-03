@@ -8,6 +8,7 @@
 
 > **자세한 사용 설명서는 [`doc/`](./doc/README.md) 폴더에 있습니다.**
 > 설치·화면별 사용법·AI 설정·내보내기·구조·문제 해결·배포를 7개 문서로 나누어 정리했습니다.
+> 앱을 띄운 뒤 **`/docs`** 에서도 같은 내용을 읽을 수 있습니다.
 
 ---
 
@@ -115,6 +116,7 @@ src/
       page.tsx                   개요 — 파이프라인 · 정합성 검사 · 버전 · 코멘트
       prd/ fs/ ia/ flow/ wireframe/ export/
     share/page.tsx               보기 전용 공유 (URL 해시에서 문서를 읽음)
+    docs/                        설명서 — doc/ 마크다운을 빌드 때 읽어 정적 생성
     api/
       generate/route.ts          생성 — 결과를 NDJSON 으로 흘려보냄
       chat/route.ts              AI 에이전트 대화 + 문서 패치

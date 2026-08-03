@@ -287,13 +287,13 @@ export default function FlowPage() {
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button
-            className="btn btn-primary btn-sm"
+            className={`btn btn-primary btn-sm${pending === 'flow' ? ' is-busy' : ''}`}
             disabled={pending !== null || !iaReady}
             title={iaReady ? undefined : '정보구조도를 먼저 만들어야 플로우를 생성할 수 있습니다.'}
             onClick={() => void handleGenerate()}
           >
             {pending === 'flow' ? <Spinner size={13} /> : <Sparkles size={13} />}
-            {plan.generated.flow ? '다시 생성' : 'AI로 생성'}
+            {pending === 'flow' ? '생성중' : plan.generated.flow ? '다시 생성' : 'AI로 생성'}
           </button>
           <button className="btn btn-sm" onClick={handleAddFlow}>
             <Plus size={13} />

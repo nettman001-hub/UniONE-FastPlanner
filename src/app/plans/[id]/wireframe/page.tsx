@@ -179,13 +179,13 @@ export default function WireframePage() {
 
   const generateButton = (
     <button
-      className="btn btn-primary btn-sm"
+      className={`btn btn-primary btn-sm${generating ? ' is-busy' : ''}`}
       disabled={pending !== null || !canGenerate}
       title={canGenerate ? undefined : '정보구조도를 먼저 만들어야 합니다.'}
       onClick={openGenerateModal}
     >
       {generating ? <Spinner size={13} /> : <Sparkles size={13} />}
-      {plan.generated.wireframe ? '다시 생성' : 'AI로 생성'}
+      {generating ? '생성중' : plan.generated.wireframe ? '다시 생성' : 'AI로 생성'}
     </button>
   );
 

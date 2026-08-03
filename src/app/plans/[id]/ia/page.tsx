@@ -253,13 +253,13 @@ export default function IaArchitecturePage() {
 
   const generateButton = (
     <button
-      className="btn btn-primary btn-sm"
+      className={`btn btn-primary btn-sm${generating ? ' is-busy' : ''}`}
       disabled={pending !== null || !canGenerate}
       title={canGenerate ? undefined : '기능명세서를 먼저 만들어야 합니다.'}
       onClick={() => void handleGenerate()}
     >
       {generating ? <Spinner size={13} /> : <Sparkles size={13} />}
-      {plan.generated.ia ? '다시 생성' : 'AI로 생성'}
+      {generating ? '생성중' : plan.generated.ia ? '다시 생성' : 'AI로 생성'}
     </button>
   );
 
