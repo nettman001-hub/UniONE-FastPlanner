@@ -22,7 +22,7 @@ export interface SessionPayload {
 }
 
 /** 개발 편의를 위한 값. 배포에서는 절대 쓰이지 않는다 (아래에서 막는다). */
-const DEV_SECRET = 'unione-fastplaner-development-only-secret';
+const DEV_SECRET = 'uniboard-development-only-secret';
 
 function secret(): string {
   const value = process.env.AUTH_SECRET;

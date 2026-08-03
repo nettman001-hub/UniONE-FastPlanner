@@ -573,7 +573,7 @@ function Home() {
 
   const handleExport = (plan: Plan) => {
     download(
-      `${slugify(plan.brief.title)}.fastplaner.json`,
+      `${slugify(plan.brief.title)}.uniboard.json`,
       toJson(plan),
       'application/json;charset=utf-8',
     );
@@ -622,7 +622,7 @@ function Home() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="chip chip-primary">
             <Logo size={12} />
-            UniONE
+            {BRAND_SHORT}
           </span>
           <SyncBadge />
           {mode === 'ai' && (

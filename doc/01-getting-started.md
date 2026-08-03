@@ -81,7 +81,7 @@ AI_PROVIDER   : deepseek
 Base URL      : https://api.deepseek.com
 모델          : deepseek-v4-pro
 출력 상한     : 8192 토큰
-API 키        : sk-009…3785 (35자)
+API 키        : sk-abc…7890 (35자)
 
 ▶ 엔드포인트 연결 및 모델 목록 … ok — 사용 가능 모델 3개
 ▶ JSON 모드 생성 (response_format) … ok — 토큰 82→24
@@ -128,7 +128,7 @@ npm run start
 mv logo.png public/logo.png     # PowerShell: Move-Item logo.png public\logo.png
 ```
 
-파일이 없으면 `UF` 이니셜 마크로 대체되므로 화면이 깨지지 않습니다.
+파일이 없으면 `UB` 이니셜 마크로 대체되므로 화면이 깨지지 않습니다.
 
 > 파일 유무는 **빌드 시점에 판단**합니다. 로고를 새로 넣거나 지웠다면
 > 개발 서버를 재시작(프로덕션은 `npm run build` 후 재시작)해야 반영됩니다.

@@ -36,7 +36,7 @@ Vercel 은 GitHub 저장소를 그대로 읽어 갑니다. 별도 업로드가 �
 작업물이 아직 다른 브랜치에 있다면 먼저 Pull Request 를 머지하세요.
 
 로고를 쓰려면 **`public/logo.png` 가 저장소에 커밋되어 있어야 합니다.**
-`.gitignore` 에 걸려 있지 않은지 확인하세요. 파일이 없으면 `UF` 이니셜 마크로 나옵니다.
+`.gitignore` 에 걸려 있지 않은지 확인하세요. 파일이 없으면 `UB` 이니셜 마크로 나옵니다.
 
 ```bash
 git add public/logo.png
@@ -82,7 +82,7 @@ Production · Preview · Development 를 모두 체크하세요.
 | --- | --- | --- |
 | `DATABASE_URL` | Postgres 접속 문자열 (아래 참고) | **플랜이 저장되지 않습니다** |
 | `AUTH_SECRET` | 16자 이상의 임의 문자열 | **로그인이 동작하지 않습니다** |
-| `TESTER_EMAIL` | 예: `tester@unione.app` | 공용 테스트 계정 없음 |
+| `TESTER_EMAIL` | 예: `tester@uniboard.app` | 공용 테스트 계정 없음 |
 | `TESTER_PASSWORD` | 지인에게 알려 줄 비밀번호 (8자 이상) | 공용 테스트 계정 없음 |
 | `SIGNUP_CODE` | 초대 코드 | 가입이 닫힙니다 |
 
@@ -250,7 +250,7 @@ DeepSeek API 요금은 Vercel 과 별개로 DeepSeek 쪽에 청구됩니다.
 | 증상 | 원인 / 해결 |
 | --- | --- |
 | 빌드 실패 — `maxDuration` 오류 | Fluid compute 가 꺼져 있음 (4단계 참고) |
-| 로고가 `UF` 로 나옴 | `public/logo.png` 가 커밋되지 않음 (1단계 참고) |
+| 로고가 `UB` 로 나옴 | `public/logo.png` 가 커밋되지 않음 (1단계 참고) |
 | `/api/status` 가 `local` | 환경변수 누락 또는 Redeploy 안 함 (3단계 참고) |
 | 도메인이 안 붙음 | DNS 반영 대기 중이거나 레코드 값 오타. Vercel Domains 화면의 안내 문구 확인 |
 | AI 생성이 계속 내장 생성기로 넘어감 | 화면에 표시되는 실패 사유 확인. 키 잔액·모델명 문제가 대부분입니다 |

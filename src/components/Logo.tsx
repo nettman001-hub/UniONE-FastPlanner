@@ -22,7 +22,7 @@ export function Logo({ size = 24, className = '' }: { size?: number; className?:
         style={{ width: size, height: size, fontSize: size * 0.46, letterSpacing: '-0.03em' }}
         aria-hidden
       >
-        UF
+        UB
       </span>
     );
   }

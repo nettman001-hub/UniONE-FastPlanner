@@ -1,6 +1,6 @@
 {
   "$comment": "설명서를 웹(/docs)에서 렌더링할 때 쓸 목차. 파일을 추가하면 여기에도 한 줄 넣어 주세요.",
-  "title": "UniONE FastPlanner 설명서",
+  "title": "UniBoard 설명서",
   "pages": [
     {
       "slug": "index",

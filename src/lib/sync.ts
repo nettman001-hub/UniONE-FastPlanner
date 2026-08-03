@@ -17,6 +17,13 @@
 import { usePlannerStore } from './store';
 import type { Plan } from './types';
 
+/*
+ * 아래 두 키는 `store.ts` 의 저장소 키와 한 묶음이라 **예전 이름 그대로 둔다.**
+ * 서비스명이 UniBoard 로 바뀌었다고 여기까지 따라 바꾸면, 이미 저장된 값을 앱이
+ * 찾지 못한다. 특히 SYNCED_KEY 를 잃으면 "무엇을 올렸었는지" 를 모르게 되어
+ * 다른 기기에서 지운 플랜이 되살아난다.
+ */
+
 /** 로그인하기 전에 이 브라우저에 만들어 둔 플랜을 잠시 넣어 두는 곳. */
 const GUEST_BACKUP_KEY = 'unione-fastplaner:guest-backup';
 

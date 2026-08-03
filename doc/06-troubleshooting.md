@@ -239,7 +239,7 @@ Vercel **Settings → Environment Variables** 에 `AUTH_SECRET` 을 넣고
 
 ## 화면
 
-### 로고가 안 보이고 `UF` 만 나옴
+### 로고가 안 보이고 `UB` 만 나옴
 
 `public/logo.png` 가 없습니다. 파일을 그 경로에 두고 **서버를 재시작**하세요.
 파일 유무는 빌드 시점에 판단하므로 재시작 없이는 반영되지 않습니다.
