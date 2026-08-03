@@ -15,6 +15,14 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_HAS_LOGO: hasBrandLogo ? '1' : '',
   },
+  /**
+   * DB 드라이버는 번들에 넣지 않고 실행 시점에 불러온다.
+   *
+   * PGlite 는 WASM 을 들고 다니는 개발용 의존성이라 배포 번들에 섞이면 안 되고,
+   * `pg` 는 네이티브 경로를 런타임에 고르므로 번들러가 손대면 깨진다.
+   * DATABASE_URL 이 있는 배포에서는 PGlite 를 아예 부르지 않는다.
+   */
+  serverExternalPackages: ['pg', '@electric-sql/pglite'],
 };
 
 export default nextConfig;

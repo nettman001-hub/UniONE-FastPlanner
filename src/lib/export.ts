@@ -376,7 +376,7 @@ export function toAgentBundle(plan: Plan): string {
 
   return JSON.stringify(
     {
-      $schema: 'unione-fastplaner/agent-bundle@1',
+      $schema: 'uniboard/agent-bundle@1',
       generatedAt: new Date().toISOString(),
       product: {
         name: plan.brief.title,

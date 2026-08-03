@@ -33,6 +33,15 @@ import {
   type Wireframe,
 } from './types';
 
+/**
+ * 브라우저 저장소 키.
+ *
+ * **서비스명이 UniBoard 로 바뀌어도 이 값은 그대로 둔다.** 사용자 브라우저에는
+ * 이미 이 이름으로 플랜이 들어 있어서, 키를 바꾸면 앱이 그것을 찾지 못한다 —
+ * 화면에서는 만들어 둔 플랜이 전부 사라진 것으로 보인다.
+ *
+ * 굳이 정리하고 싶다면 옛 키를 읽어 새 키로 옮기는 이사 코드를 먼저 넣어야 한다.
+ */
 const STORAGE_KEY = 'unione-fastplaner:v1';
 
 /**
@@ -53,6 +62,15 @@ export interface PlannerState {
   hydrated: boolean;
 
   /**
+   * 지금 브라우저에 있는 플랜이 **누구 것인가**.
+   *
+   * 로그인 전에 만든 것이면 null. 계정으로 들어오면 그 사용자 ID 가 박힌다.
+   * 이 값이 없으면 한 컴퓨터를 여러 명이 쓸 때 앞사람의 플랜이 뒷사람 계정으로
+   * 딸려 올라간다 — 실제로 일어나는 사고라 반드시 기록해 둔다.
+   */
+  owner: string | null;
+
+  /**
    * 지금 도는 생성.
    *
    * 화면 컴포넌트가 아니라 스토어에 두어야 사이드바로 다른 메뉴에 넘어가도
@@ -69,6 +87,8 @@ export interface PlannerState {
   interrupted: InterruptedRun | null;
 
   /* 플랜 */
+  /** 서버에서 받아 온 목록으로 통째로 바꾼다. 동기화가 쓴다. */
+  setPlans: (plans: Plan[], owner: string | null) => void;
   createPlan: (brief: PlanBrief) => string;
   importPlan: (plan: Plan) => string;
   deletePlan: (planId: string) => void;
@@ -203,6 +223,9 @@ export const usePlannerStore = create<PlannerState>()(
         hydrated: false,
         activeRun: null,
         interrupted: null,
+        owner: null,
+
+        setPlans: (plans, owner) => set({ plans, owner }),
 
         createPlan: (brief) => {
           const plan = createEmptyPlan(brief);
@@ -584,6 +607,8 @@ export const usePlannerStore = create<PlannerState>()(
         creditResetAt: state.creditResetAt,
         // 끊긴 생성은 저장한다 — 돌아왔을 때 이어서 만들 수 있어야 한다.
         interrupted: state.interrupted,
+        // 이 플랜들이 누구 것인지도 함께 남긴다.
+        owner: state.owner,
       }),
       /**
        * 한도가 바뀌면 저장된 잔량은 옛 한도 기준이라 그대로 쓸 수 없다.

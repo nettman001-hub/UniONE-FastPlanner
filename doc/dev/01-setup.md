@@ -41,10 +41,28 @@ DEEPSEEK_MAX_TOKENS=8192
 ```
 
 **키를 넣지 않아도 앱은 완전히 동작합니다.** 이 경우 내장 생성기(규칙 기반)가 산출물을
-만듭니다. 자세한 내용은 [3. AI 공급자와 크레딧](./03-ai-providers.md) 을 보세요.
+만듭니다. 자세한 내용은 [3. AI 공급자와 크레딧](./04-ai-providers.md) 을 보세요.
 
 > `.env.local` 은 `.gitignore` 에 걸려 있어 저장소에 올라가지 않습니다.
 > 키를 커밋하지 않도록 이 파일에만 넣으세요.
+
+### 로그인용 설정
+
+앱을 쓰려면 로그인해야 합니다. 로컬에서는 두 줄이면 됩니다.
+
+```ini
+AUTH_SECRET=아무거나-16자-이상-긴-문자열
+TESTER_EMAIL=me@example.com
+TESTER_PASSWORD=test1234
+```
+
+이 계정은 **처음 로그인할 때 자동으로 만들어집니다.** 미리 준비할 것이 없습니다.
+
+`DATABASE_URL` 을 넣지 않으면 PGlite(Postgres 를 WebAssembly 로 빌드한 것)가
+`.pglite` 폴더에 데이터를 넣습니다. 데이터베이스를 따로 설치할 필요가 없고,
+배포에서 쓰는 Postgres 와 같은 SQL 이 그대로 돕니다.
+
+자세한 내용은 [8. 계정과 데이터 저장](./06-accounts.md) 을 보세요.
 
 ## 연결 점검
 
@@ -63,7 +81,7 @@ AI_PROVIDER   : deepseek
 Base URL      : https://api.deepseek.com
 모델          : deepseek-v4-pro
 출력 상한     : 8192 토큰
-API 키        : sk-009…3785 (35자)
+API 키        : sk-abc…7890 (35자)
 
 ▶ 엔드포인트 연결 및 모델 목록 … ok — 사용 가능 모델 3개
 ▶ JSON 모드 생성 (response_format) … ok — 토큰 82→24
@@ -85,7 +103,7 @@ npm run dev
 
 http://localhost:3000 에서 열립니다. 코드를 고치면 자동으로 새로고침됩니다.
 화면 좌측 하단에 검은 원형 마크가 보이는데, 이는 Next.js 개발 도구입니다.
-자세한 설명은 [6. 문제 해결 → 좌측 하단 마크](./06-troubleshooting.md#좌측-하단-검은-원형-마크는-무엇인가요) 를 보세요.
+자세한 설명은 [6. 문제 해결 → 좌측 하단 마크](./05-troubleshooting.md#좌측-하단-검은-원형-마크는-무엇인가요) 를 보세요.
 
 ### 프로덕션 모드
 
@@ -110,7 +128,7 @@ npm run start
 mv logo.png public/logo.png     # PowerShell: Move-Item logo.png public\logo.png
 ```
 
-파일이 없으면 `UF` 이니셜 마크로 대체되므로 화면이 깨지지 않습니다.
+파일이 없으면 `UB` 이니셜 마크로 대체되므로 화면이 깨지지 않습니다.
 
 > 파일 유무는 **빌드 시점에 판단**합니다. 로고를 새로 넣거나 지웠다면
 > 개발 서버를 재시작(프로덕션은 `npm run build` 후 재시작)해야 반영됩니다.
@@ -134,5 +152,5 @@ mv logo.png public/logo.png     # PowerShell: Move-Item logo.png public\logo.png
 
 ## 다음 단계
 
-- 각 화면을 어떻게 쓰는지 → [2. 화면별 사용법](./02-screens.md)
-- 문서를 밖으로 가져가려면 → [4. 내보내기와 공유](./04-export-and-share.md)
+- 각 화면을 어떻게 쓰는지 → [2. 화면별 사용법](../02-plans.md)
+- 문서를 밖으로 가져가려면 → [4. 내보내기와 공유](../07-export.md)

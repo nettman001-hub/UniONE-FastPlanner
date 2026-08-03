@@ -35,6 +35,7 @@ import {
 } from '@/lib/types';
 import { download, slugify, toJson } from '@/lib/export';
 import { ClientOnly, EmptyState, Field, Modal, Spinner, useConfirm, useToast } from '@/components/ui';
+import { GuestImportBanner, RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
 import { Logo } from '@/components/Logo';
 import { BRAND_NAME, BRAND_SHORT, BRAND_TAGLINE } from '@/lib/brand';
 
@@ -512,6 +513,14 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
 /* ------------------------------------------------------------------ */
 
 export default function HomePage() {
+  return (
+    <RequireAuth>
+      <Home />
+    </RequireAuth>
+  );
+}
+
+function Home() {
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
   const { mode } = useAiMode();
@@ -564,7 +573,7 @@ export default function HomePage() {
 
   const handleExport = (plan: Plan) => {
     download(
-      `${slugify(plan.brief.title)}.fastplaner.json`,
+      `${slugify(plan.brief.title)}.uniboard.json`,
       toJson(plan),
       'application/json;charset=utf-8',
     );
@@ -613,8 +622,9 @@ export default function HomePage() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="chip chip-primary">
             <Logo size={12} />
-            UniONE
+            {BRAND_SHORT}
           </span>
+          <SyncBadge />
           {mode === 'ai' && (
             <span className="chip chip-primary" title="AI 가 산출물을 생성합니다.">
               <Sparkles size={11} />
@@ -632,6 +642,9 @@ export default function HomePage() {
               <span className="font-normal text-[var(--fg-subtle)]">(임시)</span>
             </span>
           </ClientOnly>
+          <div className="ml-auto">
+            <UserMenu />
+          </div>
         </div>
 
         <div>
@@ -692,6 +705,8 @@ export default function HomePage() {
             <span className="text-[11.5px] text-[var(--fg-subtle)]">총 {plans.length}개</span>
           </ClientOnly>
         </div>
+
+        <GuestImportBanner />
 
         {dragging && (
           <div className="card mb-3 flex items-center justify-center gap-2 border-dashed px-4 py-6 text-[12.5px] font-semibold text-[var(--primary)]">
@@ -769,7 +784,8 @@ export default function HomePage() {
       </section>
 
       <footer className="mt-8 border-t border-[var(--border)] py-6 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
-        로컬 브라우저에 저장됩니다. 서버로 문서가 전송되는 것은 AI 생성 요청 시점뿐입니다.
+        플랜은 브라우저에서 먼저 저장된 뒤 계정으로 올라갑니다. 인터넷이 끊겨도 작업은
+        계속되고, 연결되면 이어서 저장됩니다.
       </footer>
 
       <PlanWizard open={wizardOpen} onClose={() => setWizardOpen(false)} />

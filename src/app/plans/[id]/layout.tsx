@@ -19,6 +19,7 @@ import {
 import { AgentPanel } from '@/components/AgentPanel';
 import { Logo } from '@/components/Logo';
 import { ClientOnly, Spinner } from '@/components/ui';
+import { RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
 import { ResumeBanner } from '@/components/ResumeBanner';
 import { DAILY_CREDIT_LIMIT, usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
@@ -50,6 +51,14 @@ const NAV: NavItem[] = [
 const EXTERNAL_NAV = [{ href: '/docs', label: '설명서', icon: <BookOpen size={15} /> }];
 
 export default function PlanLayout({ children }: { children: ReactNode }) {
+  return (
+    <RequireAuth>
+      <PlanShell>{children}</PlanShell>
+    </RequireAuth>
+  );
+}
+
+function PlanShell({ children }: { children: ReactNode }) {
   const params = useParams<{ id: string }>();
   const planId = params.id;
   const pathname = usePathname();
@@ -85,6 +94,9 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          <span className="hidden sm:inline">
+            <SyncBadge />
+          </span>
           <ClientOnly>
             <span
               className="chip"
@@ -102,6 +114,7 @@ export default function PlanLayout({ children }: { children: ReactNode }) {
             <Bot size={14} />
             <span className="hidden md:inline">AI 에이전트</span>
           </button>
+          <UserMenu />
         </div>
       </header>
 

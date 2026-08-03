@@ -1,54 +1,60 @@
 {
-  "$comment": "설명서를 웹(/docs)에서 렌더링할 때 쓸 목차. 파일을 추가하면 여기에도 한 줄 넣어 주세요.",
-  "title": "UniONE FastPlanner 설명서",
+  "$comment": "앱의 /docs 화면에 나오는 고객용 사용설명서 목차입니다. 개발·운영 문서는 doc/dev/ 에 있고 여기에 넣지 않습니다 — 고객이 볼 내용이 아닙니다.",
+  "title": "UniBoard 사용설명서",
   "pages": [
     {
       "slug": "index",
       "file": "README.md",
       "title": "설명서 홈",
-      "summary": "전체 목차와 기획 흐름 요약"
+      "summary": "UniBoard 가 무엇을 해 주는지, 5분 만에 첫 기획서 만들기"
     },
     {
-      "slug": "getting-started",
-      "file": "01-getting-started.md",
-      "title": "설치와 실행",
-      "summary": "내려받기, 실행, 환경변수, 첫 플랜 만들기"
+      "slug": "start",
+      "file": "01-start.md",
+      "title": "시작하기",
+      "summary": "로그인, 화면 둘러보기, 저장 방식"
+    },
+    {
+      "slug": "plans",
+      "file": "02-plans.md",
+      "title": "플랜 관리",
+      "summary": "기획서 만들기·복제·삭제, 다른 컴퓨터에서 보기, 백업"
+    },
+    {
+      "slug": "generate",
+      "file": "03-generate.md",
+      "title": "AI로 만들기",
+      "summary": "전체 자동 생성, 단계별 생성, 승인과 거절, 크레딧"
+    },
+    {
+      "slug": "requirements",
+      "file": "04-requirements.md",
+      "title": "요구사항과 기능 정리",
+      "summary": "프로덕트 요구사항과 기능명세서 작성법"
     },
     {
       "slug": "screens",
-      "file": "02-screens.md",
-      "title": "화면별 사용법",
-      "summary": "9개 화면을 버튼 단위로 설명"
+      "file": "05-screens.md",
+      "title": "화면 설계",
+      "summary": "정보구조도, 유저 플로우, 와이어프레임"
     },
     {
-      "slug": "ai-providers",
-      "file": "03-ai-providers.md",
-      "title": "AI 공급자와 크레딧",
-      "summary": "DeepSeek·Anthropic·내장 생성기, 크레딧 정책"
+      "slug": "agent",
+      "file": "06-agent.md",
+      "title": "AI 에이전트",
+      "summary": "말로 시켜서 문서를 고치기"
     },
     {
-      "slug": "export-and-share",
-      "file": "04-export-and-share.md",
-      "title": "내보내기와 공유",
-      "summary": "마크다운·CSV·이미지·에이전트 번들·공유 링크"
+      "slug": "export",
+      "file": "07-export.md",
+      "title": "점검하고 내보내기",
+      "summary": "정합성 검사, 버전, 파일·이미지·링크로 전달"
     },
     {
-      "slug": "architecture",
-      "file": "05-architecture.md",
-      "title": "구조와 데이터 모델",
-      "summary": "폴더 구조, 도메인 모델, 확장 방법"
-    },
-    {
-      "slug": "troubleshooting",
-      "file": "06-troubleshooting.md",
-      "title": "문제 해결",
-      "summary": "자주 겪는 오류와 해결법, 개발 도구 마크 안내"
-    },
-    {
-      "slug": "deploy",
-      "file": "07-deploy.md",
-      "title": "배포",
-      "summary": "Vercel 배포, 환경변수, 도메인 연결, 요금"
+      "slug": "faq",
+      "file": "08-faq.md",
+      "title": "자주 묻는 질문",
+      "summary": "계정·저장·생성·내보내기에서 자주 겪는 문제"
     }
   ]
 }
