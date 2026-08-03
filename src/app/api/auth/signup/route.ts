@@ -3,6 +3,7 @@ import { createUser, findUserByEmail, isEmail, normalizeEmail, toPublicUser } fr
 import { passwordProblem } from '@/lib/auth/rules';
 import { signupProblem } from '@/lib/auth/policy';
 import { startSession } from '@/lib/auth/server';
+import { serverErrorMessage } from '@/lib/api-error';
 
 export const runtime = 'nodejs';
 
@@ -34,11 +35,12 @@ export async function POST(request: Request) {
     await startSession(publicUser);
     return NextResponse.json({ user: publicUser }, { status: 201 });
   } catch (error) {
-    // 같은 순간에 두 번 눌러 unique 제약에 걸린 경우도 여기로 온다.
-    const message = error instanceof Error ? error.message : '가입에 실패했습니다.';
-    if (/unique|duplicate/i.test(message)) {
+    // 같은 순간에 두 번 눌러 unique 제약에 걸린 경우도 여기로 온다. 이건 사용자에게
+    // 그대로 알려 줘야 다음 행동을 정할 수 있다.
+    const raw = error instanceof Error ? error.message : '';
+    if (/unique|duplicate/i.test(raw)) {
       return NextResponse.json({ error: '이미 가입된 이메일입니다.' }, { status: 409 });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: serverErrorMessage('auth/signup', error) }, { status: 500 });
   }
 }

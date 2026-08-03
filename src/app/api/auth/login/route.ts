@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authenticate, ensureTesterAccount, normalizeEmail, testerEmail, toPublicUser } from '@/lib/db/users';
 import { clearAttempts, noteFailedAttempt, startSession, tooManyAttempts } from '@/lib/auth/server';
+import { serverErrorMessage } from '@/lib/api-error';
 
 export const runtime = 'nodejs';
 
@@ -45,7 +46,11 @@ export async function POST(request: Request) {
     await startSession(publicUser);
     return NextResponse.json({ user: publicUser });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '로그인에 실패했습니다.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    /*
+     * 여기까지 오는 것은 **사용자 잘못이 아니다.** 대개 데이터베이스에 붙지 못한
+     * 경우다. 비밀번호가 틀렸다고 알리면 맞는 비밀번호를 넣고도 계속 다시 시도하게
+     * 되므로, 서버 문제라는 것이 드러나는 문장을 보낸다. 원인은 로그에만 남긴다.
+     */
+    return NextResponse.json({ error: serverErrorMessage('auth/login', error) }, { status: 500 });
   }
 }
