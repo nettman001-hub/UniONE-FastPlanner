@@ -32,6 +32,7 @@ import {
   Field,
   InlineText,
   Modal,
+  RegenerateTag,
   SectionCard,
   Spinner,
   useConfirm,
@@ -689,6 +690,7 @@ function IssueRow({ issue, planId }: { issue: Issue; planId: string }) {
             </span>
             <span className="chip">{ARTIFACT_LABEL[issue.artifact]}</span>
             <span className="text-[13px] font-bold">{issue.title}</span>
+            {issue.regenerate && <RegenerateTag />}
           </div>
           <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
             {issue.detail}

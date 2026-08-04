@@ -24,7 +24,7 @@ import {
 } from '@/lib/ia/placement';
 import { stampWireframes } from '@/lib/ia/wireframe-sync';
 import { PLACEMENT_CREDIT_COST, type Plan } from '@/lib/types';
-import { Modal, Spinner, useToast } from './ui';
+import { Modal, RegenerateTag, Spinner, useToast } from './ui';
 
 export function PlaceFeaturesModal({
   open,
@@ -264,6 +264,7 @@ export function UnplacedChip({ count, onClick }: { count: number; onClick: () =>
     >
       <Sparkles size={12} />
       화면에 배치되지 않은 기능 {count}개 — 배치하기
+      <RegenerateTag />
     </button>
   );
 }

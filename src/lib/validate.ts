@@ -22,6 +22,13 @@ export interface Issue {
   targets: string[];
   /** 이동할 경로 (플랜 기준 상대 경로) */
   href: string;
+  /**
+   * 앞 단계가 바뀌어 이 문서를 다시 만들어야 하는가.
+   *
+   * 손으로 항목을 고쳐서 될 문제와, 문서를 다시 만들어야 풀리는 문제는
+   * 해야 할 일이 다르다. 화면에서 `재생성 필요` 로 구분해 보여 준다.
+   */
+  regenerate?: boolean;
 }
 
 export const LEVEL_LABEL: Record<IssueLevel, string> = {
@@ -157,6 +164,7 @@ export function validatePlan(plan: Plan): Issue[] {
       detail: '기능이 실제로 어느 화면에서 쓰이는지 연결해야 개발 범위가 명확해집니다.',
       targets: unlinkedFeatures,
       href: '/ia',
+      regenerate: true,
     });
 
     const duplicatePaths = Object.entries(
@@ -254,6 +262,30 @@ export function validatePlan(plan: Plan): Issue[] {
       targets: flowsWithoutEnd,
       href: '/flow',
     });
+
+    /*
+     * 어느 플로우에도 나오지 않는 기능 화면.
+     *
+     * 정보구조도에 화면을 배치한 뒤 플로우가 뒤처지면 여기서 잡힌다. 와이어프레임의
+     * `wf-page-uncovered` 와 같은 모양이다 — 앞 단계가 늘었는데 이 단계가 못 따라간 것이라,
+     * 항목을 손으로 고쳐서 되는 문제가 아니라 **다시 만들어야** 풀린다.
+     */
+    const inFlows = new Set(
+      plan.flows.flatMap((f) => f.nodes.map((n) => n.pageId).filter(Boolean) as string[]),
+    );
+    const pagesWithoutFlow = plan.iaPages
+      .filter((p) => p.type === 'page' && p.featureIds.length > 0 && !inFlows.has(p.id))
+      .map((p) => `${p.id} ${p.name}`);
+    add({
+      id: 'flow-page-uncovered',
+      level: 'warn',
+      artifact: 'flow',
+      title: '어느 플로우에도 나오지 않는 화면',
+      detail: '기능이 연결된 화면인데 사용자가 이 화면에 어떻게 도달하는지 그려져 있지 않습니다.',
+      targets: pagesWithoutFlow,
+      href: '/flow',
+      regenerate: true,
+    });
   }
 
   /* 와이어프레임 ---------------------------------------------------- */
@@ -270,6 +302,7 @@ export function validatePlan(plan: Plan): Issue[] {
       detail: '기능이 연결된 화면인데 아직 와이어프레임이 없습니다.',
       targets: uncoveredPages,
       href: '/wireframe',
+      regenerate: true,
     });
 
     /*
@@ -290,6 +323,7 @@ export function validatePlan(plan: Plan): Issue[] {
       detail: '와이어프레임을 만든 뒤에 이 화면에 기능이 추가되었습니다. 다시 만들어 반영하세요.',
       targets: outdated,
       href: '/wireframe',
+      regenerate: true,
     });
 
     const orphanWireframes = plan.wireframes

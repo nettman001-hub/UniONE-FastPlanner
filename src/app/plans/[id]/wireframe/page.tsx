@@ -14,7 +14,15 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
-import { EmptyState, InlineText, ListEditor, Modal, Spinner, useConfirm } from '@/components/ui';
+import {
+  EmptyState,
+  InlineText,
+  ListEditor,
+  Modal,
+  RegenerateTag,
+  Spinner,
+  useConfirm,
+} from '@/components/ui';
 import { WireframeView } from '@/components/WireframeView';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
@@ -690,6 +698,7 @@ function StaleBanner({
           {stale.length}개 화면의 와이어프레임이 최신이 아닙니다
           {changed > 0 && missing > 0 && ` (기능 추가 ${changed} · 미작성 ${missing})`}
         </p>
+        <RegenerateTag />
         <button className="btn btn-sm" onClick={() => setOpen((v) => !v)}>
           {open ? '접기' : '어떤 화면인지 보기'}
         </button>

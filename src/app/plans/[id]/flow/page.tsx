@@ -15,7 +15,15 @@ import {
   X,
 } from 'lucide-react';
 import { FlowCanvas } from '@/components/FlowCanvas';
-import { EmptyState, Field, InlineText, Spinner, useConfirm, useToast } from '@/components/ui';
+import {
+  EmptyState,
+  Field,
+  InlineText,
+  RegenerateTag,
+  Spinner,
+  useConfirm,
+  useToast,
+} from '@/components/ui';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
@@ -82,7 +90,10 @@ function IssueBanner({ issues }: { issues: Issue[] }) {
               {LEVEL_LABEL[issue.level]}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[12.5px] font-bold text-[var(--fg)]">{issue.title}</p>
+              <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] font-bold text-[var(--fg)]">
+                {issue.title}
+                {issue.regenerate && <RegenerateTag />}
+              </p>
               <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--fg-muted)]">
                 {issue.detail}
               </p>
