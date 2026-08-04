@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { EmptyState, SectionCard, useToast } from '@/components/ui';
+import { DesignHandoff } from '@/components/DesignHandoff';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import {
@@ -844,6 +845,9 @@ export default function ExportPage() {
             </p>
           </div>
         </SectionCard>
+
+        {/* 4-2) 디자인 도구 연동 */}
+        <DesignHandoff plan={plan} />
 
         {/* 5-1) 이미지 — 디자인 전달용 */}
         <SectionCard
