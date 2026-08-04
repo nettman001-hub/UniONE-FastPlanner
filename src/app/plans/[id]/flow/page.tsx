@@ -3,7 +3,6 @@
 import { useParams } from 'next/navigation';
 import { useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle,
   ArrowRight,
   Copy,
   GitBranch,
@@ -19,19 +18,19 @@ import {
   EmptyState,
   Field,
   InlineText,
-  RegenerateTag,
   Spinner,
   useConfirm,
   useToast,
 } from '@/components/ui';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
+import { IssueBar } from '@/components/IssueBar';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import { slugify, toMermaid } from '@/lib/export';
 import { downloadPng, downloadSvg, findChartSvg, serializeSvg } from '@/lib/image-export';
-import { validatePlan, LEVEL_LABEL, type Issue } from '@/lib/validate';
+import { validatePlan } from '@/lib/validate';
 import {
   FLOW_NODE_TYPE_LABEL,
   type FlowEdge,
@@ -125,66 +124,6 @@ function HowManyFlows({ pageCount, uncovered }: { pageCount: number; uncovered: 
     </div>
   );
 }
-
-function IssueBanner({ issues }: { issues: Issue[] }) {
-  const tone = issues.some((i) => i.level === 'error')
-    ? 'var(--danger)'
-    : issues.some((i) => i.level === 'warn')
-      ? 'var(--warn)'
-      : 'var(--primary)';
-
-  return (
-    <div
-      className="card overflow-hidden"
-      style={{ borderLeft: `3px solid ${tone}` }}
-      role="status"
-    >
-      <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3.5 py-2">
-        <AlertTriangle size={14} style={{ color: tone }} />
-        <span className="section-title">플로우 점검 {issues.length}건</span>
-        <span className="text-[11.5px] text-[var(--fg-subtle)]">
-          도달 불가 단계·빠져나갈 수 없는 단계·분기 누락을 자동으로 찾았습니다
-        </span>
-      </div>
-      <ul className="divide-y divide-[var(--border)]">
-        {issues.map((issue) => (
-          <li key={issue.id} className="flex flex-wrap items-start gap-2 px-3.5 py-2.5">
-            <span
-              className={
-                issue.level === 'error'
-                  ? 'chip chip-danger'
-                  : issue.level === 'warn'
-                    ? 'chip chip-warn'
-                    : 'chip chip-primary'
-              }
-            >
-              {LEVEL_LABEL[issue.level]}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] font-bold text-[var(--fg)]">
-                {issue.title}
-                {issue.regenerate && <RegenerateTag />}
-              </p>
-              <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--fg-muted)]">
-                {issue.detail}
-              </p>
-              {issue.targets.length > 0 && (
-                <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
-                  {issue.targets.slice(0, 4).join(' · ')}
-                  {issue.targets.length > 4 && ` 외 ${issue.targets.length - 4}건`}
-                </p>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* 화면                                                                 */
-/* ------------------------------------------------------------------ */
 
 export default function FlowPage() {
   const { id: planId } = useParams<{ id: string }>();
@@ -447,7 +386,7 @@ export default function FlowPage() {
 
       {issues.length > 0 && (
         <div className="mt-4">
-          <IssueBanner issues={issues} />
+          <IssueBar planId={planId} artifact="flow" issues={issues} title="플로우 점검" />
         </div>
       )}
 
