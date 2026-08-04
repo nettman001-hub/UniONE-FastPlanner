@@ -26,7 +26,34 @@ function isBusy(planId: string): boolean {
   return usePlannerStore.getState().agentBusy === planId;
 }
 
-export type AskResult = 'ok' | 'busy' | 'no-credits' | 'empty';
+/**
+ * 지금 도는 요청을 끊을 손잡이. 플랜마다 하나다.
+ *
+ * 컴포넌트가 아니라 여기(모듈)에 둔다. 패널을 닫거나 다른 문서로 넘어가도
+ * 요청은 계속 도는데, 그때 끊을 방법이 사라지면 안 되기 때문이다.
+ */
+const inFlight = new Map<string, AbortController>();
+
+/** 지금 이 플랜의 요청을 멈출 수 있는가. */
+export function canCancel(planId: string): boolean {
+  return inFlight.has(planId);
+}
+
+/**
+ * 도는 요청을 멈춘다.
+ *
+ * 크레딧은 원래 **답을 받은 뒤에** 빠지므로 멈춰도 차감되지 않는다.
+ * 다만 서버 쪽 호출까지 되돌리지는 못한다 — 이미 나간 요청은 저쪽에서 끝난다.
+ * 여기서 보장하는 것은 **그 결과가 문서에 반영되지 않는다**는 것이다.
+ */
+export function cancelAgent(planId: string): boolean {
+  const controller = inFlight.get(planId);
+  if (!controller) return false;
+  controller.abort();
+  return true;
+}
+
+export type AskResult = 'ok' | 'busy' | 'no-credits' | 'empty' | 'cancelled';
 
 /**
  * 에이전트에게 보낸다.
@@ -52,10 +79,14 @@ export async function askAgent(
   if (!options.resend) store.appendChat(planId, { role: 'user', content: text });
   store.setAgentBusy(planId);
 
+  const controller = new AbortController();
+  inFlight.set(planId, controller);
+
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      signal: controller.signal,
       // 보내는 시점의 문서를 쓴다. 대화 중에 다른 화면에서 고쳤을 수 있다.
       body: JSON.stringify({
         plan: usePlannerStore.getState().plans.find((p) => p.id === planId) ?? plan,
@@ -94,15 +125,26 @@ export async function askAgent(
       credits: CHAT_CREDIT_COST,
     });
     return 'ok';
-  } catch {
-    // 창을 새로 고치거나 연결이 끊겨 요청이 중단된 경우도 여기로 온다.
+  } catch (error) {
+    /*
+     * 사용자가 멈춘 것과 연결이 끊긴 것을 구별한다.
+     *
+     * 스스로 멈춰 놓고 "연결이 끊겼습니다" 를 보면 앱이 고장 난 줄 안다.
+     * 둘 다 답을 못 받은 것은 같으므로 `failed` 로 남겨, 다시 보내기가 뜨게 한다.
+     */
+    const cancelled = error instanceof DOMException && error.name === 'AbortError';
     usePlannerStore.getState().appendChat(planId, {
       role: 'assistant',
-      content: '답변을 받지 못했습니다. 요청이 중단되었거나 연결이 끊겼습니다.',
+      content: cancelled
+        ? '요청을 멈췄습니다. 크레딧은 차감되지 않았고 문서도 그대로입니다.'
+        : '답변을 받지 못했습니다. 요청이 중단되었거나 연결이 끊겼습니다.',
       failed: true,
+      ...(cancelled ? { cancelled: true } : {}),
     });
-    return 'ok';
+    return cancelled ? 'cancelled' : 'ok';
   } finally {
+    // 그 사이에 새 요청이 시작됐다면 그쪽 손잡이를 지우지 않는다.
+    if (inFlight.get(planId) === controller) inFlight.delete(planId);
     // 그 사이에 다른 플랜에서 새 요청이 시작됐다면 그쪽 표시를 지우지 않는다.
     if (usePlannerStore.getState().agentBusy === planId) {
       usePlannerStore.getState().setAgentBusy(null);
