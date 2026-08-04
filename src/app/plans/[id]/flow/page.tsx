@@ -55,6 +55,77 @@ const NODE_TYPE_CHIP: Record<FlowNodeType, string> = {
   end: 'chip chip-ok',
 };
 
+/**
+ * "플로우를 몇 개나 만들어야 하나" 에 답한다.
+ *
+ * 화면이 스물몇 개인데 플로우가 3개면 **덜 만든 것처럼 보인다.** 실제로
+ * 그렇게 오해하고 전부 만들어야 하는 줄 알았다는 이야기를 들었다.
+ * 화면 수와 플로우 수는 애초에 맞출 대상이 아니다 — 플로우는 화면 목록이 아니라
+ * **갈라지는 지점**을 그리는 문서다. 그 사실을 화면에서 말해 주지 않으면
+ * 사용자는 계속 세어 보며 불안해한다.
+ */
+function HowManyFlows({ pageCount, uncovered }: { pageCount: number; uncovered: number }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3.5 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Info size={13} className="shrink-0 text-[var(--fg-subtle)]" />
+        <p className="text-[12.5px] font-semibold">
+          모든 화면을 플로우로 그릴 필요는 없습니다
+        </p>
+        <button
+          className="btn btn-ghost btn-sm ml-auto"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          {open ? '접기' : '무엇을 그려야 하나요?'}
+        </button>
+      </div>
+      <p className="mt-1 text-[12px] leading-relaxed text-[var(--fg-muted)]">
+        플로우는 <b>갈라지는 곳</b>을 미리 드러내는 문서입니다. 보통 <b>3~5개</b>면 충분합니다.
+        {pageCount > 0 && uncovered > 0 && (
+          <> 화면 {pageCount}개를 다 덮지 않아도 다음 단계에 지장이 없습니다.</>
+        )}
+      </p>
+
+      {open && (
+        <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-lg bg-[var(--surface)] p-2.5">
+            <p className="text-[12px] font-bold" style={{ color: 'var(--ok)' }}>
+              그릴 값어치가 있는 것
+            </p>
+            <ul className="mt-1 flex flex-col gap-0.5 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
+              <li>· 되돌릴 수 없는 행동 — 결제 · 삭제 · 전송</li>
+              <li>· 권한이 갈리는 지점 — 로그인 · 승인 · 본인인증</li>
+              <li>· 여러 단계를 거치는 입력</li>
+              <li>· 외부 시스템을 타는 것 — 배송 · 알림 · 정산</li>
+            </ul>
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
+              공통점은 <b>실패할 수 있다</b>는 것입니다. 성공만 그리고 실패를 안 그리면
+              개발 단계에서 그 화면을 아무도 안 만듭니다.
+            </p>
+          </div>
+          <div className="rounded-lg bg-[var(--surface)] p-2.5">
+            <p className="text-[12px] font-bold text-[var(--fg-subtle)]">안 그려도 되는 것</p>
+            <ul className="mt-1 flex flex-col gap-0.5 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
+              <li>· 들어가서 보기만 하는 화면 — 목록 · 상세 · 조회</li>
+              <li>· 단계가 하나뿐인 화면</li>
+            </ul>
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
+              그려 봐야 <code>시작 → 화면 → 끝</code> 이라 새로 알게 되는 것이 없습니다.
+            </p>
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
+              와이어프레임은 <b>정보구조도</b>를 보고 만듭니다. 플로우 수가 적어도
+              뒤 단계 품질은 달라지지 않습니다.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IssueBanner({ issues }: { issues: Issue[] }) {
   const tone = issues.some((i) => i.level === 'error')
     ? 'var(--danger)'
@@ -326,9 +397,12 @@ export default function FlowPage() {
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="text-[17px] font-extrabold tracking-tight">유저 플로우</h2>
           <span className="chip">플로우 {flows.length}개</span>
-          {/* 문제와 그것을 푸는 버튼이 같은 줄에 있어야 실제로 눌린다. */}
+          {/*
+            더 만들 거리가 얼마나 남았는지 버튼 옆에서 바로 보이게 한다.
+            경고색을 쓰지 않는다 — 모든 화면을 덮는 것이 목표가 아니기 때문이다.
+          */}
           {uncoveredCount > 0 && hasArtifact(plan, 'flow') && (
-            <span className="chip chip-warn" title="이 화면들을 지나는 여정이 아직 없습니다.">
+            <span className="chip" title="이 화면들을 지나는 여정이 아직 없습니다.">
               플로우에 없는 화면 {uncoveredCount}개
             </span>
           )}
@@ -368,6 +442,8 @@ export default function FlowPage() {
           정보구조도(IA)가 없으면 AI 생성이 막힙니다. 정보구조도를 먼저 만들어 주세요.
         </p>
       )}
+
+      <HowManyFlows pageCount={plan.iaPages.length} uncovered={uncoveredCount} />
 
       {issues.length > 0 && (
         <div className="mt-4">
@@ -474,8 +550,17 @@ export default function FlowPage() {
             <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
               <div className="card min-w-0 p-3">
                 <div className="mb-2 flex items-center justify-end gap-1.5">
-                  <span className="mr-auto text-[11.5px] text-[var(--fg-subtle)]">
-                    디자인 전달용 이미지
+                  {/*
+                    "디자인 전달용 이미지" 라고만 써 두었더니 **모든 플로우를 만들어
+                    전달해야 하는 줄** 알았다는 이야기를 들었다. 필요하면 쓰는 선택지지
+                    거쳐야 하는 관문이 아니다. 무엇이 받아지는지(지금 이 플로우 하나)를
+                    밝히고, 하는 일로 이름을 바꾼다.
+                  */}
+                  <span
+                    className="mr-auto text-[11.5px] text-[var(--fg-subtle)]"
+                    title="지금 보고 있는 플로우 하나만 그림 파일로 내려받습니다. 필요할 때만 쓰세요."
+                  >
+                    이 플로우만 그림으로 (선택)
                   </span>
                   <button className="btn btn-sm" onClick={() => void exportCanvas('svg')}>
                     <ImageIcon size={13} />

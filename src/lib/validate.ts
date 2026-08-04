@@ -276,15 +276,27 @@ export function validatePlan(plan: Plan): Issue[] {
     const pagesWithoutFlow = plan.iaPages
       .filter((p) => p.type === 'page' && p.featureIds.length > 0 && !inFlows.has(p.id))
       .map((p) => `${p.id} ${p.name}`);
+    /*
+     * 등급이 `제안` 인 이유, 그리고 `재생성 필요` 를 안 붙이는 이유.
+     *
+     * 플로우는 화면 목록이 아니라 **갈라지는 지점**을 그리는 문서다. 보기만 하는
+     * 화면은 그려 봐야 `시작 → 화면 → 끝` 이라 얻는 것이 없고, 뒤 단계(와이어프레임)는
+     * 정보구조도를 보고 만들므로 플로우가 적어도 품질이 떨어지지 않는다.
+     * 그러니 안 덮인 화면은 **결함이 아니다.**
+     *
+     * 이것을 `경고`(개발 넘기기 전에 채우세요)로 두면, 같은 화면에서 한쪽은
+     * "다 만들 필요 없습니다" 라고 하고 다른 쪽은 채우라고 재촉하게 된다.
+     * 실제로 그 표시를 보고 화면을 전부 덮어야 하는 줄 알았다는 이야기를 들었다.
+     */
     add({
       id: 'flow-page-uncovered',
-      level: 'warn',
+      level: 'info',
       artifact: 'flow',
-      title: '어느 플로우에도 나오지 않는 화면',
-      detail: '기능이 연결된 화면인데 사용자가 이 화면에 어떻게 도달하는지 그려져 있지 않습니다.',
+      title: '아직 플로우에 없는 화면',
+      detail:
+        '이 화면들을 지나는 여정이 아직 없습니다. 결제·삭제처럼 실패할 수 있는 화면이면 플로우를 만들어 두는 편이 좋고, 보기만 하는 화면이면 넘어가도 됩니다.',
       targets: pagesWithoutFlow,
       href: '/flow',
-      regenerate: true,
     });
   }
 
