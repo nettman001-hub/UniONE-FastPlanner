@@ -316,6 +316,17 @@ export interface Wireframe {
   device: WireframeDevice;
   blocks: WireframeBlock[];
   order: number;
+  /**
+   * 이 화면을 만들 때 대상 페이지에 걸려 있던 기능 ID.
+   *
+   * 나중에 그 페이지에 기능이 더 붙으면, 와이어프레임은 그 기능을 모르는 상태로 남는다.
+   * 지금 값과 비교하면 "내용이 뒤처진 화면" 을 찾아낼 수 있다.
+   *
+   * **없을 수 있다.** 이 필드가 생기기 전에 만든 와이어프레임에는 값이 없다.
+   * 그때는 뒤처졌는지 알 수 없으므로 뒤처졌다고 단정하지 않는다 —
+   * 멀쩡한 화면을 다시 만들라고 재촉하면 오히려 손해다.
+   */
+  featureIds?: string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -441,6 +452,14 @@ export const ARTIFACT_CREDIT_COST: Record<ArtifactKey, number> = {
 };
 
 export const CHAT_CREDIT_COST = 1;
+
+/**
+ * 새 기능을 화면에 배치할 때 드는 크레딧.
+ *
+ * 정보구조도 전체 생성(4)보다 싸다 — 이미 있는 화면 목록을 주고 새 기능만
+ * 어디에 둘지 고르게 하므로 만들어 낼 것이 훨씬 적다.
+ */
+export const PLACEMENT_CREDIT_COST = 2;
 
 export function emptyPrd(): Prd {
   return {

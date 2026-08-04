@@ -14,6 +14,7 @@
  */
 
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
+import { resolveProvider } from '@/lib/ai/provider';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { generateLocally } from '@/lib/ai/local-generator';
 import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
@@ -29,7 +30,12 @@ import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
  */
 const STEP_DELAY_MS = Math.max(0, Number(process.env.GENERATE_STEP_DELAY_MS ?? 0) || 0);
 
-/** 산출물별 출력 분량이 크게 달라 토큰 상한을 따로 잡는다. */
+/**
+ * 산출물별 출력 분량. 기능명세서와 와이어프레임이 가장 길고 PRD 가 가장 짧다.
+ *
+ * 이 표는 **공급자 상한이 `BASE_CEILING` 일 때의 기준값**이다. 실제 요청값은
+ * `maxTokensFor` 가 공급자 상한에 맞춰 늘려 준다.
+ */
 const MAX_TOKENS: Record<ArtifactKey, number> = {
   prd: 16000,
   fs: 32000,
@@ -37,6 +43,26 @@ const MAX_TOKENS: Record<ArtifactKey, number> = {
   flow: 20000,
   wireframe: 32000,
 };
+
+/** 위 표가 기준으로 삼은 공급자 상한. */
+const BASE_CEILING = 32000;
+
+/**
+ * 이 산출물에 실제로 요청할 출력 토큰 수.
+ *
+ * 마지막에 공급자 상한(`DEEPSEEK_MAX_TOKENS` 등)으로 한 번 더 조인다. 그래서
+ * **상한만 올리면 위 표의 숫자에서 멈춘다** — 예전에는 상한을 128000 으로 올려도
+ * 기능명세서가 32000 에서 더 안 올라갔다. 상한을 올린 사람은 그만큼 더 쓰기를
+ * 기대하므로, 상한이 기준보다 크면 표의 값도 같은 비율로 함께 올린다.
+ *
+ * 기준값 아래로는 내려가지 않는다. 상한을 낮게 잡아 두었을 때 산출물이
+ * 예전보다 짧아지면 그게 더 놀랄 일이다. (최종적으로는 공급자 쪽에서 잘린다.)
+ */
+export function maxTokensFor(artifact: ArtifactKey, ceiling: number): number {
+  const base = MAX_TOKENS[artifact];
+  const scaled = Math.round(base * (ceiling / BASE_CEILING));
+  return Math.min(ceiling, Math.max(base, scaled));
+}
 
 export interface GenerateOptions {
   extra?: string;
@@ -73,6 +99,51 @@ export function precondition(plan: Plan, artifact: ArtifactKey): string | null {
   return null;
 }
 
+/**
+ * 플로우를 **더** 만들 때 프롬프트에 덧붙이는 지시.
+ *
+ * 그냥 한 번 더 시키면 모델은 이미 만든 것과 거의 같은 플로우를 다시 내놓는다.
+ * 무엇이 이미 있는지, 그리고 **아직 아무 플로우에도 안 나오는 화면이 무엇인지**를
+ * 알려 줘야 빈 곳을 채운다. 화면 수가 플로우 수를 크게 앞지르는 것이 보통이라,
+ * 여기가 실제로 빠지는 부분이다.
+ */
+export function moreFlowsBlock(plan: Plan): string {
+  const inFlows = new Set(
+    plan.flows.flatMap((f) => f.nodes.map((n) => n.pageId).filter(Boolean) as string[]),
+  );
+  const uncovered = plan.iaPages.filter(
+    (p) => p.type === 'page' && p.featureIds.length > 0 && !inFlows.has(p.id),
+  );
+
+  const lines = [
+    '## 이미 만들어 둔 플로우 (다시 만들지 마세요)',
+    ...(plan.flows.length > 0
+      ? plan.flows.map((f) => `- ${f.id} ${f.name} — ${f.description || '설명 없음'}`)
+      : ['- 없음']),
+    '',
+    '## 이번에 만들 것',
+    '위 목록에 **없는** 새 플로우만 3~5개 만드세요. 같은 여정을 이름만 바꿔 다시 내지 마세요.',
+  ];
+
+  if (uncovered.length > 0) {
+    lines.push(
+      '',
+      '아래 화면들은 아직 어느 플로우에도 나오지 않습니다. 이 화면들을 지나는 여정을 우선 만드세요.',
+      ...uncovered
+        .slice(0, 20)
+        .map((p) => `- ${p.id} ${p.name} (${p.path}) — ${p.description || '설명 없음'}`),
+    );
+    if (uncovered.length > 20) lines.push(`- 외 ${uncovered.length - 20}개`);
+  } else {
+    lines.push(
+      '',
+      '모든 화면이 이미 어느 플로우엔가 나옵니다. 예외·실패·관리자 여정처럼 아직 안 그린 경로를 만드세요.',
+    );
+  }
+
+  return lines.join('\n');
+}
+
 /** 한 단계 생성. AI 가 실패하면 내장 생성기로 대체하고 사유를 함께 돌려준다. */
 async function runStep(
   plan: Plan,
@@ -84,6 +155,7 @@ async function runStep(
   const toPatch = (draft: unknown) =>
     draftToPatch(artifact, draft, plan, {
       mergeWireframes: artifact === 'wireframe' && options.merge === true,
+      mergeFlows: artifact === 'flow' && options.merge === true,
     });
 
   if (!useAi) {
@@ -101,10 +173,13 @@ async function runStep(
         .map((p) => `- ${p.id} ${p.name} (${p.path}) — ${p.description}`)
         .join('\n')}`;
     }
+    if (artifact === 'flow' && options.merge === true) {
+      prompt += `\n\n${moreFlowsBlock(plan)}`;
+    }
     const draft = await generateJson({
       prompt,
       schema: ARTIFACT_SCHEMA[artifact],
-      maxTokens: MAX_TOKENS[artifact],
+      maxTokens: maxTokensFor(artifact, resolveProvider().maxOutputTokens),
     });
     return { patch: toPatch(draft), source: 'ai' };
   } catch (error) {

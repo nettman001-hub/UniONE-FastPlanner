@@ -209,9 +209,19 @@ export function applyIa(draft: IaDraft, knownFeatureIds: string[]): IaPage[] {
   });
 }
 
-export function applyFlows(draft: FlowDraft, knownPageIds: string[]): UserFlow[] {
+export function applyFlows(
+  draft: FlowDraft,
+  knownPageIds: string[],
+  /**
+   * 이미 있는 플로우. 여기서부터 ID 를 이어 붙인다.
+   *
+   * 플로우를 **더** 만들 때 쓴다. 비워 두면 `FL-001` 부터 다시 매겨져
+   * 기존 플로우와 ID 가 겹친다.
+   */
+  startFrom: readonly { id: string }[] = [],
+): UserFlow[] {
   const raw = draft.flows ?? [];
-  const ids = nextIds('FL', [], raw.length);
+  const ids = nextIds('FL', startFrom, raw.length);
   const pageIdSet = new Set(knownPageIds);
 
   return raw.map((f, i) => {
@@ -243,7 +253,7 @@ export function applyFlows(draft: FlowDraft, knownPageIds: string[]): UserFlow[]
       actor: f.actor || '사용자',
       nodes,
       edges,
-      order: i,
+      order: startFrom.length + i,
     };
   });
 }
@@ -252,6 +262,11 @@ export function applyWireframes(
   draft: WireframeDraft,
   knownPageIds: string[],
   startFrom: readonly { id: string }[] = [],
+  /**
+   * 페이지별 기능 목록. 만들 때의 기능 구성을 와이어프레임에 새겨 둔다.
+   * 나중에 그 페이지에 기능이 더 붙으면 "뒤처진 화면" 으로 찾아낼 수 있다.
+   */
+  featuresByPage: Record<string, string[]> = {},
 ): Wireframe[] {
   const raw = (draft.wireframes ?? []).filter((w) => knownPageIds.includes(w.pageId));
   const ids = nextIds('WF', startFrom, raw.length);
@@ -271,6 +286,7 @@ export function applyWireframes(
       device: (w.device === 'mobile' ? 'mobile' : 'desktop') as WireframeDevice,
       blocks,
       order: i,
+      featureIds: [...(featuresByPage[w.pageId] ?? [])],
     };
   });
 }
@@ -280,7 +296,7 @@ export function draftToPatch(
   artifact: 'prd' | 'fs' | 'ia' | 'flow' | 'wireframe',
   draft: unknown,
   plan: Plan,
-  options?: { mergeWireframes?: boolean },
+  options?: { mergeWireframes?: boolean; mergeFlows?: boolean },
 ): Partial<PlanDocuments> {
   switch (artifact) {
     case 'prd':
@@ -297,25 +313,39 @@ export function draftToPatch(
       return { iaPages };
     }
     case 'flow': {
-      const flows = applyFlows(
-        draft as FlowDraft,
-        plan.iaPages.map((p) => p.id),
-      );
-      return { flows };
+      const knownPageIds = plan.iaPages.map((p) => p.id);
+      /*
+       * 더 만들기: 새 플로우를 **뒤에 붙이기만** 한다.
+       *
+       * 한 번에 다 만들라고 하면 모델이 3~5개에서 멈춘다. 화면이 스무 개가 넘어도
+       * 그렇다. 그래서 나눠서 더 만들 수 있어야 하는데, 그때 기존 플로우를
+       * 덮어쓰면 손으로 다듬어 둔 것이 사라진다. 여기서는 아무것도 지우지 않는다.
+       */
+      if (options?.mergeFlows) {
+        const incoming = applyFlows(draft as FlowDraft, knownPageIds, plan.flows);
+        return { flows: [...plan.flows, ...incoming] };
+      }
+      return { flows: applyFlows(draft as FlowDraft, knownPageIds) };
     }
     case 'wireframe': {
       const knownPageIds = plan.iaPages.map((p) => p.id);
+      const featuresByPage = Object.fromEntries(
+        plan.iaPages.map((p) => [p.id, p.featureIds]),
+      );
       if (options?.mergeWireframes) {
         const incoming = applyWireframes(
           draft as WireframeDraft,
           knownPageIds,
           plan.wireframes,
+          featuresByPage,
         );
         const replacedPages = new Set(incoming.map((w) => w.pageId));
         const kept = plan.wireframes.filter((w) => !replacedPages.has(w.pageId));
         return { wireframes: [...kept, ...incoming].map((w, i) => ({ ...w, order: i })) };
       }
-      return { wireframes: applyWireframes(draft as WireframeDraft, knownPageIds) };
+      return {
+        wireframes: applyWireframes(draft as WireframeDraft, knownPageIds, [], featuresByPage),
+      };
     }
     default:
       return {};

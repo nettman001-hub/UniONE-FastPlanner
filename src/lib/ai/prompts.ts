@@ -1,4 +1,5 @@
 import { PLATFORM_LABEL, type ArtifactKey, type Plan, type PlanBrief } from '../types';
+import { hasArtifact } from '../artifact-status';
 
 export const SYSTEM_PROMPT = `당신은 IT 서비스 기획 전문가입니다. 사용자가 준 서비스 아이디어를 실제 개발팀이 그대로 착수할 수 있는 기획 산출물로 바꾸는 일을 합니다.
 
@@ -28,7 +29,9 @@ export function briefBlock(brief: PlanBrief): string {
 export function contextBlock(plan: Plan, artifact: ArtifactKey): string {
   const parts: string[] = [];
 
-  if (artifact !== 'prd' && plan.generated.prd) {
+  // 나머지 단계와 같이 **내용이 있는지**로 판단한다. 생성 기록만 보고 넣으면
+  // 내용이 비어 있을 때 "이미 확정된 PRD" 아래에 빈 줄만 넘어가 모델을 헷갈리게 한다.
+  if (artifact !== 'prd' && hasArtifact(plan, 'prd')) {
     const { prd } = plan;
     parts.push(
       [
@@ -155,5 +158,45 @@ export function buildChatPrompt(plan: Plan, question: string): string {
     '',
     '## 사용자 요청',
     question,
+  ].join('\n');
+}
+
+/**
+ * 아직 어느 화면에도 배치되지 않은 기능만 어디에 둘지 묻는다.
+ *
+ * **정보구조도를 다시 만들라고 하지 않는다.** 이미 있는 화면 목록을 그대로 주고,
+ * 새로 생긴 기능이 그중 어디에 붙는지(또는 새 화면이 필요한지)만 고르게 한다.
+ * 그래야 사용자가 잡아 둔 화면 구조를 건드리지 않는다.
+ */
+export function buildPlacementPrompt(plan: Plan, features: { id: string; name: string; description: string }[]): string {
+  return [
+    '당신은 정보구조도를 다듬는 AI 기획 파트너입니다.',
+    '아래 "배치할 기능" 각각을 어느 화면에 둘지 정하세요.',
+    '',
+    '### 지켜야 할 것',
+    '- **기존 화면을 고치거나 지우지 않습니다.** 기능을 어디에 넣을지만 고릅니다.',
+    '- 되도록 **이미 있는 화면**에 넣습니다. 성격이 맞는 화면이 없을 때만 새 화면을 제안합니다.',
+    '- 새 화면은 꼭 필요한 만큼만 만듭니다. 기능마다 화면을 하나씩 만들지 마세요.',
+    '- 관련된 기능 여러 개가 한 새 화면에 들어가야 하면, 같은 이름과 경로를 반복해 적습니다.',
+    '- 배치할 기능으로 준 것만 다룹니다. 다른 기능은 넣지 않습니다.',
+    '',
+    '## 서비스 정보',
+    briefBlock(plan.brief),
+    '',
+    '## 이미 있는 화면',
+    plan.iaPages.length > 0
+      ? plan.iaPages
+          .map((page) => {
+            const parent = page.parentId
+              ? plan.iaPages.find((p) => p.id === page.parentId)?.name ?? '?'
+              : '최상위';
+            const placed = page.featureIds.length > 0 ? ` · 연결된 기능 ${page.featureIds.length}개` : '';
+            return `- ${page.id} ${page.name} (${page.path}) — ${parent} 아래${placed} — ${page.description}`;
+          })
+          .join('\n')
+      : '(아직 없음 — 전부 새 화면으로 제안하세요)',
+    '',
+    '## 배치할 기능',
+    features.map((f) => `- ${f.id} ${f.name} — ${f.description || '설명 없음'}`).join('\n'),
   ].join('\n');
 }

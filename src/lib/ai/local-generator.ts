@@ -1197,11 +1197,59 @@ function buildWireframes(brief: PlanBrief, plan?: Plan, pageIds?: string[]): Wir
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * 아직 어느 플로우에도 안 나오는 화면마다 짧은 여정을 하나씩 만든다.
+ *
+ * `buildFlow` 는 늘 같은 세 가지를 돌려주므로, 플로우를 **더** 만들 때 그대로 쓰면
+ * 똑같은 것이 두 번 붙는다. 여기서는 실제로 빠진 화면만 다룬다.
+ */
+function buildMoreFlows(plan: Plan | undefined): FlowDraft {
+  if (!plan) return { flows: [] };
+  const inFlows = new Set(
+    plan.flows.flatMap((f) => f.nodes.map((n) => n.pageId).filter(Boolean) as string[]),
+  );
+  const uncovered = plan.iaPages
+    .filter((p) => p.type === 'page' && p.featureIds.length > 0 && !inFlows.has(p.id))
+    .slice(0, 5);
+
+  return {
+    flows: uncovered.map((page) => ({
+      name: `${page.name} 이용`,
+      description: `사용자가 ${page.name} 화면에 들어와 목적을 마치고 나가는 흐름.`,
+      actor: '일반 회원',
+      nodes: [
+        { key: 'n1', type: 'start', label: '서비스 진입', description: '', pageId: '' },
+        {
+          key: 'n2',
+          type: 'screen',
+          label: page.name,
+          description: page.description ?? '',
+          pageId: page.id,
+        },
+        { key: 'n3', type: 'action', label: `${page.name}에서 작업 수행`, description: '', pageId: '' },
+        { key: 'n4', type: 'decision', label: '작업에 성공했는가?', description: '', pageId: '' },
+        { key: 'n5', type: 'screen', label: '결과 확인', description: '', pageId: page.id },
+        { key: 'n6', type: 'action', label: '오류 안내 확인 후 재시도', description: '', pageId: '' },
+        { key: 'n7', type: 'end', label: '종료', description: '', pageId: '' },
+      ],
+      edges: [
+        { from: 'n1', to: 'n2', label: '' },
+        { from: 'n2', to: 'n3', label: '' },
+        { from: 'n3', to: 'n4', label: '' },
+        { from: 'n4', to: 'n5', label: '예' },
+        { from: 'n4', to: 'n6', label: '아니오' },
+        { from: 'n6', to: 'n3', label: '' },
+        { from: 'n5', to: 'n7', label: '' },
+      ],
+    })),
+  };
+}
+
 export function generateLocally<K extends ArtifactKey>(
   artifact: K,
   brief: PlanBrief,
   plan?: Plan,
-  options?: { pageIds?: string[] },
+  options?: { pageIds?: string[]; merge?: boolean },
 ): ArtifactDraftMap[K] {
   switch (artifact) {
     case 'prd':
@@ -1211,7 +1259,9 @@ export function generateLocally<K extends ArtifactKey>(
     case 'ia':
       return buildIa(brief, plan) as ArtifactDraftMap[K];
     case 'flow':
-      return buildFlow(brief, plan) as ArtifactDraftMap[K];
+      return (options?.merge
+        ? buildMoreFlows(plan)
+        : buildFlow(brief, plan)) as ArtifactDraftMap[K];
     case 'wireframe':
       return buildWireframes(brief, plan, options?.pageIds) as ArtifactDraftMap[K];
     default:

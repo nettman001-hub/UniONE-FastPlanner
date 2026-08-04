@@ -290,6 +290,23 @@ export function Spinner({ size = 14 }: { size?: number }) {
   return <Loader2 size={size} className="spin" />;
 }
 
+/**
+ * 앞 단계가 바뀌어 이 문서가 뒤처졌다는 꼬리표.
+ *
+ * "배치되지 않은 기능 5개" 같은 안내는 **무엇이 어긋났는지**만 말한다.
+ * 그것만 읽고는 문서를 다시 만들어야 한다는 것까지 이어지지 않아,
+ * 안내를 보고도 그냥 다음 단계로 넘어가는 일이 생긴다.
+ * 그래서 안내 끝에 **무엇을 해야 하는지**를 같은 문구로 붙인다.
+ * 뒤처짐을 알리는 자리에서는 어디서든 이것을 쓴다.
+ */
+export function RegenerateTag() {
+  return (
+    <span className="chip chip-danger shrink-0" title="앞 단계가 바뀌어 이 문서를 다시 만들어야 합니다">
+      재생성 필요
+    </span>
+  );
+}
+
 export function SectionCard({
   title,
   action,

@@ -6,6 +6,8 @@
  */
 
 import { ARTIFACT_LABEL, type ArtifactKey, type Plan } from './types';
+import { stalePages } from './ia/wireframe-sync';
+import { hasArtifact } from './artifact-status';
 
 export type IssueLevel = 'error' | 'warn' | 'info';
 
@@ -20,6 +22,13 @@ export interface Issue {
   targets: string[];
   /** 이동할 경로 (플랜 기준 상대 경로) */
   href: string;
+  /**
+   * 앞 단계가 바뀌어 이 문서를 다시 만들어야 하는가.
+   *
+   * 손으로 항목을 고쳐서 될 문제와, 문서를 다시 만들어야 풀리는 문제는
+   * 해야 할 일이 다르다. 화면에서 `재생성 필요` 로 구분해 보여 준다.
+   */
+  regenerate?: boolean;
 }
 
 export const LEVEL_LABEL: Record<IssueLevel, string> = {
@@ -36,7 +45,7 @@ export function validatePlan(plan: Plan): Issue[] {
   };
 
   /* PRD ------------------------------------------------------------ */
-  if (plan.generated.prd) {
+  if (hasArtifact(plan, 'prd')) {
     if (!plan.prd.overview.trim()) {
       issues.push({
         id: 'prd-overview-empty',
@@ -127,7 +136,7 @@ export function validatePlan(plan: Plan): Issue[] {
   });
 
   /* 정보구조도 ------------------------------------------------------ */
-  if (plan.generated.ia) {
+  if (hasArtifact(plan, 'ia')) {
     const pageIds = new Set(plan.iaPages.map((p) => p.id));
 
     const brokenParents = plan.iaPages
@@ -155,6 +164,7 @@ export function validatePlan(plan: Plan): Issue[] {
       detail: '기능이 실제로 어느 화면에서 쓰이는지 연결해야 개발 범위가 명확해집니다.',
       targets: unlinkedFeatures,
       href: '/ia',
+      regenerate: true,
     });
 
     const duplicatePaths = Object.entries(
@@ -239,7 +249,7 @@ export function validatePlan(plan: Plan): Issue[] {
     });
   }
 
-  if (plan.generated.flow && plan.flows.length > 0) {
+  if (hasArtifact(plan, 'flow')) {
     const flowsWithoutEnd = plan.flows
       .filter((f) => !f.nodes.some((n) => n.type === 'end'))
       .map((f) => `${f.id} ${f.name}`);
@@ -252,10 +262,46 @@ export function validatePlan(plan: Plan): Issue[] {
       targets: flowsWithoutEnd,
       href: '/flow',
     });
+
+    /*
+     * 어느 플로우에도 나오지 않는 기능 화면.
+     *
+     * 정보구조도에 화면을 배치한 뒤 플로우가 뒤처지면 여기서 잡힌다. 와이어프레임의
+     * `wf-page-uncovered` 와 같은 모양이다 — 앞 단계가 늘었는데 이 단계가 못 따라간 것이라,
+     * 항목을 손으로 고쳐서 되는 문제가 아니라 **다시 만들어야** 풀린다.
+     */
+    const inFlows = new Set(
+      plan.flows.flatMap((f) => f.nodes.map((n) => n.pageId).filter(Boolean) as string[]),
+    );
+    const pagesWithoutFlow = plan.iaPages
+      .filter((p) => p.type === 'page' && p.featureIds.length > 0 && !inFlows.has(p.id))
+      .map((p) => `${p.id} ${p.name}`);
+    /*
+     * 등급이 `제안` 인 이유, 그리고 `재생성 필요` 를 안 붙이는 이유.
+     *
+     * 플로우는 화면 목록이 아니라 **갈라지는 지점**을 그리는 문서다. 보기만 하는
+     * 화면은 그려 봐야 `시작 → 화면 → 끝` 이라 얻는 것이 없고, 뒤 단계(와이어프레임)는
+     * 정보구조도를 보고 만들므로 플로우가 적어도 품질이 떨어지지 않는다.
+     * 그러니 안 덮인 화면은 **결함이 아니다.**
+     *
+     * 이것을 `경고`(개발 넘기기 전에 채우세요)로 두면, 같은 화면에서 한쪽은
+     * "다 만들 필요 없습니다" 라고 하고 다른 쪽은 채우라고 재촉하게 된다.
+     * 실제로 그 표시를 보고 화면을 전부 덮어야 하는 줄 알았다는 이야기를 들었다.
+     */
+    add({
+      id: 'flow-page-uncovered',
+      level: 'info',
+      artifact: 'flow',
+      title: '아직 플로우에 없는 화면',
+      detail:
+        '이 화면들을 지나는 여정이 아직 없습니다. 결제·삭제처럼 실패할 수 있는 화면이면 플로우를 만들어 두는 편이 좋고, 보기만 하는 화면이면 넘어가도 됩니다.',
+      targets: pagesWithoutFlow,
+      href: '/flow',
+    });
   }
 
   /* 와이어프레임 ---------------------------------------------------- */
-  if (plan.generated.wireframe) {
+  if (hasArtifact(plan, 'wireframe')) {
     const covered = new Set(plan.wireframes.map((w) => w.pageId));
     const uncoveredPages = plan.iaPages
       .filter((p) => p.type === 'page' && !covered.has(p.id) && p.featureIds.length > 0)
@@ -268,6 +314,28 @@ export function validatePlan(plan: Plan): Issue[] {
       detail: '기능이 연결된 화면인데 아직 와이어프레임이 없습니다.',
       targets: uncoveredPages,
       href: '/wireframe',
+      regenerate: true,
+    });
+
+    /*
+     * 화면에 기능이 더 붙었는데 그림은 그대로인 경우.
+     *
+     * 정보구조도에서 기능을 배치한 뒤 여기가 뒤처지면, 개발팀은
+     * "기능명세서에는 있는데 화면에는 없는 것" 을 받는다. 개발 중에 발견되면
+     * 화면을 다시 그려야 해서 일정이 밀린다.
+     */
+    const outdated = stalePages(plan)
+      .filter((s) => s.reason === 'changed')
+      .map((s) => `${s.page.id} ${s.page.name} — ${s.addedFeatures.join(', ')}`);
+    add({
+      id: 'wf-outdated',
+      level: 'warn',
+      artifact: 'wireframe',
+      title: '기능이 더 붙었는데 그림은 그대로인 화면',
+      detail: '와이어프레임을 만든 뒤에 이 화면에 기능이 추가되었습니다. 다시 만들어 반영하세요.',
+      targets: outdated,
+      href: '/wireframe',
+      regenerate: true,
     });
 
     const orphanWireframes = plan.wireframes
@@ -299,7 +367,7 @@ export function validatePlan(plan: Plan): Issue[] {
 
   /* 미생성 산출물 --------------------------------------------------- */
   const missing = (Object.keys(ARTIFACT_LABEL) as ArtifactKey[]).filter(
-    (key) => !plan.generated[key],
+    (key) => !hasArtifact(plan, key),
   );
   if (missing.length > 0) {
     issues.push({

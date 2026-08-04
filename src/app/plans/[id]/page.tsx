@@ -32,12 +32,14 @@ import {
   Field,
   InlineText,
   Modal,
+  RegenerateTag,
   SectionCard,
   Spinner,
   useConfirm,
   useToast,
 } from '@/components/ui';
 import { usePlannerStore } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import { issueSummary, validatePlan, LEVEL_LABEL, type Issue, type IssueLevel } from '@/lib/validate';
 import {
@@ -196,7 +198,7 @@ function PlanOverview() {
 
   /* 단일 산출물 생성 */
   const handleGenerate = async (key: ArtifactKey) => {
-    if (plan.generated[key]) {
+    if (hasArtifact(plan, key)) {
       const ok = await confirm({
         title: `${ARTIFACT_LABEL[key]}을(를) 다시 생성할까요?`,
         message: '기존 내용을 모두 덮어씁니다. 직접 편집한 부분도 사라집니다.',
@@ -216,7 +218,7 @@ function PlanOverview() {
    */
   const handleGenerateAll = async () => {
     if (busy) return;
-    if (STEP_ORDER.some((key) => plan.generated[key])) {
+    if (STEP_ORDER.some((key) => hasArtifact(plan, key))) {
       const ok = await confirm({
         title: '전체 자동 생성',
         message:
@@ -363,7 +365,7 @@ function PlanOverview() {
             )}
 
             {STEP_ORDER.map((key, index) => {
-              const done = plan.generated[key];
+              const done = hasArtifact(plan, key);
               const reason = blockedReason(plan, key);
               const active = autoStep === key || pending === key;
               return (
@@ -688,6 +690,7 @@ function IssueRow({ issue, planId }: { issue: Issue; planId: string }) {
             </span>
             <span className="chip">{ARTIFACT_LABEL[issue.artifact]}</span>
             <span className="text-[13px] font-bold">{issue.title}</span>
+            {issue.regenerate && <RegenerateTag />}
           </div>
           <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
             {issue.detail}

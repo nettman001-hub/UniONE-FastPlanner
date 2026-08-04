@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { resolveProvider } from '@/lib/ai/client';
+import { maxTokensFor } from '@/lib/jobs/queue';
 import { getDb, hasDatabase } from '@/lib/db';
+import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,8 +38,28 @@ export async function GET(request: Request) {
       testerAccount: Boolean(process.env.TESTER_EMAIL && process.env.TESTER_PASSWORD),
       signup: process.env.SIGNUP_CODE ? 'code' : process.env.ALLOW_SIGNUP === '1' ? 'open' : 'closed',
       database: await checkDatabase(),
+      output: outputLimits(provider.maxOutputTokens),
     },
   });
+}
+
+/**
+ * 지금 배포본이 실제로 쓰는 출력 토큰 상한.
+ *
+ * 환경변수를 바꾼 뒤 확인할 방법이 없었다. `npm run check:ai` 는 **자기 컴퓨터의
+ * 파일**을 읽으므로 배포본 값이 안 나오고, 그래서 바꿔 놓고도 안 바뀐 줄 알게 된다.
+ * 숫자만 담는다 — 공급자와 모델 이름은 여전히 내보내지 않는다.
+ */
+function outputLimits(limit: number): { limit: number; perArtifact: Record<string, number> } {
+  return {
+    limit,
+    perArtifact: Object.fromEntries(
+      (Object.keys(ARTIFACT_LABEL) as ArtifactKey[]).map((key) => [
+        ARTIFACT_LABEL[key],
+        maxTokensFor(key, limit),
+      ]),
+    ),
+  };
 }
 
 async function checkDatabase(): Promise<{ configured: boolean; ok: boolean; hint: string }> {
