@@ -339,3 +339,43 @@ export interface ArtifactDraftMap {
   flow: FlowDraft;
   wireframe: WireframeDraft;
 }
+
+/* ------------------------------------------------------------------ */
+/* 새 기능을 화면에 배치 (증분)                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 정보구조도를 다시 만들지 않고, **아직 배치되지 않은 기능만** 어디에 둘지 정한다.
+ *
+ * 기존 화면은 ID 로 가리키게 한다. 인덱스로 받으면 목록 순서가 조금만 달라져도
+ * 엉뚱한 화면에 붙는데, 여기서는 이미 확정된 화면이 있으므로 ID 로 정확히 지목할 수 있다.
+ */
+export const PLACEMENT_SCHEMA = object({
+  placements: {
+    type: 'array',
+    description:
+      '배치 대상으로 준 기능 하나에 제안 하나씩. 준 기능만 다루고, 다른 기능은 넣지 않는다.',
+    items: object({
+      featureId: str('배치할 기능 ID (FN-001 형식). 반드시 목록에 있는 것만.'),
+      target: {
+        type: 'string',
+        enum: ['existing', 'new'],
+        description:
+          'existing = 이미 있는 화면에 넣는다 (되도록 이쪽을 고른다). new = 새 화면이 필요하다.',
+      },
+      pageId: str('target 이 existing 일 때 넣을 화면 ID (PG-001 형식). new 면 빈 문자열.'),
+      name: str('target 이 new 일 때 새 화면 이름. existing 이면 빈 문자열.'),
+      path: str('target 이 new 일 때 경로 (예: /family). existing 이면 빈 문자열.'),
+      description: str('target 이 new 일 때 화면 설명 한 문장. existing 이면 빈 문자열.'),
+      pageType: {
+        type: 'string',
+        enum: ['page', 'modal', 'tab', 'section'],
+        description: 'target 이 new 일 때 화면 종류. existing 이면 page 로 둔다.',
+      },
+      parentPageId: str(
+        'target 이 new 일 때 상위 화면 ID. 최상위면 빈 문자열. existing 이면 빈 문자열.',
+      ),
+      reason: str('왜 그 자리인지 한 문장. 사용자가 읽고 판단할 근거가 된다.'),
+    }),
+  },
+});

@@ -442,6 +442,14 @@ export const ARTIFACT_CREDIT_COST: Record<ArtifactKey, number> = {
 
 export const CHAT_CREDIT_COST = 1;
 
+/**
+ * 새 기능을 화면에 배치할 때 드는 크레딧.
+ *
+ * 정보구조도 전체 생성(4)보다 싸다 — 이미 있는 화면 목록을 주고 새 기능만
+ * 어디에 둘지 고르게 하므로 만들어 낼 것이 훨씬 적다.
+ */
+export const PLACEMENT_CREDIT_COST = 2;
+
 export function emptyPrd(): Prd {
   return {
     overview: '',

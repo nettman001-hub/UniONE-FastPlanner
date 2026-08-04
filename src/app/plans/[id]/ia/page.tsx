@@ -3,7 +3,6 @@
 import { useParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import {
-  AlertTriangle,
   AppWindow,
   ArrowDown,
   ArrowUp,
@@ -23,9 +22,10 @@ import {
   Table2,
   Trash2,
 } from 'lucide-react';
-import { EmptyState, InlineText, Modal, Spinner, useConfirm } from '@/components/ui';
+import { EmptyState, InlineText, Spinner, useConfirm } from '@/components/ui';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
+import { PlaceFeaturesModal, UnplacedChip } from '@/components/PlaceFeatures';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
 import { pageTree } from '@/lib/export';
@@ -383,16 +383,8 @@ export default function IaArchitecturePage() {
           />
         </div>
 
-        {/* 미연결 기능 경고 */}
-        {unlinkedFeatures.length > 0 && (
-          <button
-            className="chip chip-warn h-auto cursor-pointer self-start py-1 text-left"
-            onClick={() => setUnlinkedOpen(true)}
-          >
-            <AlertTriangle size={12} />
-            화면에 배치되지 않은 기능 {unlinkedFeatures.length}개
-          </button>
-        )}
+        {/* 미연결 기능 — 누르면 배치 창이 열린다 */}
+        <UnplacedChip count={unlinkedFeatures.length} onClick={() => setUnlinkedOpen(true)} />
       </header>
 
       {view === 'tree' && (
@@ -423,45 +415,8 @@ export default function IaArchitecturePage() {
 
       {view === 'sitemap' && <SitemapView rows={visibleRows} featureById={featureById} />}
 
-      {/* 미연결 기능 목록 */}
-      <Modal
-        open={unlinkedOpen}
-        title="화면에 배치되지 않은 기능"
-        description="아래 기능들은 아직 어느 화면에서도 쓰이지 않습니다. 트리에서 화면 상세를 열어 연결해 주세요."
-        onClose={() => setUnlinkedOpen(false)}
-        footer={
-          <button className="btn btn-primary" onClick={() => setUnlinkedOpen(false)}>
-            닫기
-          </button>
-        }
-      >
-        {unlinkedFeatures.length === 0 ? (
-          <p className="text-[13px] text-[var(--fg-muted)]">모든 기능이 화면에 배치되었습니다.</p>
-        ) : (
-          <ul className="flex max-h-[52vh] flex-col gap-1.5 overflow-y-auto">
-            {unlinkedFeatures.map((feature) => {
-              const req = requirements.find((r) => r.id === feature.requirementId);
-              return (
-                <li
-                  key={feature.id}
-                  className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2"
-                >
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="id-tag">{feature.id}</span>
-                    <span className="text-[13px] font-semibold">{feature.name}</span>
-                    {req && <span className="chip">{req.title}</span>}
-                  </div>
-                  {feature.description && (
-                    <p className="mt-1 text-[12px] leading-relaxed text-[var(--fg-muted)]">
-                      {feature.description}
-                    </p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Modal>
+      {/* 미연결 기능 배치 */}
+      <PlaceFeaturesModal open={unlinkedOpen} plan={plan} onClose={() => setUnlinkedOpen(false)} />
     </div>
   );
 }
