@@ -7,7 +7,7 @@ import { aiErrorMessage } from '@/lib/ai/errors';
 import { CHAT_SCHEMA } from '@/lib/ai/schemas';
 import { buildChatPrompt } from '@/lib/ai/prompts';
 import { draftToPatch } from '@/lib/ai/apply';
-import { applyFsEdit, describeFsEdit, looksLikeFsEdit } from '@/lib/ai/fs-edit';
+import { applyAgentEdit } from '@/lib/ai/agent-edit';
 import { hasArtifact } from '@/lib/artifact-status';
 import { contentLossMessage, describeContentLoss } from '@/lib/ai/guard';
 import { ARTIFACT_LABEL, type ArtifactKey, type Plan, type PlanDocuments } from '@/lib/types';
@@ -101,27 +101,20 @@ export async function POST(request: Request) {
       try {
         const draft = JSON.parse(result.patch.payload);
         /*
-         * 기능명세서는 **손댄 항목만** 받아 ID 로 맞춰 합친다.
+         * 먼저 **손댄 것만 합치는** 길을 본다.
          *
          * 통째로 갈아 끼우게 하면, 상세 기능 세 개를 붙이는 요청에도 요구사항과
          * 기능 수십 개를 빠짐없이 다시 적어 보내야 한다. 모델은 시킨 것만 담아
          * 보내므로 나머지가 사라지고, 손실 감시에 걸려 **아무것도 반영되지 않았다.**
          * 모델은 "추가했습니다" 라고 답하는데 문서는 그대로였다.
+         *
+         * 합칠 모양이 아니면 예전처럼 통째로 갈아 끼운다. 그 길에는 손실 감시가
+         * 그대로 서 있으므로, 판단이 빗나가도 조용히 지워지지 않는다.
          */
-        if (artifact === 'fs' && looksLikeFsEdit(draft)) {
-          const merged = applyFsEdit(plan, draft);
-          const summary = describeFsEdit(merged);
-          if (summary) {
-            patch = {
-              requirements: merged.requirements,
-              features: merged.features,
-              specifications: merged.specifications,
-            };
-            console.error('[chat] 기능명세서 병합', summary);
-          } else {
-            // 맞춰 붙일 것이 하나도 없었다. 문서를 건드리지 않는다.
-            patch = undefined;
-          }
+        const merged = applyAgentEdit(plan, artifact as ArtifactKey, draft);
+        if (merged) {
+          patch = merged.patch;
+          console.error('[chat] 합치기', artifact, merged.summary);
         } else {
           patch = draftToPatch(artifact as ArtifactKey, draft, plan, { mergeWireframes: true });
         }
