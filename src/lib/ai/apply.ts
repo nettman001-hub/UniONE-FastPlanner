@@ -252,6 +252,11 @@ export function applyWireframes(
   draft: WireframeDraft,
   knownPageIds: string[],
   startFrom: readonly { id: string }[] = [],
+  /**
+   * 페이지별 기능 목록. 만들 때의 기능 구성을 와이어프레임에 새겨 둔다.
+   * 나중에 그 페이지에 기능이 더 붙으면 "뒤처진 화면" 으로 찾아낼 수 있다.
+   */
+  featuresByPage: Record<string, string[]> = {},
 ): Wireframe[] {
   const raw = (draft.wireframes ?? []).filter((w) => knownPageIds.includes(w.pageId));
   const ids = nextIds('WF', startFrom, raw.length);
@@ -271,6 +276,7 @@ export function applyWireframes(
       device: (w.device === 'mobile' ? 'mobile' : 'desktop') as WireframeDevice,
       blocks,
       order: i,
+      featureIds: [...(featuresByPage[w.pageId] ?? [])],
     };
   });
 }
@@ -305,17 +311,23 @@ export function draftToPatch(
     }
     case 'wireframe': {
       const knownPageIds = plan.iaPages.map((p) => p.id);
+      const featuresByPage = Object.fromEntries(
+        plan.iaPages.map((p) => [p.id, p.featureIds]),
+      );
       if (options?.mergeWireframes) {
         const incoming = applyWireframes(
           draft as WireframeDraft,
           knownPageIds,
           plan.wireframes,
+          featuresByPage,
         );
         const replacedPages = new Set(incoming.map((w) => w.pageId));
         const kept = plan.wireframes.filter((w) => !replacedPages.has(w.pageId));
         return { wireframes: [...kept, ...incoming].map((w, i) => ({ ...w, order: i })) };
       }
-      return { wireframes: applyWireframes(draft as WireframeDraft, knownPageIds) };
+      return {
+        wireframes: applyWireframes(draft as WireframeDraft, knownPageIds, [], featuresByPage),
+      };
     }
     default:
       return {};

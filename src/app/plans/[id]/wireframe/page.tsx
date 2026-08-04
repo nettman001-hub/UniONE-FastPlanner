@@ -9,6 +9,7 @@ import {
   MonitorSmartphone,
   Plus,
   Printer,
+  RefreshCw,
   Smartphone,
   Sparkles,
   Trash2,
@@ -20,6 +21,7 @@ import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
 import { useGenerate } from '@/lib/useGenerate';
 import { pageTree } from '@/lib/export';
+import { stalePages, type StalePage } from '@/lib/ia/wireframe-sync';
 import { uid } from '@/lib/ids';
 import {
   WIREFRAME_BLOCK_LABEL,
@@ -86,11 +88,24 @@ export default function WireframePage() {
   const canGenerate = iaPages.length > 0;
   const generating = pending === 'wireframe';
 
+  /**
+   * 화면에 기능이 더 붙었는데 그림은 그대로인 화면들.
+   * 정보구조도에서 기능을 배치한 뒤 여기가 뒤처지면 개발팀은
+   * "기능명세서에는 있는데 화면에는 없는 것" 을 받게 된다.
+   */
+  const stale = stalePages(plan);
+
   /* 액션 -------------------------------------------------------------- */
 
   const openGenerateModal = () => {
     const missing = pageRows.filter(({ page }) => !wireframePageIds.has(page.id)).map((r) => r.page.id);
     setCheckedPageIds(missing.length > 0 ? missing.slice(0, RECOMMENDED_MAX) : pageRows.slice(0, RECOMMENDED_MAX).map((r) => r.page.id));
+    setGenOpen(true);
+  };
+
+  /** 뒤처진 화면만 골라 생성 창을 연다. */
+  const openStaleModal = () => {
+    setCheckedPageIds(stale.map((s2) => s2.page.id).slice(0, RECOMMENDED_MAX));
     setGenOpen(true);
   };
 
@@ -369,6 +384,8 @@ export default function WireframePage() {
         </p>
       )}
 
+      <StaleBanner stale={stale} onFix={openStaleModal} disabled={pending !== null} />
+
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_330px]">
         {/* 좌측 · 화면 목록 */}
         <aside className="no-print card flex flex-col overflow-hidden lg:max-h-[76vh]">
@@ -632,6 +649,70 @@ function BlockCard({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 뒤처진 화면 안내                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 기능이 더 붙었는데 그림은 그대로인 화면을 알린다.
+ *
+ * 정합성 검사에서도 잡히지만, **여기서 바로 고칠 수 있어야** 실제로 고쳐진다.
+ * 개요 화면까지 갔다가 돌아오게 만들면 대부분 그냥 넘어간다.
+ */
+function StaleBanner({
+  stale,
+  onFix,
+  disabled,
+}: {
+  stale: StalePage[];
+  onFix: () => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  if (stale.length === 0) return null;
+
+  const missing = stale.filter((s) => s.reason === 'missing').length;
+  const changed = stale.length - missing;
+
+  return (
+    <div
+      className="no-print card mb-3 flex flex-col gap-2 px-4 py-3"
+      style={{ background: 'var(--warn-soft)', borderColor: 'transparent' }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <RefreshCw size={14} style={{ color: 'var(--warn)' }} />
+        <p className="min-w-0 flex-1 text-[12.5px] font-semibold" style={{ color: 'var(--warn)' }}>
+          {stale.length}개 화면의 와이어프레임이 최신이 아닙니다
+          {changed > 0 && missing > 0 && ` (기능 추가 ${changed} · 미작성 ${missing})`}
+        </p>
+        <button className="btn btn-sm" onClick={() => setOpen((v) => !v)}>
+          {open ? '접기' : '어떤 화면인지 보기'}
+        </button>
+        <button className="btn btn-primary btn-sm" onClick={onFix} disabled={disabled}>
+          <Sparkles size={13} />
+          이 화면들 다시 만들기
+        </button>
+      </div>
+
+      {open && (
+        <ul className="flex flex-col gap-1.5 rounded-lg bg-[var(--surface)] p-2.5">
+          {stale.map(({ page, reason, addedFeatures }) => (
+            <li key={page.id} className="text-[12px] leading-relaxed">
+              <span className="id-tag">{page.id}</span>{' '}
+              <span className="font-semibold">{page.name}</span>{' '}
+              <span className="chip">{reason === 'missing' ? '와이어프레임 없음' : '기능 추가됨'}</span>
+              <p className="mt-0.5 text-[11.5px] text-[var(--fg-muted)]">
+                {reason === 'missing' ? '이 화면의 기능: ' : '그림에 없는 기능: '}
+                {addedFeatures.join(', ')}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

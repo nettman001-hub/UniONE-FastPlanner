@@ -6,6 +6,7 @@
  */
 
 import { ARTIFACT_LABEL, type ArtifactKey, type Plan } from './types';
+import { stalePages } from './ia/wireframe-sync';
 
 export type IssueLevel = 'error' | 'warn' | 'info';
 
@@ -267,6 +268,26 @@ export function validatePlan(plan: Plan): Issue[] {
       title: '와이어프레임이 없는 기능 화면',
       detail: '기능이 연결된 화면인데 아직 와이어프레임이 없습니다.',
       targets: uncoveredPages,
+      href: '/wireframe',
+    });
+
+    /*
+     * 화면에 기능이 더 붙었는데 그림은 그대로인 경우.
+     *
+     * 정보구조도에서 기능을 배치한 뒤 여기가 뒤처지면, 개발팀은
+     * "기능명세서에는 있는데 화면에는 없는 것" 을 받는다. 개발 중에 발견되면
+     * 화면을 다시 그려야 해서 일정이 밀린다.
+     */
+    const outdated = stalePages(plan)
+      .filter((s) => s.reason === 'changed')
+      .map((s) => `${s.page.id} ${s.page.name} — ${s.addedFeatures.join(', ')}`);
+    add({
+      id: 'wf-outdated',
+      level: 'warn',
+      artifact: 'wireframe',
+      title: '기능이 더 붙었는데 그림은 그대로인 화면',
+      detail: '와이어프레임을 만든 뒤에 이 화면에 기능이 추가되었습니다. 다시 만들어 반영하세요.',
+      targets: outdated,
       href: '/wireframe',
     });
 

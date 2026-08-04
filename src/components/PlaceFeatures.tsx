@@ -22,6 +22,7 @@ import {
   unplacedFeatures,
   type Placement,
 } from '@/lib/ia/placement';
+import { stampWireframes } from '@/lib/ia/wireframe-sync';
 import { PLACEMENT_CREDIT_COST, type Plan } from '@/lib/types';
 import { Modal, Spinner, useToast } from './ui';
 
@@ -97,6 +98,13 @@ export function PlaceFeaturesModal({
     const picked = placements.filter((p) => chosen.has(p.featureId));
     if (picked.length === 0) return;
 
+    /*
+     * 배치하기 **전의** 기능 구성을 와이어프레임에 새겨 둔다.
+     *
+     * 이 값이 있어야 나중에 "그림을 만든 뒤 무엇이 더 붙었는지" 를 비교할 수 있다.
+     * 배치한 뒤에 새기면 늘어난 기능까지 포함되어 뒤처짐을 영영 못 알아본다.
+     */
+    const wireframes = stampWireframes(plan.iaPages, plan.wireframes);
     const iaPages = applyPlacements(plan, picked);
 
     /*
@@ -110,7 +118,7 @@ export function PlaceFeaturesModal({
 
     // 되돌릴 지점을 먼저 남긴다.
     saveVersion(plan.id, '화면 배치 전');
-    applyDocuments(plan.id, { iaPages });
+    applyDocuments(plan.id, { iaPages, wireframes });
 
     const added = iaPages.length - plan.iaPages.length;
     toast(
