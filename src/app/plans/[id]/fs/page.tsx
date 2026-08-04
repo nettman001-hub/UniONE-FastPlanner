@@ -22,11 +22,13 @@ import { BRANCH_HUES, FsMindmap } from '@/components/FsMindmap';
 import { NewBadge, ReviewBar } from '@/components/ReviewBar';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
+import { IssueBar } from '@/components/IssueBar';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { buildFsTree, byOrder, isFiltering, type FsTreeNode } from '@/lib/fs-tree';
 import { collectPending, isPending, type PendingItem } from '@/lib/fs-review';
 import { useGenerate } from '@/lib/useGenerate';
+import { validatePlan } from '@/lib/validate';
 import {
   PRIORITY_LABEL,
   WORK_STATUS_ORDER,
@@ -201,6 +203,12 @@ export default function FsPage() {
   const pendingItems = useMemo(
     () =>
       collectPending(plan?.requirements ?? [], plan?.features ?? [], plan?.specifications ?? []),
+    [plan],
+  );
+
+  /** 이 화면에서 고칠 수 있는 지적만. */
+  const fsIssues = useMemo(
+    () => (plan ? validatePlan(plan).filter((i) => i.artifact === 'fs') : []),
     [plan],
   );
 
@@ -592,6 +600,12 @@ export default function FsPage() {
             <NextStepButton planId={planId} current="fs" />
           </div>
         </div>
+
+        {/*
+          이 산출물의 지적을 고치는 자리에 함께 둔다. 개요에만 있으면
+          고치러 온 순간 무엇이 지적됐는지가 안 보여 다시 돌아가야 한다.
+        */}
+        <IssueBar planId={planId} artifact="fs" issues={fsIssues} />
 
         {/* 검색 · 필터 */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

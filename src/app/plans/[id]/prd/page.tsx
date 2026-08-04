@@ -26,9 +26,11 @@ import {
 } from '@/components/ui';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
+import { IssueBar } from '@/components/IssueBar';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
+import { validatePlan } from '@/lib/validate';
 import type { Comment, Prd, PrdGoal, PrdMetric, PrdPersona, PrdRole } from '@/lib/types';
 
 /* ------------------------------------------------------------------ */
@@ -102,6 +104,12 @@ export default function PrdPage() {
     }
     return map;
   }, [comments]);
+
+  /** 이 화면에서 고칠 수 있는 지적만. */
+  const prdIssues = useMemo(
+    () => (plan ? validatePlan(plan).filter((i) => i.artifact === 'prd') : []),
+    [plan],
+  );
 
   if (!plan) {
     return <div className="p-8 text-[13px] text-[var(--fg-muted)]">플랜을 찾을 수 없습니다.</div>;
@@ -247,6 +255,8 @@ export default function PrdPage() {
   return (
     <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
       {toolbar}
+
+      <IssueBar planId={planId} artifact="prd" issues={prdIssues} />
 
       {mode === 'doc' ? (
         <DocView prd={prd} title={plan.brief.title} oneLiner={plan.brief.oneLiner} />

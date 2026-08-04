@@ -39,8 +39,10 @@ import {
   useConfirm,
   useToast,
 } from '@/components/ui';
+import { FixWithAi } from '@/components/FixWithAi';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
+import { issueFixPrompt } from '@/lib/ai/fix-prompt';
 import { useGenerate } from '@/lib/useGenerate';
 import { issueSummary, validatePlan, LEVEL_LABEL, type Issue, type IssueLevel } from '@/lib/validate';
 import {
@@ -718,12 +720,20 @@ function IssueRow({ issue, planId }: { issue: Issue; planId: string }) {
             </ul>
           )}
         </div>
-        {issue.href && (
-          <Link className="btn btn-sm shrink-0" href={`/plans/${planId}${issue.href}`}>
-            <CheckCircle2 size={13} />
-            수정하러 가기
-          </Link>
-        )}
+        {/*
+          `수정하러 가기` 만 있으면 화면에 도착한 뒤가 막막하다 — 지적된 항목을
+          표에서 눈으로 찾아내는 일이 남는다. 지적에 이미 대상 ID 가 다 있으므로
+          그대로 에이전트에게 넘긴다.
+        */}
+        <div className="flex shrink-0 gap-1.5">
+          <FixWithAi planId={planId} prompt={issueFixPrompt(issue)} />
+          {issue.href && (
+            <Link className="btn btn-sm shrink-0" href={`/plans/${planId}${issue.href}`}>
+              <CheckCircle2 size={13} />
+              직접 수정
+            </Link>
+          )}
+        </div>
       </div>
     </li>
   );

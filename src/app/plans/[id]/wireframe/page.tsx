@@ -26,9 +26,11 @@ import {
 import { WireframeView } from '@/components/WireframeView';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
+import { IssueBar } from '@/components/IssueBar';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
+import { validatePlan } from '@/lib/validate';
 import { pageTree } from '@/lib/export';
 import { stalePages, type StalePage } from '@/lib/ia/wireframe-sync';
 import { uid } from '@/lib/ids';
@@ -89,6 +91,12 @@ export default function WireframePage() {
     const candidate = pageRows.find(({ page }) => !wireframePageIds.has(page.id)) ?? pageRows[0];
     setNewPageId(candidate?.page.id ?? '');
   }, [pageRows, pageById, wireframePageIds, newPageId]);
+
+  /** 이 화면에서 고칠 수 있는 지적만. */
+  const wfIssues = useMemo(
+    () => (plan ? validatePlan(plan).filter((i) => i.artifact === 'wireframe') : []),
+    [plan],
+  );
 
   if (!plan) {
     return <div className="p-8 text-[13px] text-[var(--fg-muted)]">플랜을 찾을 수 없습니다.</div>;
@@ -394,6 +402,8 @@ export default function WireframePage() {
       )}
 
       <StaleBanner stale={stale} onFix={openStaleModal} disabled={pending !== null} />
+
+      <IssueBar planId={planId} artifact="wireframe" issues={wfIssues} />
 
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_330px]">
         {/* 좌측 · 화면 목록 */}
