@@ -25,10 +25,12 @@ import {
 import { EmptyState, InlineText, Spinner, useConfirm } from '@/components/ui';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
+import { IssueBar } from '@/components/IssueBar';
 import { PlaceFeaturesModal, UnplacedChip } from '@/components/PlaceFeatures';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
+import { validatePlan } from '@/lib/validate';
 import { pageTree } from '@/lib/export';
 import {
   IA_PAGE_TYPE_LABEL,
@@ -246,6 +248,12 @@ export default function IaArchitecturePage() {
     setOpenDetail((prev) => prev.filter((x) => x !== page.id));
   };
 
+  /** 이 화면에서 고칠 수 있는 지적만. */
+  const iaIssues = useMemo(
+    () => (plan ? validatePlan(plan).filter((i) => i.artifact === 'ia') : []),
+    [plan],
+  );
+
   if (!plan) {
     return <div className="p-8 text-[13px] text-[var(--fg-muted)]">플랜을 찾을 수 없습니다.</div>;
   }
@@ -386,6 +394,8 @@ export default function IaArchitecturePage() {
 
         {/* 미연결 기능 — 누르면 배치 창이 열린다 */}
         <UnplacedChip count={unlinkedFeatures.length} onClick={() => setUnlinkedOpen(true)} />
+
+        <IssueBar planId={planId} artifact="ia" issues={iaIssues} />
       </header>
 
       {view === 'tree' && (
