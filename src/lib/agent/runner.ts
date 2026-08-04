@@ -75,7 +75,16 @@ export async function askAgent(
 
     const latest = usePlannerStore.getState();
     if (data.patch && Object.keys(data.patch).length > 0) {
-      latest.applyDocuments(planId, data.patch);
+      /*
+       * 고치기 **전에** 되돌릴 지점을 남긴다.
+       *
+       * 에이전트 수정은 산출물을 통째로 갈아 끼우므로, 결과가 마음에 들지 않으면
+       * 손으로 되돌릴 방법이 없다. 서버가 내용 손실을 막고 있지만 그것만으로는
+       * "지워지진 않았는데 엉뚱하게 바뀐" 경우를 되돌릴 수 없다.
+       * 개요 화면의 버전 기록에서 언제든 이 지점으로 돌아갈 수 있다.
+       */
+      latest.saveVersion(planId, 'AI 에이전트 반영 전');
+      usePlannerStore.getState().applyDocuments(planId, data.patch);
     }
     latest.spendCredits(CHAT_CREDIT_COST);
     latest.appendChat(planId, {

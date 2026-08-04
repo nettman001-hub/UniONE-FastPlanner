@@ -5,7 +5,8 @@ import { aiErrorMessage } from '@/lib/ai/errors';
 import { CHAT_SCHEMA } from '@/lib/ai/schemas';
 import { buildChatPrompt } from '@/lib/ai/prompts';
 import { draftToPatch } from '@/lib/ai/apply';
-import { ARTIFACT_LABEL, type ArtifactKey, type Plan } from '@/lib/types';
+import { contentLossMessage, describeContentLoss } from '@/lib/ai/guard';
+import { ARTIFACT_LABEL, type ArtifactKey, type Plan, type PlanDocuments } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -84,7 +85,8 @@ export async function POST(request: Request) {
     });
 
     const artifact = result.patch?.artifact;
-    let patch: Record<string, unknown> | undefined;
+    let patch: Partial<PlanDocuments> | undefined;
+    let blocked: string | null = null;
 
     if (artifact && artifact !== 'none' && result.patch.payload) {
       try {
@@ -96,11 +98,27 @@ export async function POST(request: Request) {
       }
     }
 
+    /*
+     * 수정안이 기존 내용을 지우면 반영하지 않는다.
+     *
+     * 문서가 크면 모델이 손댄 부분만 담아 보내는 일이 있는데, 그대로 덮어쓰면
+     * 나머지가 통째로 사라진다. 실제로 기능명세서가 비었다. 되돌릴 수 없는 손실이므로
+     * 의심스러우면 반영하지 않는 쪽을 고른다.
+     */
+    if (patch) {
+      blocked = describeContentLoss(plan, patch);
+      if (blocked) {
+        console.error('[chat] 내용 손실 차단', artifact, blocked);
+        patch = undefined;
+      }
+    }
+
     return NextResponse.json({
-      reply: result.reply,
+      reply: blocked ? `${contentLossMessage(blocked)}\n\n---\n\n${result.reply}` : result.reply,
       changes: patch ? (result.changes ?? []) : [],
       patch,
       source: 'ai',
+      ...(blocked ? { warning: blocked } : {}),
     });
   } catch (error) {
     /*
