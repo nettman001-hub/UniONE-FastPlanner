@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, CornerDownLeft, Eraser, RotateCw, Sparkles, Target, X } from 'lucide-react';
+import { Bot, CornerDownLeft, Eraser, RotateCw, Sparkles, Square, Target, X } from 'lucide-react';
 import { usePlannerStore } from '@/lib/store';
-import { askAgent, unansweredQuestion } from '@/lib/agent/runner';
+import { askAgent, cancelAgent, unansweredQuestion } from '@/lib/agent/runner';
 import { selectableItems, useSelectionStore } from '@/lib/selection';
 import { CHAT_CREDIT_COST, type Plan } from '@/lib/types';
 import { Spinner, useToast } from './ui';
@@ -117,9 +117,12 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
                     message.role === 'user'
                       ? 'max-w-[88%] rounded-xl rounded-br-sm bg-[var(--primary)] px-3 py-2 text-[12.5px] leading-relaxed text-[var(--primary-fg)]'
                       : `max-w-[92%] rounded-xl rounded-bl-sm border px-3 py-2 text-[12.5px] leading-relaxed ${
-                          message.failed
-                            ? 'border-transparent bg-[var(--danger-soft)] text-[var(--danger)]'
-                            : 'border-[var(--border)] bg-[var(--surface-2)]'
+                          // 스스로 멈춘 자리는 사고가 아니다. 실패색을 쓰지 않는다.
+                          message.cancelled
+                            ? 'border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] text-[var(--fg-muted)]'
+                            : message.failed
+                              ? 'border-transparent bg-[var(--danger-soft)] text-[var(--danger)]'
+                              : 'border-[var(--border)] bg-[var(--surface-2)]'
                         }`
                   }
                 >
@@ -140,9 +143,21 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
                 </div>
               </div>
             ))}
+            {/*
+              멈출 방법이 없으면, 잘못 시켰다는 걸 알아채도 끝날 때까지 기다리는 수밖에 없다.
+              진행 표시 바로 옆에 둔다 — 멈추고 싶은 순간에 눈이 가 있는 자리다.
+            */}
             {busy && (
               <div className="flex items-center gap-2 text-[12px] text-[var(--fg-muted)]">
                 <Spinner /> 생각하는 중…
+                <button
+                  className="btn btn-ghost btn-sm ml-auto"
+                  onClick={() => cancelAgent(plan.id)}
+                  title="답변을 기다리지 않고 멈춥니다. 크레딧은 차감되지 않습니다."
+                >
+                  <Square size={11} />
+                  멈추기
+                </button>
               </div>
             )}
             {/*
