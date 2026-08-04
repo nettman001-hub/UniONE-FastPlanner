@@ -16,6 +16,7 @@ import { useMemo, useState } from 'react';
 import { Check, Copy, Download, ExternalLink, Image as ImageIcon, Info } from 'lucide-react';
 
 import { SectionCard } from './ui';
+import { StitchRun } from './StitchRun';
 import { download, slugify } from '@/lib/export';
 import { downloadSvg, wireframeToSvg } from '@/lib/image-export';
 import {
@@ -124,6 +125,9 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
           )}
         </div>
 
+        {/* 스티치는 붙여 넣지 않고 바로 만들 수 있다. */}
+        {tool === 'stitch' && <StitchRun plan={plan} />}
+
         {/* 0단계 — 톤 잡기 */}
         <div>
           <div className="mb-1.5 flex flex-wrap items-center gap-2">
@@ -188,8 +192,18 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
         <div className="flex items-start gap-2 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
           <Info size={13} className="mt-0.5 shrink-0" />
           <p className="min-w-0">
-            지금은 <b>요청문을 복사해 붙여 넣는</b> 방식입니다. 눌러서 저쪽에 바로 만들어 주지는
-            않습니다. 와이어프레임의 <b>구성 항목</b>을 채워 두실수록 결과가 정확해집니다.
+            {tool === 'stitch' ? (
+              <>
+                스티치는 <b>연결하면 여기서 바로 만들 수 있습니다.</b> 연결하지 않으셔도 요청문을
+                복사해 붙여 넣는 방식은 그대로 쓰실 수 있습니다.
+              </>
+            ) : (
+              <>
+                이 도구는 <b>요청문을 복사해 붙여 넣는</b> 방식입니다. 눌러서 저쪽에 바로 만들어
+                주지는 않습니다.
+              </>
+            )}{' '}
+            와이어프레임의 <b>구성 항목</b>을 채워 두실수록 결과가 정확해집니다.
           </p>
         </div>
       </div>

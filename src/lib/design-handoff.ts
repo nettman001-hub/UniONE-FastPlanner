@@ -42,7 +42,7 @@ export const DESIGN_TOOLS: DesignTool[] = [
     key: 'stitch',
     name: 'Google Stitch',
     what: '설명을 주면 UI 화면을 만들어 줍니다.',
-    how: '화면마다 아래 문장을 복사해 스티치에 붙여 넣으세요.',
+    how: '연결하면 고른 화면을 여기서 바로 만듭니다. 연결하지 않으셨다면 아래 문장을 복사해 붙여 넣으셔도 됩니다.',
     url: 'https://stitch.withgoogle.com',
   },
   {
