@@ -1,4 +1,5 @@
 import { PLATFORM_LABEL, type ArtifactKey, type Plan, type PlanBrief } from '../types';
+import { hasArtifact } from '../artifact-status';
 
 export const SYSTEM_PROMPT = `당신은 IT 서비스 기획 전문가입니다. 사용자가 준 서비스 아이디어를 실제 개발팀이 그대로 착수할 수 있는 기획 산출물로 바꾸는 일을 합니다.
 
@@ -28,7 +29,9 @@ export function briefBlock(brief: PlanBrief): string {
 export function contextBlock(plan: Plan, artifact: ArtifactKey): string {
   const parts: string[] = [];
 
-  if (artifact !== 'prd' && plan.generated.prd) {
+  // 나머지 단계와 같이 **내용이 있는지**로 판단한다. 생성 기록만 보고 넣으면
+  // 내용이 비어 있을 때 "이미 확정된 PRD" 아래에 빈 줄만 넘어가 모델을 헷갈리게 한다.
+  if (artifact !== 'prd' && hasArtifact(plan, 'prd')) {
     const { prd } = plan;
     parts.push(
       [

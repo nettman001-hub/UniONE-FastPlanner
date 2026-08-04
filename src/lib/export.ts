@@ -11,6 +11,7 @@ import {
   type IaPage,
   type Plan,
 } from './types';
+import { hasArtifact } from './artifact-status';
 
 /* ------------------------------------------------------------------ */
 /* 공통                                                                 */
@@ -69,7 +70,7 @@ export function toMarkdown(plan: Plan, artifacts?: ArtifactKey[]): string {
   out.push('');
 
   /* PRD */
-  if (include('prd') && plan.generated.prd) {
+  if (include('prd') && hasArtifact(plan, 'prd')) {
     const { prd } = plan;
     out.push('## 1. 프로덕트 요구사항 (PRD)');
     out.push('');
@@ -418,7 +419,7 @@ export function toAgentBundle(plan: Plan): string {
       })),
       coverage: (Object.keys(ARTIFACT_LABEL) as ArtifactKey[]).map((key) => ({
         artifact: ARTIFACT_LABEL[key],
-        generated: plan.generated[key],
+        generated: hasArtifact(plan, key),
       })),
     },
     null,

@@ -5,6 +5,7 @@ import { aiErrorMessage } from '@/lib/ai/errors';
 import { CHAT_SCHEMA } from '@/lib/ai/schemas';
 import { buildChatPrompt } from '@/lib/ai/prompts';
 import { draftToPatch } from '@/lib/ai/apply';
+import { hasArtifact } from '@/lib/artifact-status';
 import { contentLossMessage, describeContentLoss } from '@/lib/ai/guard';
 import { ARTIFACT_LABEL, type ArtifactKey, type Plan, type PlanDocuments } from '@/lib/types';
 
@@ -25,7 +26,7 @@ interface ChatResult {
 /** AI 를 쓸 수 없을 때 문서 상태를 근거로 답을 만든다. */
 function offlineReply(plan: Plan): { reply: string; changes: string[] } {
   const missing = (['prd', 'fs', 'ia', 'flow', 'wireframe'] as ArtifactKey[]).filter(
-    (key) => !plan.generated[key],
+    (key) => !hasArtifact(plan, key),
   );
 
   const stats = [

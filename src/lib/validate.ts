@@ -7,6 +7,7 @@
 
 import { ARTIFACT_LABEL, type ArtifactKey, type Plan } from './types';
 import { stalePages } from './ia/wireframe-sync';
+import { hasArtifact } from './artifact-status';
 
 export type IssueLevel = 'error' | 'warn' | 'info';
 
@@ -37,7 +38,7 @@ export function validatePlan(plan: Plan): Issue[] {
   };
 
   /* PRD ------------------------------------------------------------ */
-  if (plan.generated.prd) {
+  if (hasArtifact(plan, 'prd')) {
     if (!plan.prd.overview.trim()) {
       issues.push({
         id: 'prd-overview-empty',
@@ -128,7 +129,7 @@ export function validatePlan(plan: Plan): Issue[] {
   });
 
   /* 정보구조도 ------------------------------------------------------ */
-  if (plan.generated.ia) {
+  if (hasArtifact(plan, 'ia')) {
     const pageIds = new Set(plan.iaPages.map((p) => p.id));
 
     const brokenParents = plan.iaPages
@@ -240,7 +241,7 @@ export function validatePlan(plan: Plan): Issue[] {
     });
   }
 
-  if (plan.generated.flow && plan.flows.length > 0) {
+  if (hasArtifact(plan, 'flow')) {
     const flowsWithoutEnd = plan.flows
       .filter((f) => !f.nodes.some((n) => n.type === 'end'))
       .map((f) => `${f.id} ${f.name}`);
@@ -256,7 +257,7 @@ export function validatePlan(plan: Plan): Issue[] {
   }
 
   /* 와이어프레임 ---------------------------------------------------- */
-  if (plan.generated.wireframe) {
+  if (hasArtifact(plan, 'wireframe')) {
     const covered = new Set(plan.wireframes.map((w) => w.pageId));
     const uncoveredPages = plan.iaPages
       .filter((p) => p.type === 'page' && !covered.has(p.id) && p.featureIds.length > 0)
@@ -320,7 +321,7 @@ export function validatePlan(plan: Plan): Issue[] {
 
   /* 미생성 산출물 --------------------------------------------------- */
   const missing = (Object.keys(ARTIFACT_LABEL) as ArtifactKey[]).filter(
-    (key) => !plan.generated[key],
+    (key) => !hasArtifact(plan, key),
   );
   if (missing.length > 0) {
     issues.push({

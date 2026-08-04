@@ -23,6 +23,7 @@ import { NewBadge, ReviewBar } from '@/components/ReviewBar';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import { buildFsTree, byOrder, isFiltering, type FsTreeNode } from '@/lib/fs-tree';
 import { collectPending, isPending, type PendingItem } from '@/lib/fs-review';
 import { useGenerate } from '@/lib/useGenerate';
@@ -220,7 +221,7 @@ export default function FsPage() {
   /* 액션 ------------------------------------------------------------ */
   const handleGenerate = async () => {
     if (!plan) return;
-    if (plan.generated.fs || requirements.length > 0) {
+    if (hasArtifact(plan, 'fs')) {
       const ok = await confirm({
         title: '기능명세서를 다시 생성할까요?',
         message:
@@ -497,7 +498,7 @@ export default function FsPage() {
             icon={<Table2 size={26} />}
             title="아직 기능명세서가 없습니다"
             description={
-              plan.generated.prd
+              hasArtifact(plan, 'prd')
                 ? 'PRD를 기준으로 요구사항·기능·상세 명세를 한 번에 만들어 드립니다. 직접 항목을 추가해 처음부터 작성할 수도 있습니다.'
                 : 'PRD를 먼저 만들면 더 정확한 기능명세서를 얻을 수 있습니다. 지금 바로 생성하거나 직접 작성할 수도 있습니다.'
             }
@@ -586,7 +587,7 @@ export default function FsPage() {
               onClick={() => void handleGenerate()}
             >
               {generating ? <Spinner size={13} /> : <Sparkles size={13} />}
-              {generating ? '생성중' : plan.generated.fs ? '다시 생성' : 'AI로 생성'}
+              {generating ? '생성중' : hasArtifact(plan, 'fs') ? '다시 생성' : 'AI로 생성'}
             </button>
             <NextStepButton planId={planId} current="fs" />
           </div>

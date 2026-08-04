@@ -27,6 +27,7 @@ import {
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import type { Comment, Prd, PrdGoal, PrdMetric, PrdPersona, PrdRole } from '@/lib/types';
 
@@ -113,7 +114,7 @@ export default function PrdPage() {
     (commentsBySection.get(key) ?? []).filter((c) => !c.resolved).length;
 
   const handleGenerate = async () => {
-    if (plan.generated.prd) {
+    if (hasArtifact(plan, 'prd')) {
       const ok = await confirm({
         title: 'PRD를 다시 생성할까요?',
         message:
@@ -133,7 +134,7 @@ export default function PrdPage() {
       onClick={() => void handleGenerate()}
     >
       {pending === 'prd' ? <Spinner size={13} /> : <Sparkles size={13} />}
-      {pending === 'prd' ? '생성중' : plan.generated.prd ? '다시 생성' : 'AI로 생성'}
+      {pending === 'prd' ? '생성중' : hasArtifact(plan, 'prd') ? '다시 생성' : 'AI로 생성'}
     </button>
   );
 
@@ -190,7 +191,7 @@ export default function PrdPage() {
         </div>
       </div>
 
-      {plan.generated.prd && (
+      {hasArtifact(plan, 'prd') && (
         <div className="mt-2.5 -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
           {SECTIONS.map((section) => {
             const count = openCount(section.key);
@@ -210,7 +211,7 @@ export default function PrdPage() {
     </div>
   );
 
-  if (!plan.generated.prd) {
+  if (!hasArtifact(plan, 'prd')) {
     return (
       <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
         {toolbar}

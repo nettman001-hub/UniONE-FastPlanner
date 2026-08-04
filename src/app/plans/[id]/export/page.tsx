@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { EmptyState, SectionCard, useToast } from '@/components/ui';
 import { usePlannerStore } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import {
   download,
   featuresToCsv,
@@ -405,11 +406,11 @@ export default function ExportPage() {
   const toast = useToast();
 
   const [checked, setChecked] = useState<Record<ArtifactKey, boolean>>(() => ({
-    prd: plan?.generated.prd ?? false,
-    fs: plan?.generated.fs ?? false,
-    ia: plan?.generated.ia ?? false,
-    flow: plan?.generated.flow ?? false,
-    wireframe: plan?.generated.wireframe ?? false,
+    prd: plan ? hasArtifact(plan, 'prd') : false,
+    fs: plan ? hasArtifact(plan, 'fs') : false,
+    ia: plan ? hasArtifact(plan, 'ia') : false,
+    flow: plan ? hasArtifact(plan, 'flow') : false,
+    wireframe: plan ? hasArtifact(plan, 'wireframe') : false,
   }));
   const [tab, setTab] = useState<FormatKey>('md');
   const [copied, setCopied] = useState<string | null>(null);
@@ -418,7 +419,9 @@ export default function ExportPage() {
   const [shareLink, setShareLink] = useState('');
 
   /** 선택 + 실제 생성된 산출물만 남긴다. */
-  const selectedKey = ARTIFACT_KEYS.filter((key) => checked[key] && plan?.generated[key]).join(',');
+  const selectedKey = ARTIFACT_KEYS.filter(
+    (key) => checked[key] && plan && hasArtifact(plan, key),
+  ).join(',');
 
   const formats = useMemo<FormatSpec[]>(() => {
     if (!plan) return [];
@@ -547,7 +550,7 @@ export default function ExportPage() {
 
   if (!plan) return <div className="p-8 text-[13px] text-[var(--fg-muted)]">플랜을 찾을 수 없습니다.</div>;
 
-  const generatedCount = ARTIFACT_KEYS.filter((key) => plan.generated[key]).length;
+  const generatedCount = ARTIFACT_KEYS.filter((key) => hasArtifact(plan, key)).length;
   const selectedCount = selectedKey ? selectedKey.split(',').length : 0;
   const docMarkdown = formats.find((f) => f.key === 'md')?.content ?? '';
   const jsonFormat = formats.find((f) => f.key === 'json');
@@ -635,11 +638,11 @@ export default function ExportPage() {
                 className="btn btn-ghost btn-sm"
                 onClick={() =>
                   setChecked({
-                    prd: plan.generated.prd,
-                    fs: plan.generated.fs,
-                    ia: plan.generated.ia,
-                    flow: plan.generated.flow,
-                    wireframe: plan.generated.wireframe,
+                    prd: hasArtifact(plan, 'prd'),
+                    fs: hasArtifact(plan, 'fs'),
+                    ia: hasArtifact(plan, 'ia'),
+                    flow: hasArtifact(plan, 'flow'),
+                    wireframe: hasArtifact(plan, 'wireframe'),
                   })
                 }
               >
@@ -658,7 +661,7 @@ export default function ExportPage() {
         >
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {ARTIFACT_KEYS.map((key) => {
-              const ready = plan.generated[key];
+              const ready = hasArtifact(plan, key);
               return (
                 <label
                   key={key}

@@ -19,6 +19,7 @@ import { WireframeView } from '@/components/WireframeView';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import { pageTree } from '@/lib/export';
 import { stalePages, type StalePage } from '@/lib/ia/wireframe-sync';
@@ -200,7 +201,7 @@ export default function WireframePage() {
       onClick={openGenerateModal}
     >
       {generating ? <Spinner size={13} /> : <Sparkles size={13} />}
-      {generating ? '생성중' : plan.generated.wireframe ? '다시 생성' : 'AI로 생성'}
+      {generating ? '생성중' : hasArtifact(plan, 'wireframe') ? '다시 생성' : 'AI로 생성'}
     </button>
   );
 

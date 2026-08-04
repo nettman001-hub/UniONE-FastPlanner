@@ -22,6 +22,7 @@ import { ClientOnly, Spinner } from '@/components/ui';
 import { RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
 import { ResumeBanner } from '@/components/ResumeBanner';
 import { DAILY_CREDIT_LIMIT, usePlannerStore } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
 
@@ -144,7 +145,8 @@ function PlanShell({ children }: { children: ReactNode }) {
           {NAV.map((item) => {
             const href = `${base}${item.href}`;
             const active = item.href === '' ? pathname === base : pathname === href;
-            const done = item.artifact ? plan?.generated[item.artifact] : undefined;
+            const done =
+              item.artifact && plan ? hasArtifact(plan, item.artifact) : undefined;
             return (
               <Link
                 key={item.href}

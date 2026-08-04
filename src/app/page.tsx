@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 
 import { createEmptyPlan, usePlannerStore, DAILY_CREDIT_LIMIT } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import { useAiMode } from '@/lib/useGenerate';
 import {
   ARTIFACT_LABEL,
@@ -214,7 +215,7 @@ function PlanCard({
   onExport: (plan: Plan) => void;
   onDelete: (plan: Plan) => void;
 }) {
-  const doneCount = ARTIFACT_KEYS.filter((key) => plan.generated[key]).length;
+  const doneCount = ARTIFACT_KEYS.filter((key) => hasArtifact(plan, key)).length;
 
   return (
     <div className="relative">
@@ -242,18 +243,22 @@ function PlanCard({
           {ARTIFACT_KEYS.map((key) => (
             <span
               key={key}
-              className={plan.generated[key] ? 'chip chip-ok' : 'chip opacity-45'}
+              className={hasArtifact(plan, key) ? 'chip chip-ok' : 'chip opacity-45'}
               title={ARTIFACT_LABEL[key]}
             >
-              {plan.generated[key] && <Check size={11} />}
+              {hasArtifact(plan, key) && <Check size={11} />}
               {ARTIFACT_LABEL[key]}
             </span>
           ))}
         </div>
 
+        {/*
+          예전 버전에서 저장된 플랜에는 필드가 통째로 없을 수 있다. 여기서 터지면
+          플랜 하나 때문에 **목록 전체가 안 그려진다.** 없는 것은 0 으로 센다.
+        */}
         <p className="mt-3 text-[11.5px] text-[var(--fg-muted)]">
-          요구사항 {plan.requirements.length} · 기능 {plan.features.length} · 화면{' '}
-          {plan.iaPages.length}
+          요구사항 {plan.requirements?.length ?? 0} · 기능 {plan.features?.length ?? 0} · 화면{' '}
+          {plan.iaPages?.length ?? 0}
         </p>
         <p className="mt-1 text-[11.5px] text-[var(--fg-subtle)]">
           최종 수정 {relativeTime(plan.updatedAt)}

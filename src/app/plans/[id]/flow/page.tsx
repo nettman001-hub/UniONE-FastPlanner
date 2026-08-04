@@ -19,6 +19,7 @@ import { EmptyState, Field, InlineText, Spinner, useConfirm, useToast } from '@/
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { usePlannerStore } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import { slugify, toMermaid } from '@/lib/export';
 import { downloadPng, downloadSvg, findChartSvg, serializeSvg } from '@/lib/image-export';
@@ -144,7 +145,7 @@ export default function FlowPage() {
 
   const handleGenerate = async () => {
     if (!iaReady) return;
-    if (plan.generated.flow) {
+    if (hasArtifact(plan, 'flow')) {
       const ok = await confirm({
         title: '유저 플로우를 다시 생성할까요?',
         message: '지금 편집한 플로우가 모두 새 결과로 덮어씌워집니다.',
@@ -293,7 +294,7 @@ export default function FlowPage() {
             onClick={() => void handleGenerate()}
           >
             {pending === 'flow' ? <Spinner size={13} /> : <Sparkles size={13} />}
-            {pending === 'flow' ? '생성중' : plan.generated.flow ? '다시 생성' : 'AI로 생성'}
+            {pending === 'flow' ? '생성중' : hasArtifact(plan, 'flow') ? '다시 생성' : 'AI로 생성'}
           </button>
           <button className="btn btn-sm" onClick={handleAddFlow}>
             <Plus size={13} />

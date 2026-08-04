@@ -27,6 +27,7 @@ import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { PlaceFeaturesModal, UnplacedChip } from '@/components/PlaceFeatures';
 import { usePlannerStore } from '@/lib/store';
+import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import { pageTree } from '@/lib/export';
 import {
@@ -197,7 +198,7 @@ export default function IaArchitecturePage() {
 
   const handleGenerate = async () => {
     if (!plan || !canGenerate) return;
-    if (plan.generated.ia || pages.length > 0) {
+    if (hasArtifact(plan, 'ia')) {
       const ok = await confirm({
         title: '정보구조도를 다시 생성할까요?',
         message:
@@ -259,7 +260,7 @@ export default function IaArchitecturePage() {
       onClick={() => void handleGenerate()}
     >
       {generating ? <Spinner size={13} /> : <Sparkles size={13} />}
-      {generating ? '생성중' : plan.generated.ia ? '다시 생성' : 'AI로 생성'}
+      {generating ? '생성중' : hasArtifact(plan, 'ia') ? '다시 생성' : 'AI로 생성'}
     </button>
   );
 
