@@ -14,6 +14,7 @@
  */
 
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
+import { aiErrorMessage } from '@/lib/ai/errors';
 import { generateLocally } from '@/lib/ai/local-generator';
 import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
 import { buildPrompt } from '@/lib/ai/prompts';
@@ -107,12 +108,12 @@ async function runStep(
     });
     return { patch: toPatch(draft), source: 'ai' };
   } catch (error) {
-    const message = error instanceof Error ? error.message : '생성 중 오류가 발생했습니다.';
     // AI 가 실패해도 내장 생성기로 결과를 내어 파이프라인이 멈추지 않게 한다.
+    // 사유는 사용자에게 보여도 되는 문장으로 바꿔 전달한다 — 원문은 서버 로그에만 남는다.
     return {
       patch: toPatch(generateLocally(artifact, plan.brief, plan, options)),
       source: 'local',
-      warning: message,
+      warning: aiErrorMessage(error),
     };
   }
 }
@@ -154,8 +155,7 @@ export async function* runPipeline(
         ...(result.warning ? { warning: result.warning } : {}),
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : '생성 중 오류가 발생했습니다.';
-      yield { type: 'error', message };
+      yield { type: 'error', message: aiErrorMessage(error) };
       return;
     }
   }

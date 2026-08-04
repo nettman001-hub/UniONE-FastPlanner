@@ -1,13 +1,17 @@
 import OpenAI from 'openai';
 import type { ProviderConfig } from './provider';
+import { AiError } from './errors';
 
 /**
- * DeepSeek 어댑터 (OpenAI 호환 엔드포인트).
+ * OpenAI 호환 엔드포인트용 어댑터.
  *
- * Anthropic 의 구조화 출력(output_config.format)은 DeepSeek 에 없으므로,
- * JSON 모드(response_format: json_object) + 프롬프트에 넣은 JSON Schema 로 형식을 맞춘다.
+ * 구조화 출력(output_config.format)이 없는 공급자라, JSON 모드
+ * (response_format: json_object) + 프롬프트에 넣은 JSON Schema 로 형식을 맞춘다.
  * 스키마를 벗어난 값이 와도 apply.ts 가 열거형·인덱스·참조를 모두 정규화하므로
  * 파이프라인이 깨지지 않는다.
+ *
+ * **오류 문장에 공급자·모델 이름을 넣지 않는다.** 사용자 화면까지 그대로 흘러간다.
+ * 분류는 `errors.ts` 가 맡고, 원인 원문은 서버 로그에만 남는다.
  */
 
 let cached: { key: string; baseUrl: string; client: OpenAI } | null = null;
@@ -73,63 +77,81 @@ export async function generateJsonWithDeepSeek<T>({
   maxTokens,
 }: DeepSeekRequest): Promise<T> {
   const openai = client(config);
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: 'system', content: system },
-    { role: 'user', content: buildUserContent(prompt, schema) },
-  ];
   // 모델별 출력 상한을 넘기면 400 이 나므로 공급자 설정으로 한 번 더 조인다.
   const cappedMaxTokens = Math.min(maxTokens, config.maxOutputTokens);
 
-  const call = (jsonMode: boolean) =>
+  const call = (jsonMode: boolean, extra?: string) =>
     openai.chat.completions.create({
       model: config.model,
-      messages,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: buildUserContent(prompt, schema) },
+        ...(extra ? [{ role: 'user' as const, content: extra }] : []),
+      ],
       max_tokens: cappedMaxTokens,
       ...(jsonMode ? { response_format: { type: 'json_object' as const } } : {}),
     });
 
-  let completion: OpenAI.Chat.ChatCompletion;
-  try {
-    completion = await call(true);
-  } catch (error) {
-    // JSON 모드를 지원하지 않는 모델이면 프롬프트만으로 다시 시도한다.
-    const message = error instanceof Error ? error.message : String(error);
-    if (error instanceof OpenAI.APIError && error.status === 400 && /response_format|json/i.test(message)) {
-      completion = await call(false);
-    } else {
-      throw new Error(describeError(error, config));
+  const once = async (extra?: string): Promise<T> => {
+    let completion: OpenAI.Chat.ChatCompletion;
+    try {
+      completion = await call(true, extra);
+    } catch (error) {
+      // JSON 모드를 지원하지 않는 모델이면 프롬프트만으로 다시 시도한다.
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        error instanceof OpenAI.APIError &&
+        error.status === 400 &&
+        /response_format|json/i.test(message)
+      ) {
+        completion = await call(false, extra);
+      } else {
+        throw classify(error);
+      }
     }
-  }
 
-  const choice = completion.choices[0];
-  const text = choice?.message?.content ?? '';
+    const choice = completion.choices[0];
+    const text = choice?.message?.content ?? '';
 
-  if (choice?.finish_reason === 'length') {
-    throw new Error(
-      `응답이 출력 한도(${cappedMaxTokens} 토큰)에서 잘렸습니다. DEEPSEEK_MAX_TOKENS 를 올리거나 생성 범위를 좁혀 주세요.`,
-    );
-  }
-  if (!text.trim()) {
-    throw new Error(`${config.label} 모델이 빈 응답을 반환했습니다.`);
-  }
+    if (choice?.finish_reason === 'length') {
+      throw new AiError('too-long', `출력 상한 ${cappedMaxTokens} 토큰에서 잘림`);
+    }
+    if (!text.trim()) throw new AiError('format', '빈 응답');
+
+    try {
+      return JSON.parse(extractJson(text)) as T;
+    } catch {
+      throw new AiError('format', `JSON 해석 실패 · 앞부분: ${text.slice(0, 400)}`);
+    }
+  };
 
   try {
-    return JSON.parse(extractJson(text)) as T;
-  } catch {
-    throw new Error(`${config.label} 응답을 JSON 으로 해석하지 못했습니다.`);
+    return await once();
+  } catch (error) {
+    /*
+     * 형식이 어긋난 것은 **한 번 더 해 보면 대개 풀린다.** 모델이 설명 문장을 덧붙이거나
+     * 코드펜스를 씌우는 일이 가끔 있다. 사용자가 같은 요청을 다시 적게 하는 대신
+     * 여기서 한 번 조용히 다시 시도한다. 설정 문제(키·잔액)나 길이 초과는 다시 해도
+     * 같은 결과라 재시도하지 않는다.
+     */
+    if (error instanceof AiError && error.kind === 'format') {
+      return once(
+        '앞선 응답이 형식을 벗어났습니다. 이번에는 설명 문장·코드펜스 없이 JSON 객체 하나만 출력하세요.',
+      );
+    }
+    throw error;
   }
 }
 
-function describeError(error: unknown, config: ProviderConfig): string {
+/** 공급자 오류를 사용자에게 보여도 되는 종류로 나눈다. 원문은 로그로만 간다. */
+function classify(error: unknown): AiError {
   if (error instanceof OpenAI.APIError) {
-    if (error.status === 401) return `${config.label} API 키가 올바르지 않습니다.`;
-    if (error.status === 402) return `${config.label} 계정의 잔액이 부족합니다.`;
-    if (error.status === 404) {
-      return `모델 '${config.model}' 을(를) 찾을 수 없습니다. DEEPSEEK_MODEL 값을 확인해 주세요.`;
+    // 401 키 오류 · 402 잔액 부족 · 404 모델 이름 — 전부 배포 설정 문제다.
+    if (error.status === 401 || error.status === 402 || error.status === 404) {
+      return new AiError('config', `HTTP ${error.status}: ${error.message}`);
     }
-    if (error.status === 429) return `${config.label} 요청이 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.`;
-    return `${config.label} 호출 실패 (${error.status}): ${error.message}`;
+    if (error.status === 429) return new AiError('busy', error.message);
+    return new AiError('unknown', `HTTP ${error.status}: ${error.message}`);
   }
-  if (error instanceof Error) return `${config.label} 호출 실패: ${error.message}`;
-  return `${config.label} 호출 중 알 수 없는 오류가 발생했습니다.`;
+  return new AiError('unknown', error);
 }
