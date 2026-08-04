@@ -73,6 +73,51 @@ export function precondition(plan: Plan, artifact: ArtifactKey): string | null {
   return null;
 }
 
+/**
+ * 플로우를 **더** 만들 때 프롬프트에 덧붙이는 지시.
+ *
+ * 그냥 한 번 더 시키면 모델은 이미 만든 것과 거의 같은 플로우를 다시 내놓는다.
+ * 무엇이 이미 있는지, 그리고 **아직 아무 플로우에도 안 나오는 화면이 무엇인지**를
+ * 알려 줘야 빈 곳을 채운다. 화면 수가 플로우 수를 크게 앞지르는 것이 보통이라,
+ * 여기가 실제로 빠지는 부분이다.
+ */
+export function moreFlowsBlock(plan: Plan): string {
+  const inFlows = new Set(
+    plan.flows.flatMap((f) => f.nodes.map((n) => n.pageId).filter(Boolean) as string[]),
+  );
+  const uncovered = plan.iaPages.filter(
+    (p) => p.type === 'page' && p.featureIds.length > 0 && !inFlows.has(p.id),
+  );
+
+  const lines = [
+    '## 이미 만들어 둔 플로우 (다시 만들지 마세요)',
+    ...(plan.flows.length > 0
+      ? plan.flows.map((f) => `- ${f.id} ${f.name} — ${f.description || '설명 없음'}`)
+      : ['- 없음']),
+    '',
+    '## 이번에 만들 것',
+    '위 목록에 **없는** 새 플로우만 3~5개 만드세요. 같은 여정을 이름만 바꿔 다시 내지 마세요.',
+  ];
+
+  if (uncovered.length > 0) {
+    lines.push(
+      '',
+      '아래 화면들은 아직 어느 플로우에도 나오지 않습니다. 이 화면들을 지나는 여정을 우선 만드세요.',
+      ...uncovered
+        .slice(0, 20)
+        .map((p) => `- ${p.id} ${p.name} (${p.path}) — ${p.description || '설명 없음'}`),
+    );
+    if (uncovered.length > 20) lines.push(`- 외 ${uncovered.length - 20}개`);
+  } else {
+    lines.push(
+      '',
+      '모든 화면이 이미 어느 플로우엔가 나옵니다. 예외·실패·관리자 여정처럼 아직 안 그린 경로를 만드세요.',
+    );
+  }
+
+  return lines.join('\n');
+}
+
 /** 한 단계 생성. AI 가 실패하면 내장 생성기로 대체하고 사유를 함께 돌려준다. */
 async function runStep(
   plan: Plan,
@@ -84,6 +129,7 @@ async function runStep(
   const toPatch = (draft: unknown) =>
     draftToPatch(artifact, draft, plan, {
       mergeWireframes: artifact === 'wireframe' && options.merge === true,
+      mergeFlows: artifact === 'flow' && options.merge === true,
     });
 
   if (!useAi) {
@@ -100,6 +146,9 @@ async function runStep(
       prompt += `\n\n## 와이어프레임을 만들 페이지\n${targets
         .map((p) => `- ${p.id} ${p.name} (${p.path}) — ${p.description}`)
         .join('\n')}`;
+    }
+    if (artifact === 'flow' && options.merge === true) {
+      prompt += `\n\n${moreFlowsBlock(plan)}`;
     }
     const draft = await generateJson({
       prompt,

@@ -140,6 +140,17 @@ export default function FlowPage() {
     () => (plan ? validatePlan(plan).filter((i) => i.artifact === 'flow') : []),
     [plan],
   );
+
+  /** 기능이 걸려 있는데 아직 어느 플로우에도 안 나오는 화면 수. */
+  const uncoveredCount = useMemo(() => {
+    if (!plan) return 0;
+    const inFlows = new Set(
+      plan.flows.flatMap((f) => f.nodes.map((n) => n.pageId).filter(Boolean) as string[]),
+    );
+    return plan.iaPages.filter(
+      (p) => p.type === 'page' && p.featureIds.length > 0 && !inFlows.has(p.id),
+    ).length;
+  }, [plan]);
   const mermaid = useMemo(
     () => (plan && flow ? toMermaid(flow.id, plan) : ''),
     [plan, flow],
@@ -169,6 +180,25 @@ export default function FlowPage() {
     if (done) {
       setActiveFlowId(null);
       setSelectedNodeId(null);
+    }
+  };
+
+  /**
+   * 플로우를 **더** 만든다. 지금 있는 것은 하나도 건드리지 않는다.
+   *
+   * 한 번에 다 만들라고 하면 3~5개에서 멈춘다. 화면이 스무 개를 넘어도 그렇다.
+   * 그래서 나눠서 더 만들 수 있어야 하는데, `다시 생성` 은 전부 덮어쓰므로
+   * 손으로 다듬어 둔 플로우가 사라진다. 이 버튼은 **뒤에 붙이기만** 한다.
+   */
+  const handleGenerateMore = async () => {
+    if (!iaReady) return;
+    const before = plan.flows.length;
+    const done = await generate('flow', { merge: true });
+    if (done) {
+      setSelectedNodeId(null);
+      // 새로 붙은 첫 플로우를 열어 준다. 만들어 놓고 안 보이면 안 만든 것처럼 보인다.
+      const added = usePlannerStore.getState().plans.find((p) => p.id === planId)?.flows ?? [];
+      if (added.length > before) setActiveFlowId(added[before].id);
     }
   };
 
@@ -296,6 +326,12 @@ export default function FlowPage() {
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="text-[17px] font-extrabold tracking-tight">유저 플로우</h2>
           <span className="chip">플로우 {flows.length}개</span>
+          {/* 문제와 그것을 푸는 버튼이 같은 줄에 있어야 실제로 눌린다. */}
+          {uncoveredCount > 0 && hasArtifact(plan, 'flow') && (
+            <span className="chip chip-warn" title="이 화면들을 지나는 여정이 아직 없습니다.">
+              플로우에 없는 화면 {uncoveredCount}개
+            </span>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button
@@ -307,9 +343,20 @@ export default function FlowPage() {
             {pending === 'flow' ? <Spinner size={13} /> : <Sparkles size={13} />}
             {pending === 'flow' ? '생성중' : hasArtifact(plan, 'flow') ? '다시 생성' : 'AI로 생성'}
           </button>
+          {hasArtifact(plan, 'flow') && (
+            <button
+              className="btn btn-sm"
+              disabled={pending !== null || !iaReady}
+              title="지금 있는 플로우는 그대로 두고 새 플로우만 덧붙입니다."
+              onClick={() => void handleGenerateMore()}
+            >
+              <Sparkles size={13} />
+              플로우 더 만들기
+            </button>
+          )}
           <button className="btn btn-sm" onClick={handleAddFlow}>
             <Plus size={13} />
-            플로우 추가
+            빈 플로우
           </button>
           <NextStepButton planId={planId} current="flow" />
         </div>
