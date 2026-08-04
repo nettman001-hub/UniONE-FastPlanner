@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePlannerStore } from './store';
 import { currentOf, isPipeline } from './jobs/progress';
-import { runGeneration, type RunArgs } from './jobs/runner';
+import { cancelGeneration, runGeneration, type RunArgs } from './jobs/runner';
 import { type ArtifactKey, type Plan } from './types';
 import { useToast } from '@/components/ui';
 
@@ -101,6 +101,15 @@ export function useGenerate(plan: Plan | undefined) {
     return start(interruptedRun.remaining);
   }, [interruptedRun, start]);
 
+  /**
+   * 도는 생성을 멈춘다.
+   *
+   * 만들어진 단계는 그대로 남고, 남은 단계는 `이어서 만들기` 로 이어 간다.
+   */
+  const cancel = useCallback(() => {
+    if (cancelGeneration()) toast('생성을 멈추는 중입니다…', 'warn');
+  }, [toast]);
+
   /** 이어서 만들지 않고 안내를 없앤다. 만들어진 것은 그대로 남는다. */
   const discardInterrupted = useCallback(() => {
     if (!interruptedRun) return;
@@ -112,6 +121,7 @@ export function useGenerate(plan: Plan | undefined) {
     generateAll,
     pending,
     autoRunning,
+    cancel,
     interrupted: interruptedRun,
     resume,
     discardInterrupted,

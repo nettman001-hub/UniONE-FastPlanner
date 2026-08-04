@@ -23,6 +23,7 @@ import {
   Save,
   ShieldCheck,
   Sparkles,
+  Square,
   Table2,
   Trash2,
   Wand2,
@@ -156,7 +157,7 @@ function PlanOverview() {
   const toggleComment = usePlannerStore((s) => s.toggleComment);
   const removeComment = usePlannerStore((s) => s.removeComment);
 
-  const { generate, generateAll, pending, autoRunning } = useGenerate(plan);
+  const { generate, generateAll, pending, autoRunning, cancel } = useGenerate(plan);
 
   const [briefOpen, setBriefOpen] = useState(false);
   /** 전체 자동 생성 진행 여부·현재 단계는 서버 작업 상태에서 온다. */
@@ -356,11 +357,22 @@ function PlanOverview() {
         >
           <div className="flex flex-col gap-2.5">
             {running && (
-              <div className="flex items-center gap-2 rounded-lg border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-2 text-[12.5px] font-semibold text-[var(--primary)]">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-2 text-[12.5px] font-semibold text-[var(--primary)]">
                 <Spinner size={13} />
-                {autoStep
-                  ? `${STEP_ORDER.indexOf(autoStep) + 1}/5 · ${ARTIFACT_LABEL[autoStep]}을(를) 만들고 있습니다.`
-                  : '준비 중입니다.'}
+                <span className="min-w-0 flex-1">
+                  {autoStep
+                    ? `${STEP_ORDER.indexOf(autoStep) + 1}/5 · ${ARTIFACT_LABEL[autoStep]}을(를) 만들고 있습니다.`
+                    : '준비 중입니다.'}
+                </span>
+                {/* 다섯 단계는 몇 분이 걸린다. 잘못 걸었을 때 기다리는 수밖에 없으면 안 된다. */}
+                <button
+                  className="btn btn-sm shrink-0"
+                  onClick={cancel}
+                  title="지금까지 만들어진 것은 그대로 두고 멈춥니다. 나머지는 이어서 만들 수 있습니다."
+                >
+                  <Square size={11} />
+                  멈추기
+                </button>
               </div>
             )}
 

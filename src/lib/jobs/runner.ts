@@ -40,6 +40,30 @@ export function isRunning() {
   return inFlight;
 }
 
+/**
+ * 도는 생성을 끊을 손잡이.
+ *
+ * 컴포넌트가 아니라 여기(모듈)에 둔다. 생성을 걸어 놓고 다른 메뉴로 넘어가도
+ * 계속 도는데, 그때 멈출 방법이 사라지면 안 되기 때문이다.
+ */
+let running: AbortController | null = null;
+/** 사용자가 스스로 멈췄는가. 연결이 끊긴 것과 구별해 알리기 위해 표시해 둔다. */
+let cancelledByUser = false;
+
+/**
+ * 생성을 멈춘다.
+ *
+ * **이미 만들어진 단계는 그대로 남는다.** 값도 그 단계까지만 치렀다.
+ * 남은 단계는 `이어서 만들기` 로 이어 갈 수 있게 기록해 둔다 —
+ * 처음부터 다시 만들면 이미 낸 크레딧을 또 내야 한다.
+ */
+export function cancelGeneration(): boolean {
+  if (!running) return false;
+  cancelledByUser = true;
+  running.abort();
+  return true;
+}
+
 /** NDJSON 스트림을 한 줄씩 흘려 준다. */
 async function* readLines(body: ReadableStream<Uint8Array>) {
   const reader = body.getReader();
@@ -107,6 +131,8 @@ export async function runGeneration(
   let failure: string | null = null;
   /** 중간에 그만둘 때 서버도 멈추도록. */
   const controller = new AbortController();
+  running = controller;
+  cancelledByUser = false;
 
   try {
     const response = await fetch('/api/generate', {
@@ -169,9 +195,11 @@ export async function runGeneration(
       }
     }
   } catch {
-    if (!failure) failure = '연결이 끊겨 생성을 마치지 못했습니다.';
+    // 스스로 멈춘 것은 사고가 아니다. 아래에서 따로 알린다.
+    if (!failure && !cancelledByUser) failure = '연결이 끊겨 생성을 마치지 못했습니다.';
   } finally {
     inFlight = false;
+    if (running === controller) running = null;
     setActiveRun(null);
     if (finished || done.length === artifacts.length) {
       setInterrupted(null);
@@ -187,6 +215,23 @@ export async function runGeneration(
   if (failure) {
     toast(failure, 'danger');
     return false;
+  }
+
+  /*
+   * 스스로 멈춘 경우.
+   *
+   * 만들어진 단계는 그대로 남고 값도 거기까지만 냈다는 것을 분명히 말한다.
+   * 이것을 안 알려 주면 "돈만 나가고 반쯤 만들다 말았다" 로 읽힌다.
+   */
+  if (cancelledByUser) {
+    cancelledByUser = false;
+    toast(
+      done.length > 0
+        ? `${done.length}단계까지 만들고 멈췄습니다. 만들어진 것은 그대로 있고, 나머지는 이어서 만들 수 있습니다.`
+        : '생성을 멈췄습니다. 크레딧은 차감되지 않았습니다.',
+      'warn',
+    );
+    return done.length > 0;
   }
 
   if (finished) {
