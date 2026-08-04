@@ -6,29 +6,31 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * 헤더에 현재 생성 공급자를 표시하기 위한 엔드포인트. 키는 내려보내지 않는다.
+ * 지금 AI 생성이 가능한 상태인지만 알려 준다.
+ *
+ * **어떤 공급자·모델을 쓰는지는 내보내지 않는다.** 사용자에게 아무 쓸모가 없으면서
+ * 서비스의 내부 구성을 알려 주는 정보다. 화면도 `mode` 하나만 쓴다.
+ * 운영자가 확인할 값은 서버 로그로 남긴다.
  *
  * `?check=1` 을 붙이면 **설치 점검**을 함께 돌린다. 배포한 사람이 브라우저 주소창만으로
- * 무엇이 잘못됐는지 볼 수 있어야 하기 때문이다. 사용자 화면에는 안전한 문장만 보이므로,
- * 원인을 확인할 곳이 따로 있어야 한다.
- *
- * 참·거짓과 미리 정해 둔 안내 문구만 돌려준다. 접속 문자열·키·드라이버 원문은 담지 않는다.
+ * 무엇이 잘못됐는지 볼 수 있어야 하기 때문이다 — 로그인이 안 되는 상황에서도 열려야
+ * 하므로 로그인을 요구하지 않는다. 대신 참·거짓과 미리 정해 둔 안내 문구만 담는다.
+ * 접속 문자열·키·모델 이름·드라이버 원문은 담지 않는다.
  */
 export async function GET(request: Request) {
   const provider = resolveProvider();
-  const base = {
-    mode: provider.id === 'local' ? 'local' : 'ai',
-    provider: provider.id,
-    label: provider.label,
-    model: provider.model || null,
-  };
+  const base = { mode: provider.id === 'local' ? ('local' as const) : ('ai' as const) };
 
   const url = new URL(request.url);
   if (url.searchParams.get('check') !== '1') return NextResponse.json(base);
 
+  // 점검을 부른 시점의 공급자 구성은 로그에만 적는다. 응답에는 넣지 않는다.
+  console.error('[status/check] provider', provider.id, provider.model || '-');
+
   return NextResponse.json({
     ...base,
     checks: {
+      ai: provider.id === 'local' ? 'AI 키가 없어 내장 생성기로 동작합니다.' : '정상',
       // 값은 보지 않고 "쓸 만한 길이로 들어 있는가" 만 본다.
       authSecret: Boolean(process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 16),
       testerAccount: Boolean(process.env.TESTER_EMAIL && process.env.TESTER_PASSWORD),

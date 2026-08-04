@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT } from './prompts';
 import { resolveProvider, type ProviderConfig } from './provider';
 import { generateJsonWithDeepSeek } from './deepseek';
+import { AiError } from './errors';
 
 export { resolveProvider, isAiEnabled } from './provider';
 export type { ProviderConfig, ProviderId } from './provider';
@@ -35,11 +36,11 @@ export async function generateJson<T>(options: GenerateOptions): Promise<T> {
     return generateJsonWithClaude<T>(config, options);
   }
 
-  throw new Error('AI 공급자가 설정되지 않았습니다.');
+  throw new AiError('config', 'AI 공급자가 설정되지 않았습니다.');
 }
 
 /* ------------------------------------------------------------------ */
-/* Anthropic                                                            */
+/* 구조화 출력을 지원하는 공급자                                          */
 /* ------------------------------------------------------------------ */
 
 let cachedClaude: { key: string; client: Anthropic } | null = null;
@@ -73,9 +74,7 @@ async function generateJsonWithClaude<T>(
 
   const message = await stream.finalMessage();
 
-  if (message.stop_reason === 'refusal') {
-    throw new Error('모델이 요청을 거절했습니다. 서비스 아이디어를 다시 확인해 주세요.');
-  }
+  if (message.stop_reason === 'refusal') throw new AiError('refused');
 
   const text = message.content
     .filter((block): block is Anthropic.TextBlock => block.type === 'text')
@@ -83,15 +82,13 @@ async function generateJsonWithClaude<T>(
     .join('');
 
   if (!text.trim()) {
-    if (message.stop_reason === 'max_tokens') {
-      throw new Error('생성 결과가 너무 길어 잘렸습니다. 범위를 좁혀 다시 시도해 주세요.');
-    }
-    throw new Error('모델이 빈 응답을 반환했습니다.');
+    if (message.stop_reason === 'max_tokens') throw new AiError('too-long', 'max_tokens');
+    throw new AiError('format', '빈 응답');
   }
 
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Error('모델 응답을 JSON 으로 해석하지 못했습니다.');
+    throw new AiError('format', `JSON 해석 실패 · 앞부분: ${text.slice(0, 400)}`);
   }
 }

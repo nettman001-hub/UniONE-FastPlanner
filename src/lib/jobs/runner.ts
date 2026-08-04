@@ -146,7 +146,7 @@ export async function runGeneration(
             });
           }
           if (event.warning) {
-            toast(`AI 호출에 실패해 내장 생성기로 만들었습니다.\n${event.warning}`, 'warn');
+            toast(`${event.warning}\n대신 기본 생성기로 만들었습니다.`, 'warn');
           }
 
           // 다음 단계 값을 못 내면 여기서 그만둔다. 서버도 함께 멈춘다.

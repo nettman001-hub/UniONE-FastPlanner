@@ -631,7 +631,7 @@ function Home() {
               AI 생성
             </span>
           )}
-          {mode === 'local' && <span className="chip">내장 생성기</span>}
+          {mode === 'local' && <span className="chip">기본 생성기</span>}
           <ClientOnly>
             <span
               className="chip"
@@ -689,8 +689,8 @@ function Home() {
               color: 'var(--warn)',
             }}
           >
-            .env.local 에 DEEPSEEK_API_KEY 를 넣으면 DeepSeek 모델이 산출물을 만듭니다. 지금은
-            내장 생성기로 동작합니다.
+            지금은 AI 생성을 쓸 수 없어 기본 생성기로 문서를 만듭니다. 구조는 같지만 내용이
+            일반적입니다. 편집·검증·내보내기는 모두 그대로 쓰실 수 있습니다.
           </div>
         )}
       </header>

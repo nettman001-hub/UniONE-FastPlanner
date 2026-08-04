@@ -8,38 +8,29 @@ import { type ArtifactKey, type Plan } from './types';
 import { useToast } from '@/components/ui';
 
 export type AiMode = 'ai' | 'local' | 'unknown';
-export type ProviderId = 'deepseek' | 'anthropic' | 'local';
 
 export interface AiStatus {
   mode: AiMode;
-  provider: ProviderId | null;
-  /** 공급자 표시명 (DeepSeek / Claude / 내장 생성기) */
-  label: string;
-  model: string | null;
 }
 
-const UNKNOWN: AiStatus = { mode: 'unknown', provider: null, label: '확인 중', model: null };
-const OFFLINE: AiStatus = { mode: 'local', provider: 'local', label: '내장 생성기', model: null };
-
-/** 헤더 등에서 현재 생성 공급자를 보여주기 위한 훅. */
+/**
+ * 지금 AI 생성이 가능한 상태인지만 알아 온다.
+ *
+ * **어떤 공급자·모델을 쓰는지는 받아 오지 않는다.** 서버가 아예 내보내지 않고,
+ * 화면도 필요로 하지 않는다. 사용자에게 쓸모없는 정보이면서 내부 구성을 알려 준다.
+ */
 export function useAiMode(): AiStatus {
-  const [state, setState] = useState<AiStatus>(UNKNOWN);
+  const [state, setState] = useState<AiStatus>({ mode: 'unknown' });
 
   useEffect(() => {
     let alive = true;
     fetch('/api/status')
       .then((r) => r.json())
       .then((data: Partial<AiStatus>) => {
-        if (!alive) return;
-        setState({
-          mode: data.mode ?? 'local',
-          provider: data.provider ?? 'local',
-          label: data.label ?? OFFLINE.label,
-          model: data.model ?? null,
-        });
+        if (alive) setState({ mode: data.mode ?? 'local' });
       })
       .catch(() => {
-        if (alive) setState(OFFLINE);
+        if (alive) setState({ mode: 'local' });
       });
     return () => {
       alive = false;
