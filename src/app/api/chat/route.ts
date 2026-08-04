@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
+import { resolveProvider } from '@/lib/ai/provider';
+import { maxTokensFor } from '@/lib/jobs/queue';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { CHAT_SCHEMA } from '@/lib/ai/schemas';
 import { buildChatPrompt } from '@/lib/ai/prompts';
@@ -82,7 +84,12 @@ export async function POST(request: Request) {
     const result = await generateJson<ChatResult>({
       prompt: buildChatPrompt(plan, message),
       schema: CHAT_SCHEMA,
-      maxTokens: 32000,
+      /*
+       * 에이전트는 문서를 통째로 다시 써서 돌려준다. 여기서 잘리면 내용이
+       * 사라진 것처럼 보이므로(실제로 그런 일이 있었다) 생성 단계 중 가장 긴
+       * 기능명세서와 같은 분량을 잡는다. 공급자 상한을 올리면 함께 올라간다.
+       */
+      maxTokens: maxTokensFor('fs', resolveProvider().maxOutputTokens),
     });
 
     const artifact = result.patch?.artifact;
