@@ -32,6 +32,10 @@ function loadEnv(file) {
   }
 }
 
+/** 어느 파일에서 읽었는지 — 화면에 밝힌다. */
+const loadedFrom = [resolve(process.cwd(), '.env.local'), resolve(process.cwd(), '.env')].filter(
+  (f) => existsSync(f),
+);
 loadEnv(resolve(process.cwd(), '.env.local'));
 loadEnv(resolve(process.cwd(), '.env'));
 
@@ -82,6 +86,14 @@ console.log(`Base URL      : ${baseUrl}`);
 console.log(`모델          : ${model}`);
 console.log(`출력 상한     : ${maxTokens} 토큰`);
 console.log(`API 키        : ${mask(deepseekKey)}`);
+console.log('');
+/*
+ * 이 스크립트는 **이 컴퓨터의 파일**만 읽는다. Vercel 환경변수를 바꾼 뒤 여기서
+ * 확인하면 예전 값이 그대로 나와 "안 바뀌었다" 고 오해하게 된다. 실제로 그랬다.
+ */
+console.log(`설정을 읽은 곳: ${loadedFrom.length > 0 ? loadedFrom.join(', ') : '(파일 없음 — 셸 환경변수만)'}`);
+console.log('배포된 사이트의 설정은 여기에 안 나옵니다.');
+console.log('  → 배포본 확인: https://<배포주소>/api/status?check=1');
 console.log('');
 
 const auth = { Authorization: `Bearer ${deepseekKey}`, 'Content-Type': 'application/json' };
