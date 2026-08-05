@@ -253,29 +253,88 @@ export async function createProject(
 
 export type StitchDevice = 'MOBILE' | 'DESKTOP' | 'TABLET' | 'AGNOSTIC';
 
-/**
- * 어느 품질로 만들지.
- *
- * 스티치 화면의 `기본` / `실험 모드` 와 같은 구분이다. 실험 모드가 결과는 낫지만
- * **한 달에 쓸 수 있는 횟수가 훨씬 적다.** 그래서 기본값은 `basic` 이다 —
- * 여러 화면을 한 번에 만드는 우리 쓰임에서는 횟수가 먼저 바닥난다.
- *
- * 값을 안 보내면 스티치가 알아서 고르는데, 그러면 사용자가 무엇으로 만들어졌는지
- * 알 수 없다. 항상 명시한다.
- */
-export type StitchQuality = 'basic' | 'high';
+/* ------------------------------------------------------------------ */
+/* 고를 수 있는 모델                                                     */
+/* ------------------------------------------------------------------ */
+
+export interface StitchModel {
+  id: string;
+  /** 사람이 읽을 이름. 스티치가 주는 설명을 그대로 쓴다. */
+  label: string;
+  /** 느리지만 결과가 나은 쪽인가 — 월 사용 횟수가 적다는 안내를 붙인다. */
+  heavy: boolean;
+}
 
 /**
- * 스티치가 받는 모델 이름.
+ * 목록을 **박아 두지 않고 스티치에서 받아 온다.**
  *
- * 여기 이름이 밖으로 나가지 않게 한다 — 화면에는 `기본` / `실험 모드` 로만 적는다.
- * 저쪽이 모델을 갈아 끼워도 고칠 곳은 이 표 하나다.
+ * 저쪽이 모델을 더하거나 뺄 때마다 우리 코드를 고쳐야 한다면, 새 모델이 나와도
+ * 사용자는 한참 못 쓴다. `tools/list` 는 자격증명 없이도 답하므로 그냥 물어본다.
+ *
+ * 폐기된 것과 `MODEL_ID_UNSPECIFIED` 는 뺀다 — 고를 이유가 없다.
  */
-const MODEL_ID: Record<StitchQuality, string> = {
-  basic: 'GEMINI_3_FLASH',
-  // 예전 `GEMINI_3_PRO` 는 폐기됐다. 스티치가 그렇게 알려 준다.
-  high: 'GEMINI_3_1_PRO',
-};
+const FALLBACK_MODELS: StitchModel[] = [
+  { id: 'GEMINI_3_FLASH', label: 'Gemini 3 Flash', heavy: false },
+  { id: 'GEMINI_3_1_PRO', label: 'Gemini 3.1 Pro', heavy: true },
+];
+
+let modelCache: { at: number; models: StitchModel[] } | null = null;
+const MODEL_TTL_MS = 60 * 60 * 1000;
+
+export async function listModels(signal?: AbortSignal): Promise<StitchModel[]> {
+  if (modelCache && Date.now() - modelCache.at < MODEL_TTL_MS) return modelCache.models;
+
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: 'POST',
+      signal: withTimeout(signal, 15_000),
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+    });
+    const body = (await response.json()) as {
+      result?: { tools?: Array<{ name?: string; inputSchema?: unknown }> };
+    };
+    const tool = body.result?.tools?.find((t) => t.name === 'generate_screen_from_text');
+    const schema = (tool?.inputSchema as { properties?: Record<string, unknown> })?.properties
+      ?.modelId as
+      | {
+          enum?: string[];
+          'x-google-enum-deprecated'?: boolean[];
+          'x-google-enum-descriptions'?: string[];
+        }
+      | undefined;
+
+    const ids = schema?.enum ?? [];
+    const dead = schema?.['x-google-enum-deprecated'] ?? [];
+    const notes = schema?.['x-google-enum-descriptions'] ?? [];
+
+    const models = ids
+      .map((id, i) => ({
+        id,
+        // 설명이 곧 사람이 읽을 이름이다 ("Gemini 3.1 Pro."). 끝의 마침표만 뗀다.
+        label: (notes[i] || id).replace(/\.$/, ''),
+        heavy: /pro/i.test(id),
+        dead: Boolean(dead[i]) || id === 'MODEL_ID_UNSPECIFIED',
+      }))
+      .filter((m) => !m.dead)
+      .map(({ id, label, heavy }) => ({ id, label, heavy }));
+
+    if (models.length === 0) return FALLBACK_MODELS;
+    modelCache = { at: Date.now(), models };
+    return models;
+  } catch {
+    // 못 물어봤다고 기능을 막지는 않는다. 아는 만큼으로 굴린다.
+    return FALLBACK_MODELS;
+  }
+}
+
+/** 사용자가 보낸 모델이 실제로 고를 수 있는 것인지. */
+export async function resolveModel(id: string | undefined): Promise<string> {
+  const models = await listModels();
+  const found = models.find((m) => m.id === id);
+  // 모르는 값이면 가벼운 쪽으로 — 횟수를 아끼는 쪽이 안전하다.
+  return found?.id ?? models.find((m) => !m.heavy)?.id ?? models[0]?.id ?? 'GEMINI_3_FLASH';
+}
 
 export interface GeneratedScreen {
   screenId: string;
@@ -288,13 +347,13 @@ export async function generateScreen(
   projectId: string,
   prompt: string,
   device: StitchDevice,
-  quality: StitchQuality,
+  modelId: string,
   cred: StitchCredential,
   signal?: AbortSignal,
 ): Promise<GeneratedScreen> {
   const { json } = await callTool(
     'generate_screen_from_text',
-    { projectId, prompt, deviceType: device, modelId: MODEL_ID[quality] },
+    { projectId, prompt, deviceType: device, modelId },
     cred,
     signal,
   );

@@ -18,17 +18,17 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { readIntegrationSecret } from '@/lib/db/integrations';
-import { screenPrompt, systemPrompt } from '@/lib/design-handoff';
+import { screenPrompt, systemPrompt, type PromptEmphasis } from '@/lib/design-handoff';
 import {
   createProject,
   detectCredential,
   generateScreen,
   projectUrl,
+  resolveModel,
   StitchError,
   type StitchCredential,
   type StitchCredentialKind,
   type StitchDevice,
-  type StitchQuality,
 } from '@/lib/design/stitch';
 import type { IaPage, Plan } from '@/lib/types';
 
@@ -43,8 +43,10 @@ interface RunBody {
   projectId?: string;
   /** 첫 화면인가 — 톤 잡는 문장을 함께 보낼지 정한다. */
   first?: boolean;
-  /** `high` 는 스티치의 실험 모드. 결과는 낫지만 월 사용 횟수가 훨씬 적다. */
-  quality?: string;
+  /** 스티치 모델 id. 고를 수 있는 값은 /api/design/stitch/models 가 준다. */
+  modelId?: string;
+  /** 와이어프레임을 얼마나 그대로 지킬지. */
+  emphasis?: string;
 }
 
 function deviceOf(plan: Plan, page: IaPage): StitchDevice {
@@ -103,7 +105,11 @@ export async function POST(request: Request) {
   }
 
   const cred: StitchCredential = { kind, secret: stored.secret, quotaProject };
-  const quality: StitchQuality = body.quality === 'high' ? 'high' : 'basic';
+
+  // 사용자가 보낸 모델이 실제로 고를 수 있는 것인지 확인한다. 모르는 값이면 가벼운 쪽.
+  const modelId = await resolveModel(body.modelId);
+  const emphasis: PromptEmphasis =
+    body.emphasis === 'balanced' || body.emphasis === 'free' ? body.emphasis : 'strict';
 
   try {
     let projectId = body.projectId?.trim() || '';
@@ -116,15 +122,14 @@ export async function POST(request: Request) {
      * 없어서 따로 부르면 다음 화면이 그걸 모르는데, 매번 붙이면 요청문이 길어져
      * 정작 이 화면 이야기가 묻힌다.
      */
-    const prompt = body.first
-      ? `${systemPrompt(plan, 'stitch')}\n\n---\n\n${screenPrompt(plan, page, 'stitch')}`
-      : screenPrompt(plan, page, 'stitch');
+    const one = screenPrompt(plan, page, 'stitch', emphasis);
+    const prompt = body.first ? `${systemPrompt(plan, 'stitch')}\n\n---\n\n${one}` : one;
 
     const screen = await generateScreen(
       projectId,
       prompt,
       deviceOf(plan, page),
-      quality,
+      modelId,
       cred,
       request.signal,
     );
@@ -145,8 +150,8 @@ export async function POST(request: Request) {
      * 실험 모드는 월 사용 횟수가 적어 한도에 먼저 걸린다. 그때 "한도에 걸렸다" 고만
      * 하면 기다리는 수밖에 없어 보이지만, 실은 기본으로 바꾸면 바로 된다.
      */
-    if (quality === 'high' && error instanceof StitchError && error.kind === 'quota') {
-      message += ' 실험 모드는 월 사용 횟수가 적습니다. 품질을 `기본` 으로 바꿔 보세요.';
+    if (/pro/i.test(modelId) && error instanceof StitchError && error.kind === 'quota') {
+      message += ' 무거운 모델은 월 사용 횟수가 적습니다. 가벼운 모델로 바꿔 보세요.';
     }
     // 자격증명 문제면 남은 화면도 같은 이유로 실패한다. 브라우저가 알아볼 수 있게 갈라 준다.
     const status = error instanceof StitchError && error.kind === 'auth' ? 409 : 502;
