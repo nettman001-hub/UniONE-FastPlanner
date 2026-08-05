@@ -218,6 +218,14 @@ export function StitchRun({ plan }: { plan: Plan }) {
           stopped = true;
           break;
         }
+        /*
+         * 화면 사이에 잠깐 쉰다.
+         *
+         * 스무 개를 연달아 걸면 두어 개가 거절당했다. 같은 화면을 따로 하나만
+         * 만들면 잘 되니, 내용이 아니라 몰아친 것이 원인이다. 화면 하나에 수십 초
+         * 걸리는 일이라 1초를 더 쉬어도 체감은 거의 없다.
+         */
+        if (index > 0) await new Promise((r) => setTimeout(r, 1000));
         setProgress((p) => ({ ...p, [pageId]: { state: 'running' } }));
 
         let res: Response;

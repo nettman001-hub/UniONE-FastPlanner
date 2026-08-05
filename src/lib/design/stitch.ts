@@ -71,8 +71,14 @@ function translate(raw: string): StitchError {
   if (/RESOURCE_EXHAUSTED|quota|rate limit|429/i.test(text)) {
     return new StitchError('quota', '스티치 사용량 한도에 걸렸습니다. 잠시 뒤 다시 시도해 주세요.');
   }
-  if (/INVALID_ARGUMENT|400/i.test(text)) {
-    return new StitchError('input', `스티치가 요청을 거절했습니다. ${text.slice(0, 160)}`);
+  /*
+   * 구글은 이 오류를 **사람 말로** 준다 — "Request contains an invalid argument."
+   * 열거형 이름(`INVALID_ARGUMENT`)만 찾고 있었더니 여기서 안 걸리고 아래
+   * "문제가 생겼습니다" 로 떨어졌다. 그래서 사용자에게 무엇이 문제인지도,
+   * 우리에게 어떻게 고칠지도 안 보였다.
+   */
+  if (/INVALID_ARGUMENT|invalid argument|400/i.test(text)) {
+    return new StitchError('input', `스티치가 이 요청을 받지 않았습니다. ${text.slice(0, 160)}`);
   }
   return new StitchError('server', `스티치에서 문제가 생겼습니다. ${text.slice(0, 160)}`);
 }

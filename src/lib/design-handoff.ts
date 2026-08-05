@@ -124,11 +124,32 @@ const EMPHASIS_LINE: Record<PromptEmphasis, string> = {
   free: '위 구성을 참고하되, 더 나은 배치가 있다면 바꾸셔도 좋습니다. 다만 적힌 내용은 빠짐없이 담아 주세요.',
 };
 
+/**
+ * 요청문이 지나치게 길어지지 않게 자른다.
+ *
+ * 스티치가 긴 요청문을 `invalid argument` 로 거절하는 일이 있었다. 블록이 많고
+ * 구성 항목이 긴 화면일수록 길어지는데, 어차피 너무 길면 도구도 앞부분만 본다.
+ */
+const MAX_PROMPT_CHARS = 4000;
+
+function clamp(text: string, limit = MAX_PROMPT_CHARS): string {
+  if (text.length <= limit) return text;
+  // 문장 도중에 끊기지 않게 마지막 줄바꿈에서 자른다.
+  const cut = text.slice(0, limit);
+  const at = cut.lastIndexOf('\n');
+  return `${at > limit * 0.6 ? cut.slice(0, at) : cut}\n\n(생략)`;
+}
+
 export function screenPrompt(
   plan: Plan,
   page: IaPage,
   tool: DesignToolKey,
   emphasis: PromptEmphasis = 'strict',
+  /**
+   * 짧게. 스티치가 요청을 거절했을 때 **다시 시도할 때** 쓴다.
+   * 여정·기획 메모처럼 없어도 화면을 그릴 수 있는 것부터 뺀다.
+   */
+  compact = false,
 ): string {
   const wireframe = plan.wireframes.find((w) => w.pageId === page.id);
   const features = featuresOf(plan, page);
@@ -145,11 +166,13 @@ export function screenPrompt(
   if (page.path) lines.push(`경로: ${page.path}`);
   if (page.description) lines.push(`화면 설명: ${page.description}`);
   if (page.roles.length > 0) lines.push(`사용자: ${page.roles.join(', ')}`);
-  if (journeys.length > 0) lines.push(`이 화면을 지나는 여정: ${journeys.join(', ')}`);
+  if (!compact && journeys.length > 0) lines.push(`이 화면을 지나는 여정: ${journeys.join(', ')}`);
 
   if (features.length > 0) {
     lines.push('', '이 화면에서 할 수 있어야 하는 것:');
-    lines.push(...features.map((f) => `- ${f.name}${f.description ? ` — ${f.description}` : ''}`));
+    lines.push(
+      ...features.map((f) => `- ${f.name}${!compact && f.description ? ` — ${f.description}` : ''}`),
+    );
   }
 
   if (wireframe && wireframe.blocks.length > 0) {
@@ -161,7 +184,7 @@ export function screenPrompt(
         // 여기 적힌 것이 실제로 화면에 나올 문구다. 바꾸지 말라고 못 박는다.
         lines.push(`   표시할 내용: ${block.items.join(' / ')}`);
       }
-      if (block.note) lines.push(`   기획 의도: ${block.note}`);
+      if (!compact && block.note) lines.push(`   기획 의도: ${block.note}`);
     });
     lines.push('', EMPHASIS_LINE[emphasis]);
   } else {
@@ -178,7 +201,7 @@ export function screenPrompt(
     lines.push('', '레이어 이름은 위 블록 이름을 그대로 써 주세요.');
   }
 
-  return lines.join('\n');
+  return clamp(lines.join('\n'), compact ? MAX_PROMPT_CHARS / 2 : MAX_PROMPT_CHARS);
 }
 
 /** 만들 수 있는 화면 목록. 기능이 걸린 화면을 먼저 보여 준다. */
