@@ -10,7 +10,7 @@
  * 대신 부른다. 여기서는 연결됐는지와 꼬리표만 안다.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -24,6 +24,17 @@ import {
 
 import { Spinner, useToast } from './ui';
 import { DESIGN_SKILLS, findSkill, skillSummary } from '@/lib/design/skills';
+import {
+  forgetProject,
+  projectUrlOf,
+  reset as resetRun,
+  restore,
+  snapshot,
+  start,
+  stop as stopRun,
+  subscribe,
+  serverSnapshot,
+} from '@/lib/design/stitch-runner';
 import type { Plan } from '@/lib/types';
 
 /**
@@ -39,45 +50,6 @@ const CONFIRM_OVER = 10;
 
 /** 화면 하나에 걸리는 대략 시간. 안내용 어림수다. */
 const SECONDS_EACH = 45;
-
-/**
- * 플랜마다 어느 스티치 프로젝트에 만들고 있는지 기억한다.
- *
- * 이걸 안 하면 **다시 만들 때마다 새 프로젝트가 생긴다.** 실패한 화면 두어 개만
- * 다시 걸었더니 `스티치에서 열기` 가 방금 만든 빈 프로젝트를 가리켜, 앞서 만든
- * 것들이 사라진 것처럼 보였다. 실제로 지워진 것은 아니지만 사용자에게는 같은
- * 일이다 — 찾을 수 없으면 없는 것이다.
- *
- * 플랜 데이터가 아니라 이 브라우저에만 둔다. 스티치 프로젝트는 연결한 계정에
- * 딸린 것이라 플랜을 남에게 넘길 때 따라가면 안 된다.
- */
-const PROJECT_KEY = 'unione-fastplaner:stitch-projects';
-
-interface Remembered {
-  projectId: string;
-  designSystemId?: string;
-}
-
-function loadProject(planId: string): Remembered | null {
-  try {
-    const all = JSON.parse(localStorage.getItem(PROJECT_KEY) ?? '{}') as Record<string, Remembered>;
-    const found = all[planId];
-    return found?.projectId ? found : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveProject(planId: string, value: Remembered | null): void {
-  try {
-    const all = JSON.parse(localStorage.getItem(PROJECT_KEY) ?? '{}') as Record<string, Remembered>;
-    if (value) all[planId] = value;
-    else delete all[planId];
-    localStorage.setItem(PROJECT_KEY, JSON.stringify(all));
-  } catch {
-    /* 저장 못 해도 이번 회차는 이어 만든다. */
-  }
-}
 
 interface Status {
   connected: boolean;
@@ -106,18 +78,11 @@ const EMPHASIS_UI: Array<{ key: Emphasis; name: string; what: string }> = [
   { key: 'free', name: '자유롭게', what: '내용만 지키고 배치는 더 나은 쪽으로 바꿉니다.' },
 ];
 
-type ScreenState =
-  | { state: 'waiting' }
-  | { state: 'running' }
-  | { state: 'done'; url: string; imageUrl: string | null }
-  | { state: 'failed'; message: string };
-
 export function StitchRun({ plan }: { plan: Plan }) {
   const toast = useToast();
   const [status, setStatus] = useState<Status | null>(null);
   const [secret, setSecret] = useState('');
   const [saving, setSaving] = useState(false);
-  const [running, setRunning] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** 고를 수 있는 모델. 스티치에서 받아 온다. */
   const [models, setModels] = useState<Model[]>([]);
@@ -127,11 +92,22 @@ export function StitchRun({ plan }: { plan: Plan }) {
   /** 고른 디자인 스킬 — 서비스 전체의 결을 정한다. */
   const [skill, setSkill] = useState('clean');
   const [skillOpen, setSkillOpen] = useState(false);
-  const [progress, setProgress] = useState<Record<string, ScreenState>>({});
-  const [projectUrl, setProjectUrl] = useState<string | null>(null);
-  /** 지금까지 이 플랜을 만들어 온 스티치 프로젝트. 다시 만들 때 이어 붙인다. */
-  const [project, setProject] = useState<Remembered | null>(null);
-  const abort = useRef<AbortController | null>(null);
+
+  /*
+   * 진행 상태는 **이 컴포넌트가 갖고 있지 않다.**
+   *
+   * 갖고 있으면 화면을 떠날 때 함께 사라진다. 사장님이 겪은 일이 그것이다 —
+   * 만드는 중에 홈에 다녀오니 판이 통째로 비어 있었다. 지금은 모듈에 두고
+   * 여기서는 구독만 한다. 다녀와도 돌던 것이 그대로 보이고, 자리를 비운
+   * 사이에도 계속 만들어진다.
+   */
+  const session = useSyncExternalStore(
+    useCallback((fn) => subscribe(plan.id, fn), [plan.id]),
+    useCallback(() => snapshot(plan.id), [plan.id]),
+    serverSnapshot,
+  );
+  const { running, progress, project, summary } = session;
+  const projectUrl = project ? projectUrlOf(project.projectId) : null;
 
   const pages = useMemo(() => (plan.iaPages ?? []).filter((p) => p.type === 'page'), [plan.iaPages]);
   const withWireframe = useMemo(
@@ -177,16 +153,39 @@ export function StitchRun({ plan }: { plan: Plan }) {
     };
   }, []);
 
-  /* 이 플랜을 어느 프로젝트에 만들어 왔는지 되살린다. */
+  /* 이 플랜을 어느 프로젝트에 만들어 왔는지 되살린다. 돌고 있으면 손대지 않는다. */
   useEffect(() => {
-    const found = loadProject(plan.id);
-    if (!found) return;
-    setProject(found);
-    setProjectUrl(`https://stitch.withgoogle.com/projects/${encodeURIComponent(found.projectId)}`);
+    restore(plan.id);
   }, [plan.id]);
 
-  /* 화면을 떠나면 돌던 요청을 정리한다. */
-  useEffect(() => () => abort.current?.abort(), []);
+  /*
+   * 화면을 떠날 때 **돌던 요청을 끊지 않는다.** 예전에는 여기서 정리했는데,
+   * 그래서 홈에 다녀오면 만들던 것이 멈췄다. 멈추는 것은 `멈추기` 로만 한다.
+   */
+
+  /*
+   * 끝난 결과를 알린다.
+   *
+   * 자리를 비운 사이에 끝났으면 알림이 뜰 화면이 없다. 그때 것을 다시 들어오자마자
+   * 띄우면 방금 일어난 일처럼 보이므로, 처음 붙을 때는 이미 있는 결과를 본 것으로
+   * 친다(아래 화면에 글로도 남긴다). 새로 생긴 결과만 알린다.
+   */
+  const seenSummary = useRef<number | null>(null);
+  useEffect(() => {
+    const at = summary?.at ?? 0;
+    if (seenSummary.current === null) {
+      seenSummary.current = at;
+      return;
+    }
+    if (!summary || at === seenSummary.current) return;
+    seenSummary.current = at;
+    toast(summary.text, summary.tone);
+  }, [summary, toast]);
+
+  /* 스티치가 자격증명을 거절했으면 연결 칸으로 되돌린다. */
+  useEffect(() => {
+    if (session.disconnected && status?.connected) setStatus({ connected: false, label: '' });
+  }, [session.disconnected, status]);
 
   const connect = useCallback(async () => {
     const value = secret.trim();
@@ -220,20 +219,16 @@ export function StitchRun({ plan }: { plan: Plan }) {
       /* 못 지워도 화면에서는 끊어진 것으로 본다. */
     }
     setStatus({ connected: false, label: '' });
-    setProgress({});
-    setProjectUrl(null);
-    setProject(null);
-    saveProject(plan.id, null);
+    resetRun(plan.id);
   }, [plan.id]);
 
   /**
-   * 화면을 하나씩 순서대로 만든다.
+   * 만들기를 건다.
    *
-   * 반복을 브라우저가 도는 이유는, 서버 함수에 제한시간이 있어서다. 8개를 한
-   * 요청에 몰면 그 안에 못 끝내고 통째로 끊긴다. 끊기면 어디까지 됐는지 알 수
-   * 없다. 하나씩 부르면 매 화면의 결과가 그때그때 확정된다.
+   * 실제 반복은 `stitch-runner` 가 돈다 — 화면 밖이라 여기를 떠나도 이어진다.
+   * 여기서는 무엇을 만들지 고르고, 오래 걸릴 때 한 번 묻는 일까지만 한다.
    */
-  const run = useCallback(async () => {
+  const run = useCallback(() => {
     const pageIds = pages.filter((p) => picked.has(p.id)).map((p) => p.id);
     if (pageIds.length === 0) {
       toast('만들 화면을 골라 주세요.', 'warn');
@@ -252,128 +247,13 @@ export function StitchRun({ plan }: { plan: Plan }) {
       if (!ok) return;
     }
 
-    const controller = new AbortController();
-    abort.current = controller;
-    setRunning(true);
-    setProgress(Object.fromEntries(pageIds.map((id) => [id, { state: 'waiting' } as ScreenState])));
-
-    // 이어 만든다. 비우면 새 프로젝트가 생겨 앞서 만든 것을 못 찾게 된다.
-    let projectId = project?.projectId ?? '';
-    let designSystemId = project?.designSystemId ?? '';
-    let made = 0;
-    let stopped = false;
-
-    try {
-      for (const [index, pageId] of pageIds.entries()) {
-        if (controller.signal.aborted) {
-          stopped = true;
-          break;
-        }
-        /*
-         * 화면 사이에 잠깐 쉰다.
-         *
-         * 스무 개를 연달아 걸면 두어 개가 거절당했다. 같은 화면을 따로 하나만
-         * 만들면 잘 되니, 내용이 아니라 몰아친 것이 원인이다. 화면 하나에 수십 초
-         * 걸리는 일이라 1초를 더 쉬어도 체감은 거의 없다.
-         */
-        if (index > 0) await new Promise((r) => setTimeout(r, 1000));
-        setProgress((p) => ({ ...p, [pageId]: { state: 'running' } }));
-
-        let res: Response;
-        try {
-          res = await fetch('/api/design/stitch/run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              plan,
-              pageId,
-              projectId,
-              first: index === 0,
-              modelId,
-              emphasis,
-              skill,
-              designSystemId,
-            }),
-            signal: controller.signal,
-          });
-        } catch (error) {
-          if (error instanceof DOMException && error.name === 'AbortError') {
-            // 멈춘 화면은 실패가 아니다. 아직 안 만든 것으로 되돌린다.
-            setProgress((p) => ({ ...p, [pageId]: { state: 'waiting' } }));
-            stopped = true;
-            break;
-          }
-          setProgress((p) => ({
-            ...p,
-            [pageId]: { state: 'failed', message: '연결이 끊겼습니다.' },
-          }));
-          continue;
-        }
-
-        const data = (await res.json().catch(() => ({}))) as {
-          projectId?: string;
-          designSystemId?: string | null;
-          url?: string;
-          imageUrl?: string | null;
-          error?: string;
-        };
-
-        if (!res.ok) {
-          setProgress((p) => ({
-            ...p,
-            [pageId]: { state: 'failed', message: data.error ?? '만들지 못했습니다.' },
-          }));
-          // 자격증명 문제라면 남은 화면도 전부 같은 이유로 실패한다. 여기서 멈춘다.
-          if (res.status === 409) {
-            toast(data.error ?? '스티치 연결을 다시 해 주세요.', 'warn');
-            setStatus({ connected: false, label: '' });
-            stopped = true;
-            break;
-          }
-          continue;
-        }
-
-        if (data.projectId && !projectId) {
-          projectId = data.projectId;
-          setProjectUrl(data.url ?? '');
-        }
-        // 한 번 만든 디자인 시스템을 다음 화면들이 그대로 쓴다.
-        if (data.designSystemId && !designSystemId) designSystemId = data.designSystemId;
-        if (projectId) {
-          const next = { projectId, ...(designSystemId ? { designSystemId } : {}) };
-          setProject(next);
-          saveProject(plan.id, next);
-        }
-        made += 1;
-        setProgress((p) => ({
-          ...p,
-          [pageId]: {
-            state: 'done',
-            url: data.url ?? '',
-            imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl : null,
-          },
-        }));
-      }
-
-      if (!stopped) {
-        // 일부만 됐으면 성공으로 보이면 안 된다 — 나머지를 다시 시도해야 한다.
-        toast(
-          made === pageIds.length
-            ? `화면 ${made}개를 스티치에 만들었습니다.`
-            : `${pageIds.length}개 중 ${made}개만 만들었습니다. 실패한 화면만 다시 고르면 이어서 만듭니다.`,
-          made === pageIds.length ? 'ok' : 'warn',
-        );
-      }
-    } finally {
-      setRunning(false);
-      abort.current = null;
-    }
-  }, [emphasis, modelId, pages, picked, plan, project, skill, toast]);
+    void start(plan.id, { plan, pageIds, modelId, emphasis, skill });
+  }, [emphasis, modelId, pages, picked, plan, skill, toast]);
 
   const stop = useCallback(() => {
-    abort.current?.abort();
+    stopRun(plan.id);
     toast('멈췄습니다. 그때까지 만들어진 화면은 스티치에 남아 있습니다.', 'warn');
-  }, [toast]);
+  }, [plan.id, toast]);
 
   const toggle = (id: string) =>
     setPicked((prev) => {
@@ -473,10 +353,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
             disabled={running}
             title="지금까지 만든 것은 스티치에 그대로 남습니다. 다음 화면부터 새 프로젝트에 만듭니다."
             onClick={() => {
-              setProject(null);
-              saveProject(plan.id, null);
-              setProjectUrl(null);
-              setProgress({});
+              forgetProject(plan.id);
               toast('다음부터는 새 프로젝트에 만듭니다. 지금까지 만든 것은 스티치에 그대로 있습니다.', 'ok');
             }}
           >
@@ -665,7 +542,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
         <button
           className={`btn btn-primary btn-sm${running ? ' is-busy' : ''}`}
           disabled={running || picks.length === 0}
-          onClick={() => void run()}
+          onClick={run}
         >
           {running ? <Spinner size={13} /> : <Sparkles size={13} />}
           {running ? '만드는 중' : `스티치에 ${picks.length}개 만들기`}
@@ -677,6 +554,35 @@ export function StitchRun({ plan }: { plan: Plan }) {
           </button>
         )}
       </div>
+
+      {/*
+        돌고 있는 동안 무엇을 해도 되는지 밝힌다.
+
+        다른 화면에 다녀와도 이어진다는 사실을 모르면, 십오 분을 이 화면만 보고
+        앉아 있게 된다. 반대로 새로고침이 멈춘다는 사실을 모르면 애써 만든 것을
+        중간에 날린다. 둘 다 알려야 한다.
+      */}
+      {running && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--fg-subtle)]">
+          다른 화면에 다녀오셔도 <b>계속 만듭니다.</b> 다만 새로고침하거나 창을 닫으면 멈춥니다.
+        </p>
+      )}
+
+      {/*
+        끝난 결과를 글로도 남긴다.
+
+        자리를 비운 사이에 끝났으면 알림은 이미 지나갔다. 돌아왔을 때 무엇이
+        어떻게 됐는지 알 길이 여기밖에 없다.
+      */}
+      {!running && summary && (
+        <p
+          className={`mt-1.5 text-[11.5px] leading-relaxed ${
+            summary.tone === 'ok' ? 'text-[var(--ok)]' : 'text-[var(--warn)]'
+          }`}
+        >
+          {summary.text}
+        </p>
+      )}
     </div>
   );
 }
