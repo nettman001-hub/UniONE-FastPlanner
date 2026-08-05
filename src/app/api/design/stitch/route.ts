@@ -12,6 +12,7 @@ import {
   removeIntegration,
   saveIntegration,
 } from '@/lib/db/integrations';
+import { detectCredential, StitchError } from '@/lib/design/stitch';
 
 export const runtime = 'nodejs';
 
@@ -47,8 +48,27 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: '값이 너무 짧습니다. 복사한 내용을 다시 확인해 주세요.' }, { status: 400 });
   }
 
+  /*
+   * 저장하기 전에 **실제로 스티치에 물어본다.**
+   *
+   * 예전에는 받은 값을 그대로 넣었다. 그래서 "연결됨" 이라고 떠 놓고 정작
+   * 만들기를 누르면 실패했다 — 사용자가 무엇이 잘못됐는지 알 방법이 없었다.
+   * 여기서 한 번 확인하면 그 자리에서 알 수 있고, 어느 헤더로 보내야 하는
+   * 값인지도 함께 알아낸다.
+   */
+  let kind: string;
   try {
-    return NextResponse.json(await saveIntegration(user.id, 'stitch', secret));
+    kind = await detectCredential(secret, process.env.STITCH_QUOTA_PROJECT || undefined);
+  } catch (error) {
+    const message =
+      error instanceof StitchError
+        ? error.message
+        : '스티치에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.';
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  try {
+    return NextResponse.json(await saveIntegration(user.id, 'stitch', secret, kind));
   } catch {
     return NextResponse.json({ error: '연결 정보를 저장하지 못했습니다.' }, { status: 500 });
   }

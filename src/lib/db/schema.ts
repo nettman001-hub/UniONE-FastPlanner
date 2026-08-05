@@ -44,6 +44,10 @@ create table if not exists integrations (
   updated_at timestamptz not null default now(),
   primary key (user_id, provider)
 );
+
+-- 어떤 헤더로 보내야 하는 값인지. 값 모양만 보고 짐작하면 틀린다 —
+-- 연결할 때 실제로 찔러 보고 되는 쪽을 여기 적어 둔다.
+alter table integrations add column if not exists kind text not null default '';
 `;
 
 /**

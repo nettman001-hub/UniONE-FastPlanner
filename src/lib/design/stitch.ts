@@ -57,8 +57,13 @@ function translate(raw: string): StitchError {
   if (/API keys are not supported/i.test(text)) {
     return new StitchError('auth', '이 방식의 키는 스티치가 받지 않습니다. 구글 계정으로 다시 연결해 주세요.');
   }
+  /*
+   * 만료와 "애초에 안 맞는 값" 은 사용자가 할 일이 다르다.
+   * 만료면 다시 받아 오면 되고, 안 맞는 값이면 다른 것을 가져와야 한다.
+   * 구글은 둘 다 같은 문구로 주므로 여기서 뭉뚱그리지 말고 부르는 쪽이 가른다.
+   */
   if (/missing required authentication|invalid authentication|UNAUTHENTICATED|401/i.test(text)) {
-    return new StitchError('auth', '스티치 연결이 만료됐습니다. 다시 연결해 주세요.');
+    return new StitchError('auth', '스티치가 이 값을 받아 주지 않습니다. 만료됐거나 다른 종류의 값일 수 있습니다. 다시 연결해 주세요.');
   }
   if (/PERMISSION_DENIED|not been used in project|is disabled|403/i.test(text)) {
     return new StitchError('auth', '스티치를 쓸 권한이 없습니다. 연결한 계정에서 스티치를 한 번 열어 보신 뒤 다시 시도해 주세요.');
@@ -149,6 +154,47 @@ export async function callTool(
   if (!response.ok) throw translate(textOf(result) || body.slice(0, 200));
 
   return { json: jsonOf(result), text: textOf(result) };
+}
+
+/* ------------------------------------------------------------------ */
+/* 어떤 값인지 알아내기                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 값 모양만 보고 방식을 짐작하지 않는다 — **실제로 찔러 본다.**
+ *
+ * 처음에는 `AIza…` 면 API 키, 아니면 토큰으로 갈랐다. 그런데 스티치가 발급하는
+ * 키가 그 모양이 아니면 엉뚱한 헤더로 나가고, 사용자는 "연결은 됐는데 만들면
+ * 실패한다" 는 영문 모를 상태에 빠진다. 저장할 때 한 번 확인해 두면 그 자리에서
+ * 알 수 있다.
+ *
+ * 되는 쪽을 돌려주고, 둘 다 안 되면 마지막 이유를 담아 던진다.
+ */
+export async function detectCredential(
+  secret: string,
+  quotaProject?: string,
+  signal?: AbortSignal,
+): Promise<StitchCredentialKind> {
+  // 그럴듯한 쪽을 먼저 본다. 맞으면 한 번으로 끝난다.
+  const order: StitchCredentialKind[] = /^AIza[0-9A-Za-z_-]{10,}$/.test(secret)
+    ? ['apikey', 'oauth']
+    : ['oauth', 'apikey'];
+
+  let last: unknown = null;
+  for (const kind of order) {
+    try {
+      await callTool('list_projects', {}, { kind, secret, quotaProject }, signal);
+      return kind;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      // 자격증명 문제가 아니면 값 자체는 맞다는 뜻이다. 더 시도할 이유가 없다.
+      if (error instanceof StitchError && error.kind !== 'auth') return kind;
+      last = error;
+    }
+  }
+  throw last instanceof StitchError
+    ? last
+    : new StitchError('auth', '스티치가 이 값을 받아 주지 않았습니다.');
 }
 
 /* ------------------------------------------------------------------ */
