@@ -39,6 +39,7 @@ import { ClientOnly, EmptyState, Field, Modal, Spinner, useConfirm, useToast } f
 import { GuestImportBanner, RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
 import { Logo } from '@/components/Logo';
 import { BRAND_NAME, BRAND_SHORT, BRAND_TAGLINE } from '@/lib/brand';
+import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
 
 /* ------------------------------------------------------------------ */
 /* 상수                                                                 */
@@ -54,7 +55,29 @@ const IDEA_SAMPLES = [
   '중고 장비를 빌려주는 취미 공유 플랫폼',
 ];
 
-const WIZARD_STEPS = ['무엇을 만드나요', '누구를 위한 건가요', '참고 정보(선택)'];
+/**
+ * 다섯 단계지만 **필수는 1단계뿐이다.**
+ *
+ * 질문을 늘리면 이탈이 는다. 그래서 4·5단계는 고르기만 하면 되게 만들고,
+ * 어느 단계에서든 `이대로 만들기` 로 빠져나올 수 있게 둔다. 질문이 늘어난 게
+ * 아니라 **원하면 더 답할 수 있게** 된 것이어야 한다.
+ */
+const WIZARD_STEPS = [
+  '무엇을 만드나요',
+  '누구를 위한 건가요',
+  '참고 정보(선택)',
+  '몇 가지만 더',
+  '확인할 것',
+];
+const LAST_STEP = WIZARD_STEPS.length;
+
+/** AI 가 되물은 질문 하나와 사용자의 답. */
+interface Followup {
+  question: string;
+  why: string;
+  choices: string[];
+  answer: string;
+}
 
 const EMPTY_BRIEF: PlanBrief = {
   title: '',
@@ -121,6 +144,9 @@ function parsePlan(text: string): Plan | null {
     reference: asString(brief.reference),
     mustHave: asString(brief.mustHave),
   });
+  // 요구분석 답은 문서를 만드는 근거다. 가져오기에서 흘리면 다시 만들 때 달라진다.
+  if (brief.answers && typeof brief.answers === 'object') base.brief.answers = brief.answers;
+  if (Array.isArray(brief.followups)) base.brief.followups = brief.followups;
 
   const generated = { ...base.generated };
   if (value.generated && typeof value.generated === 'object') {
@@ -294,8 +320,55 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const createPlan = usePlannerStore((s) => s.createPlan);
   const [step, setStep] = useState(1);
   const [brief, setBrief] = useState<PlanBrief>(EMPTY_BRIEF);
+  /** AI 가 되물은 질문. 3단계를 지날 때 만들어 둔다. */
+  const [followups, setFollowups] = useState<Followup[]>([]);
+  const [asking, setAsking] = useState(false);
+  const askedFor = useRef('');
 
   const patch = (next: Partial<PlanBrief>) => setBrief((prev) => ({ ...prev, ...next }));
+
+  const answers = brief.answers ?? {};
+  const pick = (key: string, value: string, multi: boolean) =>
+    setBrief((prev) => {
+      const current = prev.answers?.[key] ?? [];
+      const next = multi
+        ? current.includes(value)
+          ? current.filter((v) => v !== value)
+          : [...current, value]
+        : current.includes(value)
+          ? []
+          : [value];
+      return { ...prev, answers: { ...prev.answers, [key]: next } };
+    });
+
+  /**
+   * 아이디어를 읽고 되물을 것을 만들어 둔다.
+   *
+   * 4단계로 넘어갈 때 **미리** 부른다. 5단계에 도착해서 부르면 사용자가 빈 화면을
+   * 보며 기다리게 된다. 아이디어가 그대로면 다시 부르지 않는다.
+   */
+  const askFollowups = async () => {
+    const seed = `${brief.idea}|${JSON.stringify(brief.answers ?? {})}`;
+    if (askedFor.current === seed) return;
+    askedFor.current = seed;
+    setAsking(true);
+    try {
+      const res = await fetch('/api/brief/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brief }),
+      });
+      const data = (await res.json()) as { questions?: Followup[] };
+      setFollowups(
+        (data.questions ?? []).map((q) => ({ ...q, answer: '' })),
+      );
+    } catch {
+      // 되묻기를 못 만든 것이 플랜 생성을 막을 이유는 없다.
+      setFollowups([]);
+    } finally {
+      setAsking(false);
+    }
+  };
 
   const missing: string[] = [];
   if (!brief.title.trim()) missing.push('서비스명');
@@ -308,6 +381,8 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
     setTimeout(() => {
       setStep(1);
       setBrief(EMPTY_BRIEF);
+      setFollowups([]);
+      askedFor.current = '';
     }, 200);
   };
 
@@ -316,10 +391,14 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       setStep(1);
       return;
     }
+    const answered = followups
+      .filter((f) => f.answer.trim())
+      .map((f) => ({ question: f.question, answer: f.answer.trim() }));
     const id = createPlan({
       ...brief,
       title: brief.title.trim(),
       idea: brief.idea.trim(),
+      ...(answered.length > 0 ? { followups: answered } : {}),
     });
     close();
     /*
@@ -344,12 +423,25 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               이전
             </button>
           )}
-          {step < 3 ? (
+          {/*
+            3단계부터는 언제든 빠져나갈 수 있어야 한다. 질문이 늘어난 것이
+            "더 오래 붙잡힌다" 로 느껴지면 안 된다.
+          */}
+          {step >= 3 && step < LAST_STEP && (
+            <button type="button" className="btn" onClick={submit}>
+              이대로 만들기
+            </button>
+          )}
+          {step < LAST_STEP ? (
             <button
               type="button"
               className="btn btn-primary"
               disabled={step1Blocked}
-              onClick={() => setStep((s) => s + 1)}
+              onClick={() => {
+                // 4단계로 갈 때 미리 물어 둔다. 5단계에서 기다리지 않도록.
+                if (step === 3) void askFollowups();
+                setStep((s) => s + 1);
+              }}
             >
               다음
               <ArrowRight size={14} />
@@ -508,6 +600,112 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               준비되셨을 때 누르세요. 크레딧은 그때부터 듭니다.
             </p>
           </div>
+        </div>
+      )}
+
+      {/*
+        4단계 — 고르기만 하면 되는 요구분석.
+
+        빈칸이 아니라 보기다. "기획 목적" 칸에 무엇을 쓸지 모르던 사람도 "관리자
+        화면 필요합니다" 는 고를 수 있다. 여섯 개를 다 골라도 10초면 끝난다.
+      */}
+      {step === 4 && (
+        <div className="flex flex-col gap-3.5">
+          <p className="text-[12px] leading-relaxed text-[var(--fg-muted)]">
+            고르기만 하시면 됩니다. 건너뛰셔도 되지만, 답하실수록 문서가 정확해집니다.
+          </p>
+          {BRIEF_QUESTIONS.map((q) => (
+            <div key={q.key}>
+              <p className="text-[12.5px] font-bold">{q.ask}</p>
+              <p className="mt-0.5 text-[11px] text-[var(--fg-subtle)]">{q.why}</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {q.choices.map((c) => {
+                  const on = (answers[q.key] ?? []).includes(c.value);
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      className={on ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                      onClick={() => pick(q.key, c.value, q.multi)}
+                      title={c.effect}
+                    >
+                      {on && <Check size={12} />}
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/*
+        5단계 — AI 가 이 아이디어에만 해당하는 것을 되묻는다.
+
+        고정 폼으로는 "처음 만나는 사람끼리 안전은 어떻게 확보하나요" 같은 질문이
+        나올 수 없다. 답을 못 만들었으면 조용히 넘긴다 — 여기서 막히면 플랜을
+        아예 못 만든다.
+      */}
+      {step === 5 && (
+        <div className="flex flex-col gap-3.5">
+          {asking && (
+            <div className="flex items-center gap-2 text-[12.5px] text-[var(--fg-muted)]">
+              <Spinner size={14} />
+              아이디어를 읽고 여쭤볼 것을 고르는 중입니다…
+            </div>
+          )}
+
+          {!asking && followups.length === 0 && (
+            <p className="text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
+              더 여쭤볼 것이 없습니다. <b>플랜 만들기</b>를 눌러 주세요.
+            </p>
+          )}
+
+          {!asking && followups.length > 0 && (
+            <p className="text-[12px] leading-relaxed text-[var(--fg-muted)]">
+              아이디어를 읽고 여쭤봅니다. <b>답하지 않으셔도 됩니다</b> — 답하신 것만
+              문서에 반영합니다.
+            </p>
+          )}
+
+          {followups.map((f, index) => (
+            <div key={f.question}>
+              <p className="text-[12.5px] font-bold">{f.question}</p>
+              {f.why && <p className="mt-0.5 text-[11px] text-[var(--fg-subtle)]">{f.why}</p>}
+              {f.choices.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {f.choices.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={f.answer === c ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                      onClick={() =>
+                        setFollowups((prev) =>
+                          prev.map((p, i) =>
+                            i === index ? { ...p, answer: p.answer === c ? '' : c } : p,
+                          ),
+                        )
+                      }
+                    >
+                      {f.answer === c && <Check size={12} />}
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input
+                className="input mt-1.5"
+                value={f.answer}
+                placeholder="직접 적으셔도 됩니다"
+                onChange={(e) =>
+                  setFollowups((prev) =>
+                    prev.map((p, i) => (i === index ? { ...p, answer: e.target.value } : p)),
+                  )
+                }
+              />
+            </div>
+          ))}
         </div>
       )}
     </Modal>

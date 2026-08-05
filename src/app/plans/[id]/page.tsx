@@ -42,6 +42,7 @@ import {
 import { FixWithAi } from '@/components/FixWithAi';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
+import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
 import { issueFixPrompt } from '@/lib/ai/fix-prompt';
 import { useGenerate } from '@/lib/useGenerate';
 import { issueSummary, validatePlan, LEVEL_LABEL, type Issue, type IssueLevel } from '@/lib/validate';
@@ -339,6 +340,12 @@ function PlanOverview() {
                 <BriefCard title="서비스 아이디어" body={plan.brief.idea} full />
                 <BriefCard title="참고 서비스" body={plan.brief.reference} />
                 <BriefCard title="꼭 포함할 기능" body={plan.brief.mustHave} />
+                {/*
+                  기획할 때 고른 답을 여기서 볼 수 있어야 한다. 안 보이면 문서가
+                  왜 이렇게 나왔는지 알 수 없고, 잘못 고른 것도 못 찾는다.
+                */}
+                <BriefCard title="요구분석" body={answersText(plan.brief)} full />
+                <BriefCard title="추가 문답" body={followupsText(plan.brief)} full />
               </div>
             )}
           </div>
@@ -687,6 +694,24 @@ function PlanOverview() {
 /* ------------------------------------------------------------------ */
 /* 지역 컴포넌트                                                        */
 /* ------------------------------------------------------------------ */
+
+/** 기획할 때 고른 답을 사람이 읽는 줄로. 안 고른 것은 빼고 보여 준다. */
+function answersText(brief: Plan['brief']): string {
+  const picked = brief.answers ?? {};
+  const lines: string[] = [];
+  for (const q of BRIEF_QUESTIONS) {
+    const chosen = q.choices.filter((c) => (picked[q.key] ?? []).includes(c.value));
+    if (chosen.length > 0) lines.push(`${q.ask} ${chosen.map((c) => c.label).join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+function followupsText(brief: Plan['brief']): string {
+  return (brief.followups ?? [])
+    .filter((f) => f.answer.trim())
+    .map((f) => `${f.question}\n  ${f.answer}`)
+    .join('\n');
+}
 
 function BriefCard({ title, body, full }: { title: string; body?: string; full?: boolean }) {
   return (
