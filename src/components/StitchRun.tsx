@@ -119,6 +119,13 @@ export function StitchRun({ plan }: { plan: Plan }) {
     setProjectUrl(null);
   }, []);
 
+  /**
+   * 화면을 하나씩 순서대로 만든다.
+   *
+   * 반복을 브라우저가 도는 이유는, 서버 함수에 제한시간이 있어서다. 8개를 한
+   * 요청에 몰면 그 안에 못 끝내고 통째로 끊긴다. 끊기면 어디까지 됐는지 알 수
+   * 없다. 하나씩 부르면 매 화면의 결과가 그때그때 확정된다.
+   */
   const run = useCallback(async () => {
     const pageIds = pages.filter((p) => picked.has(p.id)).map((p) => p.id);
     if (pageIds.length === 0) {
@@ -132,84 +139,85 @@ export function StitchRun({ plan }: { plan: Plan }) {
     setProjectUrl(null);
     setProgress(Object.fromEntries(pageIds.map((id) => [id, { state: 'waiting' } as ScreenState])));
 
+    let projectId = '';
+    let made = 0;
+    let stopped = false;
+
     try {
-      const res = await fetch('/api/design/stitch/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan, pageIds }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        toast(data.error ?? '스티치에 만들지 못했습니다.', 'warn');
-        if (res.status === 409) setStatus({ connected: false, label: '' });
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let made = 0;
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          let event: Record<string, unknown>;
-          try {
-            event = JSON.parse(line) as Record<string, unknown>;
-          } catch {
-            continue;
-          }
-          const pageId = String(event.pageId ?? '');
-          switch (event.type) {
-            case 'project':
-              setProjectUrl(String(event.url ?? ''));
-              break;
-            case 'screen-start':
-              setProgress((p) => ({ ...p, [pageId]: { state: 'running' } }));
-              break;
-            case 'screen-done':
-              made += 1;
-              setProgress((p) => ({
-                ...p,
-                [pageId]: {
-                  state: 'done',
-                  url: String(event.url ?? ''),
-                  imageUrl: typeof event.imageUrl === 'string' ? event.imageUrl : null,
-                },
-              }));
-              break;
-            case 'screen-failed':
-              setProgress((p) => ({
-                ...p,
-                [pageId]: { state: 'failed', message: String(event.message ?? '만들지 못했습니다.') },
-              }));
-              break;
-            case 'error':
-              toast(String(event.message ?? '스티치에서 문제가 생겼습니다.'), 'warn');
-              break;
-            case 'done':
-              // 일부만 됐으면 성공으로 보이면 안 된다 — 나머지를 다시 시도해야 한다.
-              toast(
-                made === pageIds.length
-                  ? `화면 ${made}개를 스티치에 만들었습니다.`
-                  : `${pageIds.length}개 중 ${made}개만 만들었습니다.`,
-                made === pageIds.length ? 'ok' : 'warn',
-              );
-              break;
-          }
+      for (const [index, pageId] of pageIds.entries()) {
+        if (controller.signal.aborted) {
+          stopped = true;
+          break;
         }
+        setProgress((p) => ({ ...p, [pageId]: { state: 'running' } }));
+
+        let res: Response;
+        try {
+          res = await fetch('/api/design/stitch/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan, pageId, projectId, first: index === 0 }),
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            // 멈춘 화면은 실패가 아니다. 아직 안 만든 것으로 되돌린다.
+            setProgress((p) => ({ ...p, [pageId]: { state: 'waiting' } }));
+            stopped = true;
+            break;
+          }
+          setProgress((p) => ({
+            ...p,
+            [pageId]: { state: 'failed', message: '연결이 끊겼습니다.' },
+          }));
+          continue;
+        }
+
+        const data = (await res.json().catch(() => ({}))) as {
+          projectId?: string;
+          url?: string;
+          imageUrl?: string | null;
+          error?: string;
+        };
+
+        if (!res.ok) {
+          setProgress((p) => ({
+            ...p,
+            [pageId]: { state: 'failed', message: data.error ?? '만들지 못했습니다.' },
+          }));
+          // 자격증명 문제라면 남은 화면도 전부 같은 이유로 실패한다. 여기서 멈춘다.
+          if (res.status === 409) {
+            toast(data.error ?? '스티치 연결을 다시 해 주세요.', 'warn');
+            setStatus({ connected: false, label: '' });
+            stopped = true;
+            break;
+          }
+          continue;
+        }
+
+        if (data.projectId && !projectId) {
+          projectId = data.projectId;
+          setProjectUrl(data.url ?? '');
+        }
+        made += 1;
+        setProgress((p) => ({
+          ...p,
+          [pageId]: {
+            state: 'done',
+            url: data.url ?? '',
+            imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl : null,
+          },
+        }));
       }
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        toast('스티치에 만들지 못했습니다.', 'warn');
+
+      if (!stopped) {
+        // 일부만 됐으면 성공으로 보이면 안 된다 — 나머지를 다시 시도해야 한다.
+        toast(
+          made === pageIds.length
+            ? `화면 ${made}개를 스티치에 만들었습니다.`
+            : `${pageIds.length}개 중 ${made}개만 만들었습니다. 실패한 화면만 다시 고르면 이어서 만듭니다.`,
+          made === pageIds.length ? 'ok' : 'warn',
+        );
       }
     } finally {
       setRunning(false);

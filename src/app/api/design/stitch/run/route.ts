@@ -1,12 +1,18 @@
 /**
- * 고른 화면들을 스티치에 **실제로 만든다.**
+ * 화면 **하나**를 스티치에 만든다.
  *
- * 화면 하나에 수십 초가 걸리므로 다 끝나기를 기다렸다가 한 번에 주면 사용자는
- * 아무것도 없는 화면을 오래 본다. 그래서 산출물 생성과 같은 방식으로 **한 줄에
- * 하나씩(NDJSON)** 흘려보낸다.
+ * ## 왜 하나씩인가
  *
- * 중간에 실패한 화면이 있어도 멈추지 않는다 — 되는 것까지는 만들어 두는 편이
- * 낫다. 무엇이 안 됐는지는 줄마다 남긴다.
+ * 처음에는 고른 화면 전부를 한 요청 안에서 만들고 진행 상황을 흘려보냈다.
+ * 그런데 화면 하나에 1분 가까이 걸려서, 8개를 걸면 서버 함수 제한시간(5분)에
+ * 걸려 **통째로 끊겼다.** 끊기면 진행 중이던 화면은 화면에 `만드는 중` 인 채로
+ * 영원히 남고, 뒤 화면들은 시작조차 못 했다. 정작 스티치에는 만들다 만 것이
+ * 남아 있으니 사용자는 무엇이 됐는지 알 수 없었다.
+ *
+ * 그래서 **요청 하나에 화면 하나**만 만든다. 반복은 브라우저가 한다. 제한시간에
+ * 걸릴 일이 없고, 한 화면이 실패해도 그 화면만 실패하며, 멈추기도 즉시 듣는다.
+ *
+ * 프로젝트는 첫 요청에서 만들고, 이후로는 받은 `projectId` 를 그대로 쓴다.
  */
 
 import { NextResponse } from 'next/server';
@@ -28,12 +34,14 @@ import type { IaPage, Plan } from '@/lib/types';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-/** 한 번에 너무 많이 걸면 시간 안에 못 끝내고 사용량만 태운다. */
-const MAX_SCREENS = 8;
-
 interface RunBody {
   plan?: Plan;
-  pageIds?: string[];
+  /** 만들 화면 하나. */
+  pageId?: string;
+  /** 이미 만들어 둔 프로젝트. 없으면 새로 만든다. */
+  projectId?: string;
+  /** 첫 화면인가 — 톤 잡는 문장을 함께 보낼지 정한다. */
+  first?: boolean;
 }
 
 function deviceOf(plan: Plan, page: IaPage): StitchDevice {
@@ -57,17 +65,8 @@ export async function POST(request: Request) {
   const plan = body.plan;
   if (!plan?.id) return NextResponse.json({ error: '플랜 정보가 없습니다.' }, { status: 400 });
 
-  const wanted = new Set(body.pageIds ?? []);
-  const pages = (plan.iaPages ?? []).filter((p) => p.type === 'page' && wanted.has(p.id));
-  if (pages.length === 0) {
-    return NextResponse.json({ error: '만들 화면을 골라 주세요.' }, { status: 400 });
-  }
-  if (pages.length > MAX_SCREENS) {
-    return NextResponse.json(
-      { error: `한 번에 ${MAX_SCREENS}개까지 만들 수 있습니다.` },
-      { status: 400 },
-    );
-  }
+  const page = (plan.iaPages ?? []).find((p) => p.type === 'page' && p.id === body.pageId);
+  if (!page) return NextResponse.json({ error: '만들 화면을 찾지 못했습니다.' }, { status: 400 });
 
   let stored: { secret: string; kind: string } | null = null;
   try {
@@ -102,80 +101,37 @@ export async function POST(request: Request) {
 
   const cred: StitchCredential = { kind, secret: stored.secret, quotaProject };
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (event: Record<string, unknown>) => {
-        try {
-          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-        } catch {
-          /* 이미 닫힌 스트림 */
-        }
-      };
+  try {
+    let projectId = body.projectId?.trim() || '';
+    if (!projectId) {
+      projectId = await createProject(plan.brief?.title?.trim() || '무제 플랜', cred, request.signal);
+    }
 
-      try {
-        send({ type: 'start', total: pages.length });
+    /*
+     * 톤 잡는 문장은 첫 화면 요청 앞에만 붙인다. 스티치에는 "이전 대화" 개념이
+     * 없어서 따로 부르면 다음 화면이 그걸 모르는데, 매번 붙이면 요청문이 길어져
+     * 정작 이 화면 이야기가 묻힌다.
+     */
+    const prompt = body.first
+      ? `${systemPrompt(plan, 'stitch')}\n\n---\n\n${screenPrompt(plan, page, 'stitch')}`
+      : screenPrompt(plan, page, 'stitch');
 
-        const title = plan.brief?.title?.trim() || '무제 플랜';
-        const projectId = await createProject(title, cred, request.signal);
-        send({ type: 'project', projectId, url: projectUrl(projectId) });
+    const screen = await generateScreen(projectId, prompt, deviceOf(plan, page), cred, request.signal);
 
-        /*
-         * 톤을 먼저 잡는 문장을 첫 화면 요청 앞에 붙인다. 화면마다 따로 만들면
-         * 색·글꼴이 제각각이 되는데, 스티치에는 "이전 대화" 개념이 없어서
-         * 첫 요청에 함께 넣어 두는 것이 가장 확실하다.
-         */
-        const tone = systemPrompt(plan, 'stitch');
-
-        let made = 0;
-        for (const [index, page] of pages.entries()) {
-          if (request.signal.aborted) break;
-          send({ type: 'screen-start', pageId: page.id, name: page.name, index });
-
-          const prompt =
-            index === 0 ? `${tone}\n\n---\n\n${screenPrompt(plan, page, 'stitch')}` : screenPrompt(plan, page, 'stitch');
-
-          try {
-            const screen = await generateScreen(projectId, prompt, deviceOf(plan, page), cred, request.signal);
-            made += 1;
-            send({ type: 'screen-done', pageId: page.id, name: page.name, ...screen });
-          } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') break;
-            const message =
-              error instanceof StitchError ? error.message : '이 화면을 만들지 못했습니다.';
-            send({ type: 'screen-failed', pageId: page.id, name: page.name, message });
-            // 자격증명 문제라면 남은 화면도 전부 같은 이유로 실패한다. 여기서 멈춘다.
-            if (error instanceof StitchError && error.kind === 'auth') {
-              send({ type: 'error', message });
-              break;
-            }
-          }
-        }
-
-        send({ type: 'done', made, total: pages.length, projectId, url: projectUrl(projectId) });
-      } catch (error) {
-        if (!request.signal.aborted) {
-          const message =
-            error instanceof StitchError
-              ? error.message
-              : '스티치에 화면을 만들지 못했습니다.';
-          send({ type: 'error', message });
-        }
-      } finally {
-        try {
-          controller.close();
-        } catch {
-          /* 이미 닫힌 스트림 */
-        }
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      'content-type': 'application/x-ndjson; charset=utf-8',
-      'cache-control': 'no-store, no-transform',
-      'x-accel-buffering': 'no',
-    },
-  });
+    return NextResponse.json({
+      projectId,
+      url: projectUrl(projectId),
+      screenId: screen.screenId,
+      imageUrl: screen.imageUrl,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return NextResponse.json({ error: '멈췄습니다.' }, { status: 499 });
+    }
+    const message =
+      error instanceof StitchError ? error.message : '스티치에 화면을 만들지 못했습니다.';
+    // 자격증명 문제면 남은 화면도 같은 이유로 실패한다. 브라우저가 알아볼 수 있게 갈라 준다.
+    const status = error instanceof StitchError && error.kind === 'auth' ? 409 : 502;
+    return NextResponse.json({ error: message }, { status });
+  }
 }
