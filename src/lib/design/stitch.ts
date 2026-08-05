@@ -109,6 +109,20 @@ function jsonOf(result: unknown): Record<string, unknown> | null {
 
 let nextId = 1;
 
+/**
+ * 한 번 부를 때 기다려 줄 시간.
+ *
+ * 화면 하나에 수십 초가 걸리므로 넉넉해야 한다. 그렇다고 없으면 저쪽이 응답을
+ * 안 줄 때 **영원히 매달린다** — 사용자 화면에는 `만드는 중` 이 끝없이 돈다.
+ */
+const CALL_TIMEOUT_MS = Number(process.env.STITCH_CALL_TIMEOUT_MS) || 150_000;
+
+/** 사용자가 멈춘 것과 시간이 다 된 것을 하나로 묶는다. */
+function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timer = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([signal, timer]) : timer;
+}
+
 /** 도구 하나를 부른다. */
 export async function callTool(
   name: string,
@@ -120,7 +134,7 @@ export async function callTool(
   try {
     response = await fetch(ENDPOINT, {
       method: 'POST',
-      signal,
+      signal: withTimeout(signal, CALL_TIMEOUT_MS),
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
@@ -134,7 +148,14 @@ export async function callTool(
       }),
     });
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    // 사용자가 멈춘 것은 그대로 올려 보낸다. 시간 초과는 실패로 알린다.
+    if (error instanceof DOMException && error.name === 'AbortError' && signal?.aborted) throw error;
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new StitchError(
+        'server',
+        '스티치가 제때 답하지 않았습니다. 화면이 만들어졌을 수도 있으니 스티치에서 확인해 주세요.',
+      );
+    }
     throw new StitchError('server', '스티치에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
   }
 
@@ -246,15 +267,22 @@ export async function generateScreen(
   cred: StitchCredential,
   signal?: AbortSignal,
 ): Promise<GeneratedScreen> {
-  const { json, text } = await callTool(
+  const { json } = await callTool(
     'generate_screen_from_text',
     { projectId, prompt, deviceType: device },
     cred,
     signal,
   );
-  const screenId = digId(json, ['screenId', 'screen_id', 'id', 'name']);
-  if (!screenId) throw new StitchError('server', `스티치가 화면 번호를 주지 않았습니다. ${text.slice(0, 120)}`);
 
+  /*
+   * 번호를 못 찾았다고 실패로 보지 않는다.
+   *
+   * 예전에는 여기서 던졌다. 그런데 **스티치에는 화면이 멀쩡히 만들어져 있는데**
+   * 우리만 "실패" 라고 표시하는 일이 생겼다. 호출이 성공했다는 것은 화면이
+   * 만들어졌다는 뜻이고, 번호는 응답 모양이 바뀌면 못 찾을 수 있을 뿐이다.
+   * 사용자에게 중요한 것은 화면이 생겼는가지 우리가 번호를 읽었는가가 아니다.
+   */
+  const screenId = digId(json, ['screenId', 'screen_id', 'id', 'name']) ?? '';
   const image = digId(json, ['imageUrl', 'image_url', 'screenshotUrl', 'thumbnailUrl']);
   return {
     screenId,
