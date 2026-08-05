@@ -118,7 +118,63 @@ function get(planId: string): RunSession {
 /** 항상 새 객체로 갈아 끼운다 — `useSyncExternalStore` 가 참조로 비교한다. */
 function patch(planId: string, next: Partial<RunSession>): void {
   sessions.set(planId, { ...get(planId), ...next });
+  recount();
   listeners.get(planId)?.forEach((fn) => fn());
+  everyone.forEach((fn) => fn());
+}
+
+/* ------------------------------------------------------------------ */
+/* 어디서든 "지금 만드는 중" 을 알 수 있게                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 어느 플랜을 만들고 있는지 밖에서도 본다.
+ *
+ * 이제 화면을 떠나도 계속 만들어진다. 그러면 **떠난 사람이 그 사실을 알 길이
+ * 있어야 한다.** 홈에 있든 다른 플랜에 있든 "○○ 만드는 중" 이 보이게, 여기서
+ * 돌고 있는 것들을 내준다.
+ */
+export interface StitchJob {
+  planId: string;
+  /** 끝난 화면 수 */
+  done: number;
+  /** 이번에 걸린 화면 수 */
+  total: number;
+}
+
+const everyone = new Set<() => void>();
+/** `useSyncExternalStore` 는 같은 참조를 돌려주어야 한다. patch 때만 새로 만든다. */
+let runningCache: StitchJob[] = [];
+
+function recount(): void {
+  const next: StitchJob[] = [];
+  for (const [planId, s] of sessions) {
+    if (!s.running) continue;
+    const states = Object.values(s.progress);
+    next.push({
+      planId,
+      done: states.filter((v) => v.state === 'done' || v.state === 'failed').length,
+      total: states.length,
+    });
+  }
+  runningCache = next;
+}
+
+export function subscribeAll(fn: () => void): () => void {
+  everyone.add(fn);
+  return () => {
+    everyone.delete(fn);
+  };
+}
+
+export function runningJobs(): StitchJob[] {
+  return runningCache;
+}
+
+/** 서버에서 그릴 때는 아무것도 돌고 있지 않다. 매번 같은 빈 배열이어야 한다. */
+const NONE: StitchJob[] = [];
+export function noJobs(): StitchJob[] {
+  return NONE;
 }
 
 export function subscribe(planId: string, fn: () => void): () => void {
@@ -165,7 +221,9 @@ export function reset(planId: string): void {
   controllers.delete(planId);
   saveProject(planId, null);
   sessions.set(planId, EMPTY_SESSION);
+  recount();
   listeners.get(planId)?.forEach((fn) => fn());
+  everyone.forEach((fn) => fn());
 }
 
 export function stop(planId: string): void {
