@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 
 import { Spinner, useToast } from './ui';
+import { DESIGN_SKILLS, findSkill, skillSummary } from '@/lib/design/skills';
 import type { Plan } from '@/lib/types';
 
 /**
@@ -84,6 +85,9 @@ export function StitchRun({ plan }: { plan: Plan }) {
   const [modelId, setModelId] = useState('');
   /** 와이어프레임을 얼마나 그대로 지킬지. */
   const [emphasis, setEmphasis] = useState<Emphasis>('strict');
+  /** 고른 디자인 스킬 — 서비스 전체의 결을 정한다. */
+  const [skill, setSkill] = useState('clean');
+  const [skillOpen, setSkillOpen] = useState(false);
   const [progress, setProgress] = useState<Record<string, ScreenState>>({});
   const [projectUrl, setProjectUrl] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -204,6 +208,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
     setProgress(Object.fromEntries(pageIds.map((id) => [id, { state: 'waiting' } as ScreenState])));
 
     let projectId = '';
+    let designSystemId = '';
     let made = 0;
     let stopped = false;
 
@@ -227,6 +232,8 @@ export function StitchRun({ plan }: { plan: Plan }) {
               first: index === 0,
               modelId,
               emphasis,
+              skill,
+              designSystemId,
             }),
             signal: controller.signal,
           });
@@ -246,6 +253,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
 
         const data = (await res.json().catch(() => ({}))) as {
           projectId?: string;
+          designSystemId?: string | null;
           url?: string;
           imageUrl?: string | null;
           error?: string;
@@ -270,6 +278,8 @@ export function StitchRun({ plan }: { plan: Plan }) {
           projectId = data.projectId;
           setProjectUrl(data.url ?? '');
         }
+        // 한 번 만든 디자인 시스템을 다음 화면들이 그대로 쓴다.
+        if (data.designSystemId && !designSystemId) designSystemId = data.designSystemId;
         made += 1;
         setProgress((p) => ({
           ...p,
@@ -294,7 +304,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
       setRunning(false);
       abort.current = null;
     }
-  }, [emphasis, modelId, pages, picked, plan, toast]);
+  }, [emphasis, modelId, pages, picked, plan, skill, toast]);
 
   const stop = useCallback(() => {
     abort.current?.abort();
@@ -371,6 +381,8 @@ export function StitchRun({ plan }: { plan: Plan }) {
 
   const pickAll = () => setPicked(new Set(pages.map((p) => p.id)));
 
+  const picked_skill = findSkill(skill);
+
   return (
     <div className="rounded-lg border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3.5 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -402,6 +414,64 @@ export function StitchRun({ plan }: { plan: Plan }) {
         <button className="btn btn-sm" disabled={running} onClick={() => setPicked(new Set())}>
           선택 해제
         </button>
+      </div>
+
+      {/*
+        디자인 스킬 — 서비스 전체의 결.
+
+        결을 안 정하면 화면마다 색·글꼴·모서리가 제각각으로 나온다. 그렇다고
+        매번 글로 쓰라고 하면 기획자는 무엇을 써야 할지 모른다 — 그건 디자이너의
+        언어다. 그래서 자주 쓰는 결을 미리 만들어 두고 고르기만 하게 한다.
+      */}
+      <div className="mt-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11.5px] font-semibold text-[var(--fg-muted)]">디자인</span>
+          {DESIGN_SKILLS.map((s) => (
+            <button
+              key={s.key}
+              className={skill === s.key ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+              disabled={running}
+              onClick={() => setSkill(s.key)}
+              title={s.what}
+            >
+              <span
+                className="size-2.5 shrink-0 rounded-full border border-black/10"
+                style={{ background: s.color }}
+              />
+              {s.name}
+            </button>
+          ))}
+          <button
+            className={skill === 'none' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+            disabled={running}
+            onClick={() => setSkill('none')}
+            title="결을 정하지 않고 스티치에 맡깁니다."
+          >
+            안 고름
+          </button>
+        </div>
+
+        {picked_skill && (
+          <div className="mt-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
+                {picked_skill.what}
+              </p>
+              <button className="btn btn-sm shrink-0" onClick={() => setSkillOpen((v) => !v)}>
+                {skillOpen ? '접기' : '무엇이 정해지나'}
+              </button>
+            </div>
+            {skillOpen && (
+              <ul className="mt-1.5 flex flex-col gap-0.5">
+                {skillSummary(picked_skill).map((line) => (
+                  <li key={line} className="text-[11px] leading-relaxed text-[var(--fg-subtle)]">
+                    · {line}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       {/*

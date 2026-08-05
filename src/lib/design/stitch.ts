@@ -253,6 +253,57 @@ export async function createProject(
 
 export type StitchDevice = 'MOBILE' | 'DESKTOP' | 'TABLET' | 'AGNOSTIC';
 
+/**
+ * 디자인 시스템을 만들어 두고 화면마다 물린다.
+ *
+ * 화면마다 요청문에 "파란색 쓰세요" 를 반복하는 것과 다르다. 스티치가 이걸
+ * 하나의 체계로 잡아 두고 이후 화면들이 전부 따르게 한다. 지침 문서(`designMd`)는
+ * 통째로 들어간다.
+ *
+ * **실패해도 화면 만들기는 계속돼야 한다.** 색·글꼴이 조금 제각각인 것과 화면이
+ * 아예 안 만들어지는 것 중에는 앞이 낫다. 그래서 여기서는 던지지 않고 null 을 준다.
+ */
+export async function createDesignSystem(
+  projectId: string,
+  spec: {
+    displayName: string;
+    colorMode: string;
+    headlineFont: string;
+    bodyFont: string;
+    roundness: string;
+    customColor: string;
+    designMd: string;
+  },
+  cred: StitchCredential,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  try {
+    const { json } = await callTool(
+      'create_design_system',
+      {
+        projectId,
+        designSystem: {
+          displayName: spec.displayName,
+          theme: {
+            colorMode: spec.colorMode,
+            headlineFont: spec.headlineFont,
+            bodyFont: spec.bodyFont,
+            roundness: spec.roundness,
+            customColor: spec.customColor,
+            designMd: spec.designMd,
+          },
+        },
+      },
+      cred,
+      signal,
+    );
+    return digId(json, ['assetId', 'asset_id', 'designSystemId', 'id', 'name']);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* 고를 수 있는 모델                                                     */
 /* ------------------------------------------------------------------ */
@@ -348,12 +399,20 @@ export async function generateScreen(
   prompt: string,
   device: StitchDevice,
   modelId: string,
+  designSystem: string | null,
   cred: StitchCredential,
   signal?: AbortSignal,
 ): Promise<GeneratedScreen> {
   const { json } = await callTool(
     'generate_screen_from_text',
-    { projectId, prompt, deviceType: device, modelId },
+    {
+      projectId,
+      prompt,
+      deviceType: device,
+      modelId,
+      // 스티치 설명: 화면끼리 결을 맞추려면 늘 지정하는 편이 낫다.
+      ...(designSystem ? { designSystem } : {}),
+    },
     cred,
     signal,
   );

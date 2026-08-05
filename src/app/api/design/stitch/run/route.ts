@@ -20,6 +20,7 @@ import { requireUser } from '@/lib/auth/server';
 import { readIntegrationSecret } from '@/lib/db/integrations';
 import { screenPrompt, systemPrompt, type PromptEmphasis } from '@/lib/design-handoff';
 import {
+  createDesignSystem,
   createProject,
   detectCredential,
   generateScreen,
@@ -30,6 +31,7 @@ import {
   type StitchCredentialKind,
   type StitchDevice,
 } from '@/lib/design/stitch';
+import { findSkill } from '@/lib/design/skills';
 import type { IaPage, Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -47,6 +49,10 @@ interface RunBody {
   modelId?: string;
   /** 와이어프레임을 얼마나 그대로 지킬지. */
   emphasis?: string;
+  /** 고른 디자인 스킬. 첫 요청에서 스티치 디자인 시스템으로 만든다. */
+  skill?: string;
+  /** 이미 만들어 둔 디자인 시스템. 없으면 첫 요청에서 만든다. */
+  designSystemId?: string;
 }
 
 function deviceOf(plan: Plan, page: IaPage): StitchDevice {
@@ -118,24 +124,65 @@ export async function POST(request: Request) {
     }
 
     /*
+     * 고른 스킬을 스티치 디자인 시스템으로 만들어 둔다. 한 번만 만들고 이후
+     * 화면들은 브라우저가 돌려준 id 를 그대로 쓴다.
+     *
+     * 실패해도 멈추지 않는다 — 색·글꼴이 조금 제각각인 것과 화면이 아예 안
+     * 만들어지는 것 중에는 앞이 낫다. 대신 지침을 요청문에 실어 보낸다.
+     */
+    const skill = findSkill(body.skill);
+    let designSystemId = body.designSystemId?.trim() || null;
+    /*
+     * **첫 화면에서만 만든다.**
+     *
+     * 실패했을 때 화면마다 다시 시도하면, 안 될 일을 스무 번 되풀이하며 그만큼
+     * 느려진다. 디자인 시스템은 한 번 하는 준비 작업이지 화면마다 할 일이 아니다.
+     */
+    if (skill && !designSystemId && body.first) {
+      designSystemId = await createDesignSystem(
+        projectId,
+        {
+          displayName: skill.name,
+          colorMode: skill.colorMode,
+          headlineFont: skill.headlineFont,
+          bodyFont: skill.bodyFont,
+          roundness: skill.roundness,
+          customColor: skill.color,
+          designMd: skill.designMd,
+        },
+        cred,
+        request.signal,
+      );
+    }
+
+    /*
      * 톤 잡는 문장은 첫 화면 요청 앞에만 붙인다. 스티치에는 "이전 대화" 개념이
      * 없어서 따로 부르면 다음 화면이 그걸 모르는데, 매번 붙이면 요청문이 길어져
      * 정작 이 화면 이야기가 묻힌다.
      */
     const one = screenPrompt(plan, page, 'stitch', emphasis);
-    const prompt = body.first ? `${systemPrompt(plan, 'stitch')}\n\n---\n\n${one}` : one;
+    /*
+     * 디자인 시스템을 못 만들었으면 지침을 글로라도 실어 보낸다. 첫 화면에만
+     * 붙이는 톤 문장 자리가 그 자리다.
+     */
+    const guide = skill && !designSystemId ? `\n\n${skill.designMd}` : '';
+    const prompt = body.first
+      ? `${systemPrompt(plan, 'stitch')}${guide}\n\n---\n\n${one}`
+      : one;
 
     const screen = await generateScreen(
       projectId,
       prompt,
       deviceOf(plan, page),
       modelId,
+      designSystemId,
       cred,
       request.signal,
     );
 
     return NextResponse.json({
       projectId,
+      designSystemId,
       url: projectUrl(projectId),
       screenId: screen.screenId,
       imageUrl: screen.imageUrl,
