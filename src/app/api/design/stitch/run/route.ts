@@ -37,6 +37,19 @@ import type { IaPage, Plan } from '@/lib/types';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+/**
+ * 거절당한 뒤 다시 걸기까지 — **점점 길게 기다린다.**
+ *
+ * 스무 개를 연달아 만들면 두어 개가 `invalid argument` 로 떨어졌다. 처음에는
+ * 요청문이 길어서라고 봤는데, **같은 화면을 따로 하나만 만들면 잘 된다.**
+ * 그러니 내용 문제가 아니라 연달아 몰아칠 때 생기는 일시적인 거절이다.
+ * 잠깐 쉬었다 다시 걸면 풀린다.
+ */
+const RETRY_WAITS_MS = (process.env.STITCH_RETRY_WAITS_MS ?? '3000,8000')
+  .split(',')
+  .map((v) => Number(v.trim()))
+  .filter((v) => Number.isFinite(v) && v >= 0);
+
 interface RunBody {
   plan?: Plan;
   /** 만들 화면 하나. */
@@ -160,25 +173,45 @@ export async function POST(request: Request) {
      * 없어서 따로 부르면 다음 화면이 그걸 모르는데, 매번 붙이면 요청문이 길어져
      * 정작 이 화면 이야기가 묻힌다.
      */
-    const one = screenPrompt(plan, page, 'stitch', emphasis);
     /*
      * 디자인 시스템을 못 만들었으면 지침을 글로라도 실어 보낸다. 첫 화면에만
      * 붙이는 톤 문장 자리가 그 자리다.
      */
     const guide = skill && !designSystemId ? `\n\n${skill.designMd}` : '';
-    const prompt = body.first
-      ? `${systemPrompt(plan, 'stitch')}${guide}\n\n---\n\n${one}`
-      : one;
+    const build = (compact: boolean) => {
+      const one = screenPrompt(plan, page, 'stitch', emphasis, compact);
+      // 짧게 다시 만들 때는 톤 문장도 뺀다 — 이 화면 이야기를 남기는 것이 먼저다.
+      return body.first && !compact
+        ? `${systemPrompt(plan, 'stitch')}${guide}\n\n---\n\n${one}`
+        : one;
+    };
 
-    const screen = await generateScreen(
-      projectId,
-      prompt,
-      deviceOf(plan, page),
-      modelId,
-      designSystemId,
-      cred,
-      request.signal,
-    );
+    const device = deviceOf(plan, page);
+    const make = (compact: boolean) =>
+      generateScreen(projectId, build(compact), device, modelId, designSystemId, cred, request.signal);
+
+    /*
+     * 거절당하면 쉬었다 다시 건다. 사용자가 따로 하나씩 만들면 잘 되는 것을
+     * 확인했으므로, 실패는 이 화면의 문제가 아니라 몰아친 탓이다.
+     *
+     * 마지막 시도는 요청문을 짧게 줄여 본다 — 길이가 원인인 경우까지 덮는다.
+     * 공짜로 얻는 보험이고, 짧아도 블록의 구성 항목은 그대로 간다.
+     */
+    let screen;
+    let attempt = 0;
+    for (;;) {
+      const last = attempt >= RETRY_WAITS_MS.length;
+      try {
+        screen = await make(last && attempt > 0);
+        break;
+      } catch (error) {
+        const worthRetry =
+          error instanceof StitchError && (error.kind === 'input' || error.kind === 'server');
+        if (!worthRetry || last || request.signal.aborted) throw error;
+        await new Promise((r) => setTimeout(r, RETRY_WAITS_MS[attempt]));
+        attempt += 1;
+      }
+    }
 
     return NextResponse.json({
       projectId,
