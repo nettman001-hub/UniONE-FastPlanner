@@ -323,6 +323,8 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   /** AI 가 되물은 질문. 3단계를 지날 때 만들어 둔다. */
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [asking, setAsking] = useState(false);
+  /** 질문이 없을 때 왜 없는지. 빈 화면만 보여 주면 고장인지 아닌지 알 수 없다. */
+  const [askReason, setAskReason] = useState('');
   const askedFor = useRef('');
 
   const patch = (next: Partial<PlanBrief>) => setBrief((prev) => ({ ...prev, ...next }));
@@ -347,24 +349,25 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
    * 4단계로 넘어갈 때 **미리** 부른다. 5단계에 도착해서 부르면 사용자가 빈 화면을
    * 보며 기다리게 된다. 아이디어가 그대로면 다시 부르지 않는다.
    */
-  const askFollowups = async () => {
+  const askFollowups = async (force = false) => {
     const seed = `${brief.idea}|${JSON.stringify(brief.answers ?? {})}`;
-    if (askedFor.current === seed) return;
+    if (!force && askedFor.current === seed) return;
     askedFor.current = seed;
     setAsking(true);
+    setAskReason('');
     try {
       const res = await fetch('/api/brief/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brief }),
       });
-      const data = (await res.json()) as { questions?: Followup[] };
-      setFollowups(
-        (data.questions ?? []).map((q) => ({ ...q, answer: '' })),
-      );
+      const data = (await res.json()) as { questions?: Followup[]; reason?: string };
+      const next = (data.questions ?? []).map((q) => ({ ...q, answer: '' }));
+      setFollowups(next);
+      if (next.length === 0) setAskReason(data.reason ?? '여쭤볼 것을 찾지 못했습니다.');
     } catch {
-      // 되묻기를 못 만든 것이 플랜 생성을 막을 이유는 없다.
       setFollowups([]);
+      setAskReason('여쭤볼 것을 만들지 못했습니다. 그냥 진행하셔도 됩니다.');
     } finally {
       setAsking(false);
     }
@@ -382,6 +385,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       setStep(1);
       setBrief(EMPTY_BRIEF);
       setFollowups([]);
+      setAskReason('');
       askedFor.current = '';
     }, 200);
   };
@@ -414,7 +418,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       onClose={close}
       width={620}
       title="기획하기"
-      description="세 단계만 채우면 AI가 나머지 문서를 이어서 만듭니다."
+      description="처음 두 칸만 채우면 시작할 수 있습니다. 뒤 단계는 답하실수록 문서가 정확해집니다."
       footer={
         <>
           {step > 1 && (
@@ -438,8 +442,13 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               className="btn btn-primary"
               disabled={step1Blocked}
               onClick={() => {
-                // 4단계로 갈 때 미리 물어 둔다. 5단계에서 기다리지 않도록.
-                if (step === 3) void askFollowups();
+                /*
+                 * 4단계로 갈 때 미리 물어 두고, 4단계를 떠날 때 한 번 더 본다.
+                 * 미리 부르는 것은 5단계에서 기다리지 않기 위해서고, 두 번째는
+                 * **4단계에서 고른 답을 반영**하기 위해서다. 답이 그대로면
+                 * 씨앗이 같아 다시 부르지 않는다.
+                 */
+                if (step === 3 || step === 4) void askFollowups();
                 setStep((s) => s + 1);
               }}
             >
@@ -657,9 +666,16 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
           )}
 
           {!asking && followups.length === 0 && (
-            <p className="text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
-              더 여쭤볼 것이 없습니다. <b>플랜 만들기</b>를 눌러 주세요.
-            </p>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
+              <p className="text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
+                {askReason || '더 여쭤볼 것이 없습니다.'} <b>플랜 만들기</b>를 눌러 주세요.
+              </p>
+              {/* 한 번 실패했다고 포기시키지 않는다. */}
+              <button type="button" className="btn btn-sm mt-2" onClick={() => void askFollowups(true)}>
+                <Sparkles size={12} />
+                다시 여쭤보기
+              </button>
+            </div>
           )}
 
           {!asking && followups.length > 0 && (

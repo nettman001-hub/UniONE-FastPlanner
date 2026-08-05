@@ -343,9 +343,17 @@ function PlanOverview() {
                 {/*
                   기획할 때 고른 답을 여기서 볼 수 있어야 한다. 안 보이면 문서가
                   왜 이렇게 나왔는지 알 수 없고, 잘못 고른 것도 못 찾는다.
+
+                  다만 **답한 게 없으면 칸 자체를 안 보인다.** 빈 칸에
+                  "입력하지 않았습니다" 만 떠 있으면 뭔가 빠뜨린 것처럼 보이는데,
+                  이 둘은 건너뛰어도 되는 것들이다.
                 */}
-                <BriefCard title="요구분석" body={answersText(plan.brief)} full />
-                <BriefCard title="추가 문답" body={followupsText(plan.brief)} full />
+                {answersText(plan.brief) && (
+                  <BriefCard title="요구분석" body={answersText(plan.brief)} full />
+                )}
+                {followupsText(plan.brief) && (
+                  <BriefCard title="추가 문답" body={followupsText(plan.brief)} full />
+                )}
               </div>
             )}
           </div>

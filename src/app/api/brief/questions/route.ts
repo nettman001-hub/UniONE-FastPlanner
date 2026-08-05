@@ -65,8 +65,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ questions: [] });
   }
 
-  if (!brief?.idea?.trim() || !isAiEnabled()) {
-    return NextResponse.json({ questions: [] });
+  if (!brief?.idea?.trim()) {
+    return NextResponse.json({ questions: [], reason: '아이디어를 먼저 적어 주세요.' });
+  }
+  if (!isAiEnabled()) {
+    return NextResponse.json({ questions: [], reason: '지금은 되묻기를 쓸 수 없습니다.' });
   }
 
   const prompt = [
@@ -96,7 +99,15 @@ export async function POST(request: Request) {
     .join('\n');
 
   try {
-    const result = await generateJson<Generated>({ prompt, schema: SCHEMA, maxTokens: 2000 });
+    /*
+     * 넉넉히 준다.
+     *
+     * 처음에는 2000 이었다. 질문 몇 줄이면 충분하다고 봤는데, 생각을 길게 하는
+     * 모델은 그 길이를 답이 아니라 **생각하는 데** 다 쓰고 잘린다. 잘리면
+     * `too-long` 으로 던져지고, 아래 catch 가 삼켜서 "질문 없음" 으로 보였다.
+     * 다른 산출물 생성이 16000~32000 을 쓰는 것에 비하면 2000 은 유별나게 작았다.
+     */
+    const result = await generateJson<Generated>({ prompt, schema: SCHEMA, maxTokens: 8000 });
     const questions = (result.questions ?? [])
       .filter((q) => q.question?.trim())
       .slice(0, 5)
@@ -106,9 +117,20 @@ export async function POST(request: Request) {
         // 보기가 없어도 자유 입력으로 받으면 되므로 막지 않는다.
         choices: (q.choices ?? []).filter((c) => c?.trim()).slice(0, 5),
       }));
-    return NextResponse.json({ questions });
-  } catch {
-    // 되묻기를 못 만든 것이 플랜 생성을 막을 이유는 없다.
-    return NextResponse.json({ questions: [] });
+    return NextResponse.json({
+      questions,
+      ...(questions.length === 0 ? { reason: '여쭤볼 것을 찾지 못했습니다.' } : {}),
+    });
+  } catch (error) {
+    /*
+     * 되묻기를 못 만든 것이 플랜 생성을 막을 이유는 없다. 다만 **아무 말 없이**
+     * 넘어가면 안 된다 — 그러면 "AI 가 아무것도 안 물어봤다" 는 상태와
+     * "물어볼 게 없다" 는 상태가 화면에서 똑같아 보인다. 실제로 그렇게 묻혔다.
+     */
+    console.error('[brief/questions] 되묻기 생성 실패:', error);
+    return NextResponse.json({
+      questions: [],
+      reason: '여쭤볼 것을 만들지 못했습니다. 그냥 진행하셔도 됩니다.',
+    });
   }
 }
