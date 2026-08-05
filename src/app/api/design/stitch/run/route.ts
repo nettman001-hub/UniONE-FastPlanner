@@ -15,10 +15,12 @@ import { readIntegrationSecret } from '@/lib/db/integrations';
 import { screenPrompt, systemPrompt } from '@/lib/design-handoff';
 import {
   createProject,
+  detectCredential,
   generateScreen,
   projectUrl,
   StitchError,
   type StitchCredential,
+  type StitchCredentialKind,
   type StitchDevice,
 } from '@/lib/design/stitch';
 import type { IaPage, Plan } from '@/lib/types';
@@ -67,29 +69,38 @@ export async function POST(request: Request) {
     );
   }
 
-  let secret: string | null = null;
+  let stored: { secret: string; kind: string } | null = null;
   try {
-    secret = await readIntegrationSecret(user.id, 'stitch');
+    stored = await readIntegrationSecret(user.id, 'stitch');
   } catch {
-    secret = null;
+    stored = null;
   }
-  if (!secret) {
+  if (!stored) {
     return NextResponse.json(
       { error: '스티치가 연결돼 있지 않습니다. 먼저 연결해 주세요.' },
       { status: 409 },
     );
   }
 
+  const quotaProject = process.env.STITCH_QUOTA_PROJECT || undefined;
+
   /*
-   * 값만 보고 어느 방식인지 가른다. 구글 액세스 토큰은 `ya29.` 로 시작하고,
-   * 클라우드 API 키는 `AIza` 로 시작한다. 애매하면 토큰으로 본다 — 스티치가
-   * 키를 안 받는 경우가 있어 그쪽이 실패 문구가 더 친절하다.
+   * 어느 헤더로 보낼지는 연결할 때 실제로 찔러 보고 정해 둔 값을 쓴다.
+   * 비어 있으면 그 확인이 생기기 전에 저장된 것이므로 지금 알아낸다.
    */
-  const cred: StitchCredential = {
-    kind: /^AIza[0-9A-Za-z_-]{10,}$/.test(secret) ? 'apikey' : 'oauth',
-    secret,
-    quotaProject: process.env.STITCH_QUOTA_PROJECT || undefined,
-  };
+  let kind: StitchCredentialKind | null =
+    stored.kind === 'apikey' || stored.kind === 'oauth' ? stored.kind : null;
+  if (!kind) {
+    try {
+      kind = await detectCredential(stored.secret, quotaProject, request.signal);
+    } catch (error) {
+      const message =
+        error instanceof StitchError ? error.message : '스티치에 연결하지 못했습니다.';
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+  }
+
+  const cred: StitchCredential = { kind, secret: stored.secret, quotaProject };
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

@@ -86,31 +86,40 @@ export async function saveIntegration(
   userId: string,
   provider: IntegrationProvider,
   secret: string,
+  kind = '',
 ): Promise<IntegrationStatus> {
   const db = await getDb();
   const label = labelFor(secret);
   await db.query(
-    `insert into integrations (user_id, provider, secret, label, updated_at)
-     values ($1, $2, $3, $4, now())
+    `insert into integrations (user_id, provider, secret, label, kind, updated_at)
+     values ($1, $2, $3, $4, $5, now())
      on conflict (user_id, provider)
-     do update set secret = excluded.secret, label = excluded.label, updated_at = now()`,
-    [userId, provider, encrypt(secret), label],
+     do update set secret = excluded.secret, label = excluded.label,
+                   kind = excluded.kind, updated_at = now()`,
+    [userId, provider, encrypt(secret), label, kind],
   );
   return { connected: true, label, updatedAt: new Date().toISOString() };
 }
 
-/** 서버 안에서 실제로 부를 때만 쓴다. 절대 응답에 담지 않는다. */
+/**
+ * 서버 안에서 실제로 부를 때만 쓴다. 절대 응답에 담지 않는다.
+ *
+ * `kind` 는 연결할 때 실제로 찔러 보고 알아낸 값이다 — 비어 있으면 그 확인을
+ * 거치기 전에 저장된 것이므로, 부르는 쪽이 다시 알아내야 한다.
+ */
 export async function readIntegrationSecret(
   userId: string,
   provider: IntegrationProvider,
-): Promise<string | null> {
+): Promise<{ secret: string; kind: string } | null> {
   const db = await getDb();
-  const { rows } = await db.query<{ secret: string }>(
-    'select secret from integrations where user_id = $1 and provider = $2',
+  const { rows } = await db.query<{ secret: string; kind: string | null }>(
+    'select secret, kind from integrations where user_id = $1 and provider = $2',
     [userId, provider],
   );
   if (rows.length === 0) return null;
-  return decrypt(rows[0].secret);
+  const secret = decrypt(rows[0].secret);
+  if (!secret) return null;
+  return { secret, kind: rows[0].kind ?? '' };
 }
 
 export async function integrationStatus(
