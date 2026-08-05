@@ -23,7 +23,7 @@ import { WIREFRAME_BLOCK_LABEL } from './types';
 /* 도구                                                                 */
 /* ------------------------------------------------------------------ */
 
-export type DesignToolKey = 'stitch' | 'figma' | 'v0' | 'generic';
+export type DesignToolKey = 'stitch' | 'claude' | 'figma' | 'v0' | 'generic';
 
 export interface DesignTool {
   key: DesignToolKey;
@@ -35,6 +35,12 @@ export interface DesignTool {
   url: string;
   /** 프롬프트 대신 파일을 주는 도구인가. */
   fileBased?: boolean;
+  /**
+   * 미리 알아야 쓸 수 있는 것 — 계정·요금제 같은 것.
+   *
+   * 눌러 본 뒤에야 "쓸 수 없다"를 알게 되면 헛걸음이다. 고르는 자리에서 밝힌다.
+   */
+  note?: string;
 }
 
 export const DESIGN_TOOLS: DesignTool[] = [
@@ -44,6 +50,22 @@ export const DESIGN_TOOLS: DesignTool[] = [
     what: '설명을 주면 UI 화면을 만들어 줍니다.',
     how: '연결하면 고른 화면을 여기서 바로 만듭니다. 연결하지 않으셨다면 아래 문장을 복사해 붙여 넣으셔도 됩니다.',
     url: 'https://stitch.withgoogle.com',
+  },
+  {
+    /*
+     * 스티치처럼 **여기서 바로 만들지는 못한다.**
+     *
+     * 공개된 창구(`api.anthropic.com/v1/design/mcp`)는 열려 있지만 두 가지가 막는다.
+     *   - 개발자 키를 받지 않는다. 토큰이 **사용자 구독 계정**에서만 나온다.
+     *   - 그 창구로 오가는 것은 **디자인 시스템 파일**이지 "화면 하나 만들어 줘" 가 아니다.
+     * 화면을 만드는 일은 저쪽 웹 화면 안에서만 된다. 그래서 문장을 넘기는 길로 붙인다.
+     */
+    key: 'claude',
+    name: 'Claude Design',
+    what: '설명을 주면 화면 시안을 만들어 줍니다. 우리 디자인을 먼저 읽혀 두면 그 결을 따릅니다.',
+    how: '아래 문장을 복사해 붙여 넣으세요. 만든 뒤 내보내기로 코드까지 받으실 수 있습니다.',
+    url: 'https://claude.ai/design',
+    note: 'Claude 유료 요금제가 있어야 열립니다.',
   },
   {
     key: 'figma',
@@ -200,6 +222,16 @@ export function screenPrompt(
   if (tool === 'figma') {
     lines.push('', '레이어 이름은 위 블록 이름을 그대로 써 주세요.');
   }
+  if (tool === 'claude') {
+    /*
+     * 저쪽은 만든 시안을 **코드로 넘길 수 있다.** 그때 이름이 제각각이면 받아서
+     * 붙일 수가 없다. 만들 때부터 우리 블록 이름을 쓰게 못 박아 둔다.
+     */
+    lines.push(
+      '',
+      '요소 이름은 위 블록 이름을 그대로 써 주세요. 나중에 코드로 넘길 때 그대로 씁니다.',
+    );
+  }
 
   return clamp(lines.join('\n'), compact ? MAX_PROMPT_CHARS / 2 : MAX_PROMPT_CHARS);
 }
@@ -256,6 +288,10 @@ export function systemPrompt(plan: Plan, tool: DesignToolKey): string {
     '색·글꼴·간격·버튼 모양을 정해 주세요. 이후 화면들은 여기서 정한 것을 그대로 씁니다.',
   );
   if (tool === 'figma') lines.push('컴포넌트로 만들어 재사용할 수 있게 해 주세요.');
+  if (tool === 'claude')
+    lines.push(
+      '여기서 정한 것을 디자인 시스템으로 저장해 두시면, 다음 화면들이 자동으로 같은 결을 따릅니다.',
+    );
 
   return lines.join('\n');
 }

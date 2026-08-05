@@ -112,6 +112,12 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
           <p className="text-[12.5px] font-semibold">{meta.name}</p>
           <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--fg-muted)]">{meta.what}</p>
           <p className="mt-1 text-[12px] leading-relaxed text-[var(--fg-muted)]">{meta.how}</p>
+          {/* 눌러 본 뒤에 "못 쓴다"를 알게 되면 헛걸음이다. 고르는 자리에서 밝힌다. */}
+          {meta.note && (
+            <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
+              {meta.note}
+            </p>
+          )}
           {meta.url && (
             <a
               className="btn btn-sm mt-2"
