@@ -40,6 +40,45 @@ const CONFIRM_OVER = 10;
 /** 화면 하나에 걸리는 대략 시간. 안내용 어림수다. */
 const SECONDS_EACH = 45;
 
+/**
+ * 플랜마다 어느 스티치 프로젝트에 만들고 있는지 기억한다.
+ *
+ * 이걸 안 하면 **다시 만들 때마다 새 프로젝트가 생긴다.** 실패한 화면 두어 개만
+ * 다시 걸었더니 `스티치에서 열기` 가 방금 만든 빈 프로젝트를 가리켜, 앞서 만든
+ * 것들이 사라진 것처럼 보였다. 실제로 지워진 것은 아니지만 사용자에게는 같은
+ * 일이다 — 찾을 수 없으면 없는 것이다.
+ *
+ * 플랜 데이터가 아니라 이 브라우저에만 둔다. 스티치 프로젝트는 연결한 계정에
+ * 딸린 것이라 플랜을 남에게 넘길 때 따라가면 안 된다.
+ */
+const PROJECT_KEY = 'unione-fastplaner:stitch-projects';
+
+interface Remembered {
+  projectId: string;
+  designSystemId?: string;
+}
+
+function loadProject(planId: string): Remembered | null {
+  try {
+    const all = JSON.parse(localStorage.getItem(PROJECT_KEY) ?? '{}') as Record<string, Remembered>;
+    const found = all[planId];
+    return found?.projectId ? found : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveProject(planId: string, value: Remembered | null): void {
+  try {
+    const all = JSON.parse(localStorage.getItem(PROJECT_KEY) ?? '{}') as Record<string, Remembered>;
+    if (value) all[planId] = value;
+    else delete all[planId];
+    localStorage.setItem(PROJECT_KEY, JSON.stringify(all));
+  } catch {
+    /* 저장 못 해도 이번 회차는 이어 만든다. */
+  }
+}
+
 interface Status {
   connected: boolean;
   label: string;
@@ -90,6 +129,8 @@ export function StitchRun({ plan }: { plan: Plan }) {
   const [skillOpen, setSkillOpen] = useState(false);
   const [progress, setProgress] = useState<Record<string, ScreenState>>({});
   const [projectUrl, setProjectUrl] = useState<string | null>(null);
+  /** 지금까지 이 플랜을 만들어 온 스티치 프로젝트. 다시 만들 때 이어 붙인다. */
+  const [project, setProject] = useState<Remembered | null>(null);
   const abort = useRef<AbortController | null>(null);
 
   const pages = useMemo(() => (plan.iaPages ?? []).filter((p) => p.type === 'page'), [plan.iaPages]);
@@ -136,6 +177,14 @@ export function StitchRun({ plan }: { plan: Plan }) {
     };
   }, []);
 
+  /* 이 플랜을 어느 프로젝트에 만들어 왔는지 되살린다. */
+  useEffect(() => {
+    const found = loadProject(plan.id);
+    if (!found) return;
+    setProject(found);
+    setProjectUrl(`https://stitch.withgoogle.com/projects/${encodeURIComponent(found.projectId)}`);
+  }, [plan.id]);
+
   /* 화면을 떠나면 돌던 요청을 정리한다. */
   useEffect(() => () => abort.current?.abort(), []);
 
@@ -173,7 +222,9 @@ export function StitchRun({ plan }: { plan: Plan }) {
     setStatus({ connected: false, label: '' });
     setProgress({});
     setProjectUrl(null);
-  }, []);
+    setProject(null);
+    saveProject(plan.id, null);
+  }, [plan.id]);
 
   /**
    * 화면을 하나씩 순서대로 만든다.
@@ -204,11 +255,11 @@ export function StitchRun({ plan }: { plan: Plan }) {
     const controller = new AbortController();
     abort.current = controller;
     setRunning(true);
-    setProjectUrl(null);
     setProgress(Object.fromEntries(pageIds.map((id) => [id, { state: 'waiting' } as ScreenState])));
 
-    let projectId = '';
-    let designSystemId = '';
+    // 이어 만든다. 비우면 새 프로젝트가 생겨 앞서 만든 것을 못 찾게 된다.
+    let projectId = project?.projectId ?? '';
+    let designSystemId = project?.designSystemId ?? '';
     let made = 0;
     let stopped = false;
 
@@ -288,6 +339,11 @@ export function StitchRun({ plan }: { plan: Plan }) {
         }
         // 한 번 만든 디자인 시스템을 다음 화면들이 그대로 쓴다.
         if (data.designSystemId && !designSystemId) designSystemId = data.designSystemId;
+        if (projectId) {
+          const next = { projectId, ...(designSystemId ? { designSystemId } : {}) };
+          setProject(next);
+          saveProject(plan.id, next);
+        }
         made += 1;
         setProgress((p) => ({
           ...p,
@@ -312,7 +368,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
       setRunning(false);
       abort.current = null;
     }
-  }, [emphasis, modelId, pages, picked, plan, skill, toast]);
+  }, [emphasis, modelId, pages, picked, plan, project, skill, toast]);
 
   const stop = useCallback(() => {
     abort.current?.abort();
@@ -406,6 +462,27 @@ export function StitchRun({ plan }: { plan: Plan }) {
             스티치에서 열기
           </a>
         )}
+        {/*
+          이어 만드는 것이 기본이라, 새로 시작하려면 말해 주어야 한다.
+          이 버튼은 스티치의 프로젝트를 지우지 않는다 — 다음 것을 새 프로젝트에
+          만들 뿐이다. 그 사실을 함께 적는다.
+        */}
+        {project && (
+          <button
+            className="btn btn-sm"
+            disabled={running}
+            title="지금까지 만든 것은 스티치에 그대로 남습니다. 다음 화면부터 새 프로젝트에 만듭니다."
+            onClick={() => {
+              setProject(null);
+              saveProject(plan.id, null);
+              setProjectUrl(null);
+              setProgress({});
+              toast('다음부터는 새 프로젝트에 만듭니다. 지금까지 만든 것은 스티치에 그대로 있습니다.', 'ok');
+            }}
+          >
+            새 프로젝트로
+          </button>
+        )}
         <button className="btn btn-sm" disabled={running} onClick={() => void disconnect()}>
           <Unlink size={12} />
           연결 해제
@@ -415,6 +492,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <p className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
           만들 화면을 고르세요. {picks.length > 0 && <>고른 {picks.length}개에 약 {estimate} 걸립니다.</>}
+          {project && <> 앞서 만든 프로젝트에 <b>이어서</b> 만듭니다.</>}
         </p>
         <button className="btn btn-sm" disabled={running} onClick={pickAll}>
           전체 선택
