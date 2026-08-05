@@ -415,6 +415,13 @@ export interface PlanBrief {
   reference?: string;
   /** 꼭 포함해야 하는 기능 */
   mustHave?: string;
+  /**
+   * 고른 요구분석 답 — `{ actors: ['일반 사용자'], auth: ['필요'] }`.
+   * 예전 플랜에는 없으므로 없을 수 있다.
+   */
+  answers?: Record<string, string[]>;
+  /** AI 가 되물은 질문과 그 답. */
+  followups?: Array<{ question: string; answer: string }>;
 }
 
 /** 문서 묶음 — 버전 스냅샷 대상 */

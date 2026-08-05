@@ -1,4 +1,5 @@
 import { PLATFORM_LABEL, type ArtifactKey, type Plan, type PlanBrief } from '../types';
+import { answersBlock, followupBlock } from '../brief-questions';
 import { hasArtifact } from '../artifact-status';
 
 export const SYSTEM_PROMPT = `당신은 IT 서비스 기획 전문가입니다. 사용자가 준 서비스 아이디어를 실제 개발팀이 그대로 착수할 수 있는 기획 산출물로 바꾸는 일을 합니다.
@@ -22,6 +23,17 @@ export function briefBlock(brief: PlanBrief): string {
   ];
   if (brief.reference) lines.push(`참고 서비스: ${brief.reference}`);
   if (brief.mustHave) lines.push(`반드시 포함할 기능: ${brief.mustHave}`);
+
+  /*
+   * 고른 답은 **추측할 여지가 없는 사실**이다. 아이디어 설명은 해석의 여지가
+   * 있지만 "관리자 화면 필요합니다" 는 그렇지 않다. 그래서 따로 떼어 "반드시
+   * 반영" 이라고 못 박는다. 줄글에 섞으면 모델이 하나쯤 흘린다.
+   */
+  const picked = answersBlock(brief.answers);
+  if (picked) lines.push('', picked);
+  const asked = followupBlock(brief.followups);
+  if (asked) lines.push('', asked);
+
   return lines.join('\n');
 }
 
