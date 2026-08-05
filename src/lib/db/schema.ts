@@ -29,6 +29,21 @@ create table if not exists plans (
 );
 
 create index if not exists plans_user_updated_idx on plans (user_id, updated_at desc);
+
+-- 바깥 서비스에 접속할 자격증명. 지금은 스티치 하나뿐이다.
+--
+-- **암호문만 들어온다.** 이 값은 사용자의 스티치 계정을 그대로 여는 열쇠라,
+-- 데이터베이스가 통째로 새어도 열쇠까지 함께 새지는 않도록 AUTH_SECRET 으로
+-- 암호화해 넣는다(자세한 것은 lib/integrations.ts).
+create table if not exists integrations (
+  user_id    text not null references users(id) on delete cascade,
+  provider   text not null,
+  secret     text not null,
+  -- 화면에 보여 줄 꼬리표(예: 키 끝 네 자리). 비밀이 아니다.
+  label      text not null default '',
+  updated_at timestamptz not null default now(),
+  primary key (user_id, provider)
+);
 `;
 
 /**

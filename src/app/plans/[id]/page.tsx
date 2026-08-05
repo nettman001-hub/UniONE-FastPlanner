@@ -169,22 +169,24 @@ function PlanOverview() {
   const [versionLabel, setVersionLabel] = useState('');
   const [commentBody, setCommentBody] = useState('');
 
-  /* ?autogen=prd 를 최초 1회 처리할 때만 쓴다 (효과 안에서 최신 generate 를 잡기 위해). */
-  const generateRef = useRef(generate);
+  /*
+   * `?start=prd` — 어디를 눌러야 하는지 표시만 한다.
+   *
+   * 예전에는 여기서 곧바로 생성을 걸었다(`?autogen=prd`). 그런데 세 단계를 채우고
+   * `다음` 을 누른 것뿐인데 크레딧이 나가기 시작하니, 사용자 입장에서는 시킨 적 없는
+   * 일이 벌어지는 셈이었다. **시작 버튼은 사용자가 누른다.** 우리는 그 버튼이
+   * 어디 있는지만 알려 준다.
+   */
+  const startParam = searchParams.get('start');
+  const [nudge, setNudge] = useState<ArtifactKey | null>(null);
+  const nudgeDone = useRef(false);
   useEffect(() => {
-    generateRef.current = generate;
-  });
-
-  /* ?autogen=prd 최초 1회 처리 */
-  const autogen = searchParams.get('autogen');
-  const autogenDone = useRef(false);
-  useEffect(() => {
-    if (autogenDone.current) return;
-    if (!plan || autogen !== 'prd') return;
-    autogenDone.current = true;
+    if (nudgeDone.current) return;
+    if (!plan || startParam !== 'prd') return;
+    nudgeDone.current = true;
+    setNudge('prd');
     router.replace(`/plans/${planId}`);
-    void generateRef.current('prd');
-  }, [autogen, plan, planId, router]);
+  }, [startParam, plan, planId, router]);
 
   const issues = useMemo(() => (plan ? validatePlan(plan) : []), [plan]);
   const summary = useMemo(() => issueSummary(issues), [issues]);
@@ -201,6 +203,8 @@ function PlanOverview() {
 
   /* 단일 산출물 생성 */
   const handleGenerate = async (key: ArtifactKey) => {
+    // 눌렀으면 신호는 할 일을 다 했다.
+    setNudge(null);
     if (hasArtifact(plan, key)) {
       const ok = await confirm({
         title: `${ARTIFACT_LABEL[key]}을(를) 다시 생성할까요?`,
@@ -382,6 +386,8 @@ function PlanOverview() {
               const done = hasArtifact(plan, key);
               const reason = blockedReason(plan, key);
               const active = autoStep === key || pending === key;
+              /* 아직 안 만들었고, 지금 아무것도 안 돌고, 막힌 이유도 없을 때만 신호를 준다. */
+              const nudged = nudge === key && !done && !busy && reason === null;
               return (
                 <div
                   key={key}
@@ -428,8 +434,19 @@ function PlanOverview() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-1.5 sm:justify-end">
+                      {/*
+                        움직임만으로는 신호가 약하다 — 색을 못 보는 사용자도 있고,
+                        움직임을 꺼 둔 사용자도 있다. 글자로도 같이 말한다.
+                      */}
+                      {nudged && (
+                        <span className="chip chip-primary whitespace-nowrap">
+                          여기서 시작하세요
+                        </span>
+                      )}
                       <button
-                        className={`btn btn-primary btn-sm${pending === key ? ' is-busy' : ''}`}
+                        className={`btn btn-primary btn-sm${pending === key ? ' is-busy' : ''}${
+                          nudged ? ' nudge' : ''
+                        }`}
                         disabled={busy || reason !== null}
                         title={reason ?? undefined}
                         onClick={() => void handleGenerate(key)}

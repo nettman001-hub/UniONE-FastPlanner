@@ -294,7 +294,6 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const createPlan = usePlannerStore((s) => s.createPlan);
   const [step, setStep] = useState(1);
   const [brief, setBrief] = useState<PlanBrief>(EMPTY_BRIEF);
-  const [autogen, setAutogen] = useState(true);
 
   const patch = (next: Partial<PlanBrief>) => setBrief((prev) => ({ ...prev, ...next }));
 
@@ -309,7 +308,6 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
     setTimeout(() => {
       setStep(1);
       setBrief(EMPTY_BRIEF);
-      setAutogen(true);
     }, 200);
   };
 
@@ -324,7 +322,11 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       idea: brief.idea.trim(),
     });
     close();
-    router.push(`/plans/${id}${autogen ? '?autogen=prd' : ''}`);
+    /*
+     * `start` 는 **시작하지 않는다.** 개요 화면에서 어느 버튼을 눌러야 하는지
+     * 표시만 한다. 세 단계를 채운 것과 크레딧을 쓰겠다는 것은 다른 결정이다.
+     */
+    router.push(`/plans/${id}?start=prd`);
   };
 
   return (
@@ -493,20 +495,19 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               onChange={(e) => patch({ mustHave: e.target.value })}
             />
           </Field>
-          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
-            <input
-              type="checkbox"
-              className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
-              checked={autogen}
-              onChange={(e) => setAutogen(e.target.checked)}
-            />
-            <span className="text-[12.5px] leading-relaxed">
-              <span className="font-bold">만들면서 PRD도 바로 생성하기</span>
-              <span className="block text-[11.5px] text-[var(--fg-muted)]">
-                플랜을 만든 뒤 개요 화면에서 프로덕트 요구사항을 자동으로 생성합니다.
-              </span>
-            </span>
-          </label>
+          {/*
+            예전에는 여기 "PRD도 바로 생성하기" 체크박스가 있었고 기본이 켜짐이었다.
+            그래서 `플랜 만들기` 를 누른 순간 생성이 시작되고 크레딧이 나갔다.
+            시작은 다음 화면에서 사용자가 직접 누른다.
+          */}
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
+            <p className="text-[12.5px] font-bold">다음 화면에서 시작하실 수 있습니다</p>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
+              플랜을 만들면 개요로 넘어갑니다. 프로덕트 요구사항의{' '}
+              <span className="font-semibold text-[var(--fg)]">AI로 생성</span> 버튼을 표시해 드리니,
+              준비되셨을 때 누르세요. 크레딧은 그때부터 듭니다.
+            </p>
+          </div>
         </div>
       )}
     </Modal>
