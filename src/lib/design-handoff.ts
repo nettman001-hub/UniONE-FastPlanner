@@ -107,7 +107,29 @@ export interface ScreenPrompt {
  * 블록의 **구성 항목**을 그대로 넘기는 것이 핵심이다. 거기 적힌 것이 실제 화면에
  * 나올 문구라서, 그것 없이 "리스트 블록" 이라고만 하면 도구가 아무 말이나 채운다.
  */
-export function screenPrompt(plan: Plan, page: IaPage, tool: DesignToolKey): string {
+/**
+ * 와이어프레임을 얼마나 그대로 지킬지.
+ *
+ * 스티치에는 이런 조절값이 **없다** — 인자가 다섯 개뿐이고 가중치·온도 같은 것은
+ * 받지 않는다. 그래서 우리가 조절할 수 있는 유일한 자리인 **요청문 문장**으로
+ * 무게를 옮긴다. 도구에게 무엇을 더 중히 여기라고 말로 이르는 것이다.
+ */
+export type PromptEmphasis = 'strict' | 'balanced' | 'free';
+
+const EMPHASIS_LINE: Record<PromptEmphasis, string> = {
+  strict:
+    '위 순서와 문구를 그대로 지켜 주세요. 항목을 임의로 늘리거나 바꾸지 마세요. 적혀 있지 않은 요소는 넣지 마세요.',
+  balanced:
+    '위 순서와 문구를 지켜 주세요. 여백·정렬·크기처럼 적혀 있지 않은 부분은 보기 좋게 다듬으셔도 됩니다.',
+  free: '위 구성을 참고하되, 더 나은 배치가 있다면 바꾸셔도 좋습니다. 다만 적힌 내용은 빠짐없이 담아 주세요.',
+};
+
+export function screenPrompt(
+  plan: Plan,
+  page: IaPage,
+  tool: DesignToolKey,
+  emphasis: PromptEmphasis = 'strict',
+): string {
   const wireframe = plan.wireframes.find((w) => w.pageId === page.id);
   const features = featuresOf(plan, page);
   const journeys = journeysOf(plan, page.id);
@@ -141,7 +163,7 @@ export function screenPrompt(plan: Plan, page: IaPage, tool: DesignToolKey): str
       }
       if (block.note) lines.push(`   기획 의도: ${block.note}`);
     });
-    lines.push('', '위 순서와 문구를 그대로 지켜 주세요. 항목을 임의로 늘리거나 바꾸지 마세요.');
+    lines.push('', EMPHASIS_LINE[emphasis]);
   } else {
     lines.push(
       '',

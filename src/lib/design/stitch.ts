@@ -253,6 +253,140 @@ export async function createProject(
 
 export type StitchDevice = 'MOBILE' | 'DESKTOP' | 'TABLET' | 'AGNOSTIC';
 
+/**
+ * 디자인 시스템을 만들어 두고 화면마다 물린다.
+ *
+ * 화면마다 요청문에 "파란색 쓰세요" 를 반복하는 것과 다르다. 스티치가 이걸
+ * 하나의 체계로 잡아 두고 이후 화면들이 전부 따르게 한다. 지침 문서(`designMd`)는
+ * 통째로 들어간다.
+ *
+ * **실패해도 화면 만들기는 계속돼야 한다.** 색·글꼴이 조금 제각각인 것과 화면이
+ * 아예 안 만들어지는 것 중에는 앞이 낫다. 그래서 여기서는 던지지 않고 null 을 준다.
+ */
+export async function createDesignSystem(
+  projectId: string,
+  spec: {
+    displayName: string;
+    colorMode: string;
+    headlineFont: string;
+    bodyFont: string;
+    roundness: string;
+    customColor: string;
+    designMd: string;
+  },
+  cred: StitchCredential,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  try {
+    const { json } = await callTool(
+      'create_design_system',
+      {
+        projectId,
+        designSystem: {
+          displayName: spec.displayName,
+          theme: {
+            colorMode: spec.colorMode,
+            headlineFont: spec.headlineFont,
+            bodyFont: spec.bodyFont,
+            roundness: spec.roundness,
+            customColor: spec.customColor,
+            designMd: spec.designMd,
+          },
+        },
+      },
+      cred,
+      signal,
+    );
+    return digId(json, ['assetId', 'asset_id', 'designSystemId', 'id', 'name']);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 고를 수 있는 모델                                                     */
+/* ------------------------------------------------------------------ */
+
+export interface StitchModel {
+  id: string;
+  /** 사람이 읽을 이름. 스티치가 주는 설명을 그대로 쓴다. */
+  label: string;
+  /** 느리지만 결과가 나은 쪽인가 — 월 사용 횟수가 적다는 안내를 붙인다. */
+  heavy: boolean;
+}
+
+/**
+ * 목록을 **박아 두지 않고 스티치에서 받아 온다.**
+ *
+ * 저쪽이 모델을 더하거나 뺄 때마다 우리 코드를 고쳐야 한다면, 새 모델이 나와도
+ * 사용자는 한참 못 쓴다. `tools/list` 는 자격증명 없이도 답하므로 그냥 물어본다.
+ *
+ * 폐기된 것과 `MODEL_ID_UNSPECIFIED` 는 뺀다 — 고를 이유가 없다.
+ */
+const FALLBACK_MODELS: StitchModel[] = [
+  { id: 'GEMINI_3_FLASH', label: 'Gemini 3 Flash', heavy: false },
+  { id: 'GEMINI_3_1_PRO', label: 'Gemini 3.1 Pro', heavy: true },
+];
+
+let modelCache: { at: number; models: StitchModel[] } | null = null;
+const MODEL_TTL_MS = 60 * 60 * 1000;
+
+export async function listModels(signal?: AbortSignal): Promise<StitchModel[]> {
+  if (modelCache && Date.now() - modelCache.at < MODEL_TTL_MS) return modelCache.models;
+
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: 'POST',
+      signal: withTimeout(signal, 15_000),
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+    });
+    const body = (await response.json()) as {
+      result?: { tools?: Array<{ name?: string; inputSchema?: unknown }> };
+    };
+    const tool = body.result?.tools?.find((t) => t.name === 'generate_screen_from_text');
+    const schema = (tool?.inputSchema as { properties?: Record<string, unknown> })?.properties
+      ?.modelId as
+      | {
+          enum?: string[];
+          'x-google-enum-deprecated'?: boolean[];
+          'x-google-enum-descriptions'?: string[];
+        }
+      | undefined;
+
+    const ids = schema?.enum ?? [];
+    const dead = schema?.['x-google-enum-deprecated'] ?? [];
+    const notes = schema?.['x-google-enum-descriptions'] ?? [];
+
+    const models = ids
+      .map((id, i) => ({
+        id,
+        // 설명이 곧 사람이 읽을 이름이다 ("Gemini 3.1 Pro."). 끝의 마침표만 뗀다.
+        label: (notes[i] || id).replace(/\.$/, ''),
+        heavy: /pro/i.test(id),
+        dead: Boolean(dead[i]) || id === 'MODEL_ID_UNSPECIFIED',
+      }))
+      .filter((m) => !m.dead)
+      .map(({ id, label, heavy }) => ({ id, label, heavy }));
+
+    if (models.length === 0) return FALLBACK_MODELS;
+    modelCache = { at: Date.now(), models };
+    return models;
+  } catch {
+    // 못 물어봤다고 기능을 막지는 않는다. 아는 만큼으로 굴린다.
+    return FALLBACK_MODELS;
+  }
+}
+
+/** 사용자가 보낸 모델이 실제로 고를 수 있는 것인지. */
+export async function resolveModel(id: string | undefined): Promise<string> {
+  const models = await listModels();
+  const found = models.find((m) => m.id === id);
+  // 모르는 값이면 가벼운 쪽으로 — 횟수를 아끼는 쪽이 안전하다.
+  return found?.id ?? models.find((m) => !m.heavy)?.id ?? models[0]?.id ?? 'GEMINI_3_FLASH';
+}
+
 export interface GeneratedScreen {
   screenId: string;
   /** 결과를 볼 수 있는 주소. 못 찾으면 프로젝트 주소로 대신한다. */
@@ -264,12 +398,21 @@ export async function generateScreen(
   projectId: string,
   prompt: string,
   device: StitchDevice,
+  modelId: string,
+  designSystem: string | null,
   cred: StitchCredential,
   signal?: AbortSignal,
 ): Promise<GeneratedScreen> {
   const { json } = await callTool(
     'generate_screen_from_text',
-    { projectId, prompt, deviceType: device },
+    {
+      projectId,
+      prompt,
+      deviceType: device,
+      modelId,
+      // 스티치 설명: 화면끼리 결을 맞추려면 늘 지정하는 편이 낫다.
+      ...(designSystem ? { designSystem } : {}),
+    },
     cred,
     signal,
   );
