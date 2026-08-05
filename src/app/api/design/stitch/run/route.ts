@@ -28,6 +28,7 @@ import {
   type StitchCredential,
   type StitchCredentialKind,
   type StitchDevice,
+  type StitchQuality,
 } from '@/lib/design/stitch';
 import type { IaPage, Plan } from '@/lib/types';
 
@@ -42,6 +43,8 @@ interface RunBody {
   projectId?: string;
   /** 첫 화면인가 — 톤 잡는 문장을 함께 보낼지 정한다. */
   first?: boolean;
+  /** `high` 는 스티치의 실험 모드. 결과는 낫지만 월 사용 횟수가 훨씬 적다. */
+  quality?: string;
 }
 
 function deviceOf(plan: Plan, page: IaPage): StitchDevice {
@@ -100,6 +103,7 @@ export async function POST(request: Request) {
   }
 
   const cred: StitchCredential = { kind, secret: stored.secret, quotaProject };
+  const quality: StitchQuality = body.quality === 'high' ? 'high' : 'basic';
 
   try {
     let projectId = body.projectId?.trim() || '';
@@ -116,7 +120,14 @@ export async function POST(request: Request) {
       ? `${systemPrompt(plan, 'stitch')}\n\n---\n\n${screenPrompt(plan, page, 'stitch')}`
       : screenPrompt(plan, page, 'stitch');
 
-    const screen = await generateScreen(projectId, prompt, deviceOf(plan, page), cred, request.signal);
+    const screen = await generateScreen(
+      projectId,
+      prompt,
+      deviceOf(plan, page),
+      quality,
+      cred,
+      request.signal,
+    );
 
     return NextResponse.json({
       projectId,
@@ -128,8 +139,15 @@ export async function POST(request: Request) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       return NextResponse.json({ error: '멈췄습니다.' }, { status: 499 });
     }
-    const message =
+    let message =
       error instanceof StitchError ? error.message : '스티치에 화면을 만들지 못했습니다.';
+    /*
+     * 실험 모드는 월 사용 횟수가 적어 한도에 먼저 걸린다. 그때 "한도에 걸렸다" 고만
+     * 하면 기다리는 수밖에 없어 보이지만, 실은 기본으로 바꾸면 바로 된다.
+     */
+    if (quality === 'high' && error instanceof StitchError && error.kind === 'quota') {
+      message += ' 실험 모드는 월 사용 횟수가 적습니다. 품질을 `기본` 으로 바꿔 보세요.';
+    }
     // 자격증명 문제면 남은 화면도 같은 이유로 실패한다. 브라우저가 알아볼 수 있게 갈라 준다.
     const status = error instanceof StitchError && error.kind === 'auth' ? 409 : 502;
     return NextResponse.json({ error: message }, { status });

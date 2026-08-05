@@ -46,6 +46,8 @@ export function StitchRun({ plan }: { plan: Plan }) {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  /** 스티치의 `기본` / `실험 모드`. 실험 모드는 월 횟수가 적어 기본값이 아니다. */
+  const [quality, setQuality] = useState<'basic' | 'high'>('basic');
   const [progress, setProgress] = useState<Record<string, ScreenState>>({});
   const [projectUrl, setProjectUrl] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -156,7 +158,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
           res = await fetch('/api/design/stitch/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ plan, pageId, projectId, first: index === 0 }),
+            body: JSON.stringify({ plan, pageId, projectId, first: index === 0, quality }),
             signal: controller.signal,
           });
         } catch (error) {
@@ -223,7 +225,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
       setRunning(false);
       abort.current = null;
     }
-  }, [pages, picked, plan, toast]);
+  }, [pages, picked, plan, quality, toast]);
 
   const stop = useCallback(() => {
     abort.current?.abort();
@@ -316,6 +318,34 @@ export function StitchRun({ plan }: { plan: Plan }) {
       <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
         만들 화면을 고르세요. 한 번에 {MAX_SCREENS}개까지 됩니다. 화면 하나에 수십 초 걸립니다.
       </p>
+
+      {/*
+        품질 고르기.
+        기본이 `기본` 인 이유는 실험 모드의 월 사용 횟수가 적어서다. 여러 화면을
+        한 번에 만드는 쓰임에서는 횟수가 먼저 바닥난다.
+      */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-[11.5px] font-semibold text-[var(--fg-muted)]">품질</span>
+        <button
+          className={quality === 'basic' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          disabled={running}
+          onClick={() => setQuality('basic')}
+        >
+          기본
+        </button>
+        <button
+          className={quality === 'high' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          disabled={running}
+          onClick={() => setQuality('high')}
+        >
+          실험 모드
+        </button>
+        <span className="text-[11px] text-[var(--fg-subtle)]">
+          {quality === 'high'
+            ? '결과가 더 좋지만 한 달에 쓸 수 있는 횟수가 적습니다.'
+            : '횟수 여유가 있습니다. 여러 화면을 만들 때 알맞습니다.'}
+        </span>
+      </div>
 
       <ul className="mt-2 flex flex-col gap-1">
         {pages.map((page) => {

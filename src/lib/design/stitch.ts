@@ -253,6 +253,30 @@ export async function createProject(
 
 export type StitchDevice = 'MOBILE' | 'DESKTOP' | 'TABLET' | 'AGNOSTIC';
 
+/**
+ * 어느 품질로 만들지.
+ *
+ * 스티치 화면의 `기본` / `실험 모드` 와 같은 구분이다. 실험 모드가 결과는 낫지만
+ * **한 달에 쓸 수 있는 횟수가 훨씬 적다.** 그래서 기본값은 `basic` 이다 —
+ * 여러 화면을 한 번에 만드는 우리 쓰임에서는 횟수가 먼저 바닥난다.
+ *
+ * 값을 안 보내면 스티치가 알아서 고르는데, 그러면 사용자가 무엇으로 만들어졌는지
+ * 알 수 없다. 항상 명시한다.
+ */
+export type StitchQuality = 'basic' | 'high';
+
+/**
+ * 스티치가 받는 모델 이름.
+ *
+ * 여기 이름이 밖으로 나가지 않게 한다 — 화면에는 `기본` / `실험 모드` 로만 적는다.
+ * 저쪽이 모델을 갈아 끼워도 고칠 곳은 이 표 하나다.
+ */
+const MODEL_ID: Record<StitchQuality, string> = {
+  basic: 'GEMINI_3_FLASH',
+  // 예전 `GEMINI_3_PRO` 는 폐기됐다. 스티치가 그렇게 알려 준다.
+  high: 'GEMINI_3_1_PRO',
+};
+
 export interface GeneratedScreen {
   screenId: string;
   /** 결과를 볼 수 있는 주소. 못 찾으면 프로젝트 주소로 대신한다. */
@@ -264,12 +288,13 @@ export async function generateScreen(
   projectId: string,
   prompt: string,
   device: StitchDevice,
+  quality: StitchQuality,
   cred: StitchCredential,
   signal?: AbortSignal,
 ): Promise<GeneratedScreen> {
   const { json } = await callTool(
     'generate_screen_from_text',
-    { projectId, prompt, deviceType: device },
+    { projectId, prompt, deviceType: device, modelId: MODEL_ID[quality] },
     cred,
     signal,
   );
