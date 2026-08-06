@@ -46,6 +46,17 @@ const PROJECT_KEY = 'unione-fastplaner:stitch-projects';
 export interface Remembered {
   projectId: string;
   designSystemId?: string;
+  /**
+   * **이미 만들어 둔 화면들** — 화면 번호 → 만든 시각.
+   *
+   * 이걸 안 남기면 새로고침 한 번에 "무엇을 내보냈는지" 가 통째로 사라진다.
+   * 스티치에는 멀쩡히 있는데 우리 화면에는 아무 표시가 없으니, 다시 들어온
+   * 사람은 안 만들어진 줄 알고 처음부터 다시 건다 — 사용량이 두 배로 나간다.
+   *
+   * **성공한 것만 적는다.** 실패는 그때의 사정이라 다음번에도 실패한다는 뜻이
+   * 아니다. 여기 없으면 "아직 안 만들었다" 로 읽히는 편이 맞다.
+   */
+  screens?: Record<string, { at: number }>;
 }
 
 function loadProject(planId: string): Remembered | null {
@@ -97,6 +108,13 @@ export interface RunSession {
   summary: { text: string; tone: 'ok' | 'warn'; at: number } | null;
   /** 스티치가 자격증명을 거절했다 — 화면이 연결 상태를 되돌려야 한다. */
   disconnected: boolean;
+  /**
+   * 저장해 둔 것을 되살렸는가.
+   *
+   * 되살리기 전에는 "이미 만든 화면" 을 모른다. 그 상태로 미리 고르면 이미
+   * 만든 것까지 골라 버린다. 다 읽은 뒤에 고르라고 알리는 표식이다.
+   */
+  restored: boolean;
 }
 
 export const EMPTY_SESSION: RunSession = {
@@ -105,6 +123,7 @@ export const EMPTY_SESSION: RunSession = {
   project: null,
   summary: null,
   disconnected: false,
+  restored: false,
 };
 
 const sessions = new Map<string, RunSession>();
@@ -199,20 +218,39 @@ export function serverSnapshot(): RunSession {
 }
 
 /**
- * 이 플랜을 어느 프로젝트에 만들어 왔는지 되살린다.
+ * 이 플랜에 무엇을 만들어 왔는지 되살린다.
+ *
+ * 프로젝트 번호뿐 아니라 **이미 만든 화면들의 완료 표시까지** 되살린다. 이걸
+ * 안 하면 새로고침 한 번에 "무엇을 내보냈는지" 가 통째로 사라져, 스티치에는
+ * 멀쩡히 있는 화면을 안 만든 줄 알고 다시 만들게 된다.
  *
  * 이미 돌고 있으면 손대지 않는다 — 돌던 진행을 저장된 옛 값으로 덮으면 안 된다.
  */
 export function restore(planId: string): void {
   if (sessions.has(planId)) return;
   const found = loadProject(planId);
-  if (found) patch(planId, { project: found });
+  if (!found) {
+    patch(planId, { restored: true });
+    return;
+  }
+  const url = projectUrlOf(found.projectId);
+  patch(planId, {
+    project: found,
+    restored: true,
+    progress: Object.fromEntries(
+      Object.keys(found.screens ?? {}).map((pageId) => [
+        pageId,
+        { state: 'done', url, imageUrl: null } as ScreenState,
+      ]),
+    ),
+  });
 }
 
 /** `새 프로젝트로` — 스티치의 프로젝트는 지우지 않는다. 다음 것을 새로 만들 뿐이다. */
 export function forgetProject(planId: string): void {
   saveProject(planId, null);
-  patch(planId, { project: null, progress: {}, summary: null });
+  // 만든 화면 기록도 함께 지운다 — 그것들은 방금 놓아준 프로젝트에 속한다.
+  patch(planId, { project: null, progress: {}, summary: null, restored: true });
 }
 
 /** 연결 해제 — 이 플랜에 대해 기억한 것을 전부 지운다. */
@@ -220,7 +258,7 @@ export function reset(planId: string): void {
   controllers.get(planId)?.abort();
   controllers.delete(planId);
   saveProject(planId, null);
-  sessions.set(planId, EMPTY_SESSION);
+  sessions.set(planId, { ...EMPTY_SESSION, restored: true });
   recount();
   listeners.get(planId)?.forEach((fn) => fn());
   everyone.forEach((fn) => fn());
@@ -284,7 +322,15 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
     running: true,
     disconnected: false,
     summary: null,
-    progress: Object.fromEntries(pageIds.map((id) => [id, { state: 'waiting' } as ScreenState])),
+    /*
+     * **앞서 만든 것을 지우지 않는다.** 이번에 고른 것만 `대기` 로 놓는다.
+     * 통째로 갈아 끼우면, 열 개 중 세 개만 다시 걸었을 때 나머지 일곱 개의
+     * 완료 표시가 사라진다 — 스티치에는 그대로 있는데 화면에서만 없어진다.
+     */
+    progress: {
+      ...get(planId).progress,
+      ...Object.fromEntries(pageIds.map((id) => [id, { state: 'waiting' } as ScreenState])),
+    },
   });
 
   const mark = (pageId: string, state: ScreenState) =>
@@ -371,7 +417,18 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
       // 한 번 만든 디자인 시스템을 다음 화면들이 그대로 쓴다.
       if (data.designSystemId && !designSystemId) designSystemId = data.designSystemId;
       if (projectId) {
-        const next = { projectId, ...(designSystemId ? { designSystemId } : {}) };
+        /*
+         * 화면 하나가 끝날 때마다 **바로 적어 둔다.**
+         *
+         * 끝까지 다 돌고 나서 한 번에 적으면, 중간에 창을 닫거나 멈춘 경우
+         * 그때까지 만든 것이 기록에서 빠진다. 스티치에는 있는데 우리는 모르는
+         * 상태가 되고, 다시 들어온 사람은 그것들을 또 만든다.
+         */
+        const next: Remembered = {
+          projectId,
+          ...(designSystemId ? { designSystemId } : {}),
+          screens: { ...(get(planId).project?.screens ?? {}), [pageId]: { at: Date.now() } },
+        };
         saveProject(planId, next);
         patch(planId, { project: next });
       }

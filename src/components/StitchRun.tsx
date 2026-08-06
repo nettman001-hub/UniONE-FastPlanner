@@ -106,7 +106,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
     useCallback(() => snapshot(plan.id), [plan.id]),
     serverSnapshot,
   );
-  const { running, progress, project, summary } = session;
+  const { running, progress, project, summary, restored } = session;
   const projectUrl = project ? projectUrlOf(project.projectId) : null;
 
   const pages = useMemo(() => (plan.iaPages ?? []).filter((p) => p.type === 'page'), [plan.iaPages]);
@@ -114,14 +114,28 @@ export function StitchRun({ plan }: { plan: Plan }) {
     () => new Set((plan.wireframes ?? []).map((w) => w.pageId)),
     [plan.wireframes],
   );
+  /** 지난번까지 스티치에 이미 만들어 둔 화면들. */
+  const made = useMemo(() => new Set(Object.keys(project?.screens ?? {})), [project]);
 
-  /* 처음 열 때 그림이 있는 화면을 미리 골라 둔다 — 결과가 가장 정확한 것들이다. */
+  /*
+   * 처음 열 때 미리 골라 둔다 — 그림이 있고 **아직 안 만든** 화면들.
+   *
+   * 이미 만든 것까지 골라 두면, 다시 들어온 사람이 그대로 눌러 같은 화면을 또
+   * 만든다. 사용량이 두 배로 나가고 스티치에는 같은 화면이 두 벌 쌓인다.
+   * 다시 만들고 싶으면 직접 체크하거나 `전체 선택` 을 누르면 된다.
+   *
+   * 저장해 둔 것을 다 읽기 전에는 무엇을 만들었는지 모른다. 그래서 기다린다.
+   */
   useEffect(() => {
+    if (!restored) return;
     setPicked((prev) => {
       if (prev.size > 0) return prev;
-      return new Set(pages.filter((p) => withWireframe.has(p.id)).map((p) => p.id));
+      const next = new Set(
+        pages.filter((p) => withWireframe.has(p.id) && !made.has(p.id)).map((p) => p.id),
+      );
+      return next.size > 0 ? next : prev;
     });
-  }, [pages, withWireframe]);
+  }, [pages, withWireframe, made, restored]);
 
   useEffect(() => {
     let alive = true;
@@ -370,6 +384,11 @@ export function StitchRun({ plan }: { plan: Plan }) {
         <p className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
           만들 화면을 고르세요. {picks.length > 0 && <>고른 {picks.length}개에 약 {estimate} 걸립니다.</>}
           {project && <> 앞서 만든 프로젝트에 <b>이어서</b> 만듭니다.</>}
+          {/*
+            이미 만든 것이 몇 개인지 밝힌다. 목록에 `완료` 가 붙어 있지만,
+            화면이 스무 개면 세어 보기 전에는 감이 안 온다.
+          */}
+          {made.size > 0 && <> 이미 만든 화면 <b>{made.size}개</b>는 빼 두었습니다.</>}
         </p>
         <button className="btn btn-sm" disabled={running} onClick={pickAll}>
           전체 선택
