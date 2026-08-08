@@ -77,6 +77,52 @@ export async function authenticate(email: string, password: string): Promise<Use
   return ok && user ? user : null;
 }
 
+/* 설정에서 고치는 것들 -------------------------------------------------- */
+
+/** 표시 이름 바꾸기. 빈 이름은 받지 않는다 — 화면 여기저기가 이름으로 사람을 가리킨다. */
+export async function updateUserName(id: string, name: string): Promise<UserRow | null> {
+  const db = await getDb();
+  const { rows } = await db.query<UserRow>(
+    'update users set name = $2 where id = $1 returning *',
+    [id, name.trim()],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * 비밀번호 바꾸기.
+ *
+ * **지금 비밀번호를 반드시 확인한다.** 로그인한 채로 자리를 비운 컴퓨터를 남이
+ * 만졌을 때, 확인 없이 바꿀 수 있으면 그 자리에서 계정을 통째로 빼앗긴다.
+ */
+export async function changeUserPassword(
+  id: string,
+  current: string,
+  next: string,
+): Promise<'ok' | 'wrong-current' | 'no-user'> {
+  const user = await findUserById(id);
+  if (!user) return 'no-user';
+  if (!(await verifyPassword(current, user.password_hash))) return 'wrong-current';
+
+  const db = await getDb();
+  await db.query('update users set password_hash = $2 where id = $1', [
+    id,
+    await hashPassword(next),
+  ]);
+  return 'ok';
+}
+
+/**
+ * 계정 지우기.
+ *
+ * 플랜과 연동 자격증명은 외래키(`on delete cascade`)로 함께 사라진다.
+ * **되돌릴 수 없다** — 부르는 쪽에서 반드시 확인을 받아야 한다.
+ */
+export async function deleteUser(id: string): Promise<void> {
+  const db = await getDb();
+  await db.query('delete from users where id = $1', [id]);
+}
+
 /**
  * 공용 테스트 계정을 준비한다.
  *
