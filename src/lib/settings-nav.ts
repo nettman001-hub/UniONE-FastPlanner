@@ -23,6 +23,7 @@ export interface SettingsItem {
 export const SETTINGS_ITEMS: SettingsItem[] = [
   { key: 'account', name: '계정', what: '이름·비밀번호·탈퇴' },
   { key: 'integrations', name: '연결', what: '스티치 등 바깥 서비스' },
+  { key: 'skills', name: '기획 스킬', what: '단계마다 이런 식으로 써 달라고 적어 두기' },
   { key: 'usage', name: '사용량', what: '오늘 남은 크레딧' },
   { key: 'data', name: '데이터', what: '백업·동기화·기록 지우기' },
   {

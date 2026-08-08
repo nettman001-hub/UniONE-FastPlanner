@@ -48,6 +48,22 @@ create table if not exists integrations (
 -- 어떤 헤더로 보내야 하는 값인지. 값 모양만 보고 짐작하면 틀린다 —
 -- 연결할 때 실제로 찔러 보고 되는 쪽을 여기 적어 둔다.
 alter table integrations add column if not exists kind text not null default '';
+
+-- 기획 스킬 — 단계마다 "이런 식으로 써 달라" 를 적어 둔 것.
+--
+-- 비밀이 아니라 암호화하지 않는다. 다만 **사용자가 쓴 글이 AI 요청문에 그대로
+-- 들어가므로**, 읽어 쓰는 쪽(lib/skills.ts)에서 울타리에 가둔 뒤에 넣는다.
+--
+-- 지금은 계정마다 단계별로 하나씩이다. 플랜별로 다르게 두는 것은 나중에
+-- plan_id 를 키에 더해 넓힌다.
+create table if not exists skills (
+  user_id    text not null references users(id) on delete cascade,
+  artifact   text not null,
+  body       text not null default '',
+  enabled    boolean not null default true,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, artifact)
+);
 `;
 
 /**
