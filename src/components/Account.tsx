@@ -12,7 +12,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Check, CloudOff, LogOut, RefreshCw, Settings, Upload, User, X } from 'lucide-react';
+import { Check, CloudOff, LogOut, RefreshCw, Settings, ShieldCheck, Upload, User, X } from 'lucide-react';
 
 import { useAuth } from '@/lib/auth/client';
 import {
@@ -110,7 +110,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 /* 계정 메뉴 ----------------------------------------------------------- */
 
 export function UserMenu() {
-  const { user, logout } = useAuth();
+  const { user, admin, logout } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -138,6 +138,18 @@ export function UserMenu() {
               <p className="truncate text-[12.5px] font-bold">{user.name || '이름 없음'}</p>
               <p className="truncate text-[11.5px] text-[var(--fg-muted)]">{user.email}</p>
             </div>
+            {/* 관리자에게만 보인다. 아닌 사람은 주소로 들어와도 404 다. */}
+            {admin && (
+              <Link
+                role="menuitem"
+                href="/admin"
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] font-semibold hover:bg-[var(--surface-2)]"
+                onClick={() => setOpen(false)}
+              >
+                <ShieldCheck size={13} className="text-[var(--primary)]" />
+                관리자
+              </Link>
+            )}
             <Link
               role="menuitem"
               href="/settings"

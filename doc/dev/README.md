@@ -13,6 +13,7 @@
 | 5 | [문제 해결](./05-troubleshooting.md) | 개발·운영 중 겪는 오류 |
 | 6 | [계정과 데이터베이스 운영](./06-accounts.md) | 가입 정책, 스키마, 보안 |
 | 7 | [Claude Design 에 디자인 올리기](./07-claude-design.md) | 우리 디자인 스킬을 Claude Design 디자인 시스템으로 |
+| 8 | [관리자 화면](./08-admin.md) | `/admin` 켜는 법, 무엇을 볼 수 있나, 크레딧 되돌려 주기 |
 
 ## 문서를 고칠 때
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/lib/auth/server';
+import { isAdminEmail } from '@/lib/auth/admin';
 import { signupMode } from '@/lib/auth/policy';
 import { hasDatabase } from '@/lib/db';
 
@@ -13,8 +14,11 @@ export const dynamic = 'force-dynamic';
  * 구분할 수 있어야 깜빡임 없이 그려진다.
  */
 export async function GET() {
+  const user = await currentUser();
   return NextResponse.json({
-    user: await currentUser(),
+    user,
+    // 관리자 차림표를 보여 줄지. 본인이 관리자라는 사실은 감출 이유가 없다.
+    admin: isAdminEmail(user?.email),
     signup: signupMode(),
     // 배포에 DB 를 안 붙였으면 화면에서 미리 알려 줄 수 있다.
     database: hasDatabase() ? 'postgres' : 'local',
