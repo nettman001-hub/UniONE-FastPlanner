@@ -47,6 +47,63 @@ export function isSkillArtifact(value: unknown): value is ArtifactKey {
 }
 
 /* ------------------------------------------------------------------ */
+/* 플랜별 덮어쓰기                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * **계정 기본**을 가리키는 자리. 빈 문자열이다.
+ *
+ * 지침은 두 겹이다 — 계정에 한 번 적어 두고(모든 플랜), 어떤 플랜만 다르게
+ * 하고 싶으면 그 플랜에 따로 적는다. 회사 표준 문체는 계정에, 이 고객사만
+ * 쓰는 용어는 그 플랜에 두는 식이다.
+ */
+export const ACCOUNT_SCOPE = '';
+
+/**
+ * 한 단계를 이 플랜에서 어떻게 다룰지.
+ *
+ * | 값 | 뜻 | 저장 |
+ * | --- | --- | --- |
+ * | `inherit` | 계정에 적어 둔 것을 그대로 쓴다 | 플랜 줄 없음 |
+ * | `override` | 이 플랜만 다르게 쓴다 | 플랜 줄, `enabled = true` |
+ * | `off` | 이 플랜에서는 지침 없이 만든다 | 플랜 줄, `enabled = false` |
+ *
+ * `off` 가 따로 있어야 하는 이유 — 계정 지침을 켜 둔 채로 **한 플랜만 빼는**
+ * 방법이 달리 없다. 빈 글로 덮어쓰게 하면 "적었는데 왜 안 들어가지" 가 된다.
+ */
+export type SkillScope = 'inherit' | 'override' | 'off';
+
+export const SKILL_SCOPE_LABEL: Record<SkillScope, string> = {
+  inherit: '기본을 따름',
+  override: '이 플랜만 다르게',
+  off: '이 플랜은 지침 없이',
+};
+
+/** 플랜에 저장된 줄을 보고 지금 어느 상태인지 읽는다. */
+export function scopeOf(planSkill: Skill | undefined): SkillScope {
+  if (!planSkill) return 'inherit';
+  return planSkill.enabled ? 'override' : 'off';
+}
+
+/**
+ * 계정 기본과 플랜별을 합쳐 **실제로 쓸 지침** 하나를 고른다.
+ *
+ * 플랜에 적어 둔 것이 있으면 **그것만** 쓴다. 계정 것에 덧붙이지 않는다 —
+ * 둘이 섞이면 화면에 보이는 글과 실제로 나가는 글이 달라져, 왜 이렇게
+ * 나왔는지 설명할 수 없게 된다.
+ */
+export function resolveSkill(
+  account: Skill | undefined,
+  plan: Skill | undefined,
+): string | undefined {
+  const pick = plan ?? account;
+  // 플랜 줄이 있는데 꺼져 있으면 계정 것으로 되돌아가지 않는다. 그게 `off` 다.
+  if (!pick || !pick.enabled) return undefined;
+  const body = pick.body.trim();
+  return body || undefined;
+}
+
+/* ------------------------------------------------------------------ */
 /* 요청문에 얹기                                                         */
 /* ------------------------------------------------------------------ */
 

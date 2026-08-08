@@ -61,8 +61,12 @@ export async function POST(request: Request) {
   /*
    * 작성 지침은 **서버가 계정에서 읽는다.** 브라우저가 보내게 하면 남의 지침을
    * 넣거나, 울타리를 우회하는 문장을 끼워 넣을 수 있다.
+   *
+   * 플랜 번호를 함께 넘겨, 이 플랜에만 적어 둔 것이 있으면 그것을 쓴다.
+   * 번호는 브라우저가 보낸 것이지만 **내 `user_id` 아래에서만 찾으므로**
+   * 남의 지침이 딸려 올 수는 없다.
    */
-  const skills = await activeSkills(user.id);
+  const skills = await activeSkills(user.id, plan.id);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

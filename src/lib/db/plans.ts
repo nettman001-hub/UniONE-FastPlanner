@@ -1,6 +1,7 @@
 /** plans 표를 다루는 질의. 플랜 본문은 통째로 jsonb 한 칸에 담는다. */
 
 import { getDb } from './index';
+import { clearPlanSkills } from './skills';
 import type { Plan } from '../types';
 
 /** 목록 화면에서 쓰는 요약. 본문 없이 무엇이 언제 바뀌었는지만 본다. */
@@ -88,6 +89,17 @@ export async function deletePlan(userId: string, planId: string): Promise<boolea
     'delete from plans where user_id = $1 and id = $2 returning id',
     [userId, planId],
   );
+  /*
+   * 이 플랜에만 걸어 둔 작성 지침도 함께 치운다. `skills` 는 `plans` 를 외래키로
+   * 참조하지 않으므로(아직 안 올라간 플랜에도 지침을 적을 수 있어야 해서)
+   * 여기서 직접 지우지 않으면 주인 없는 줄로 남는다.
+   *
+   * 지우기가 실패해도 플랜 삭제는 성공으로 본다 — 남는 것은 안 쓰이는 줄뿐이고,
+   * 그것 때문에 "삭제되지 않았습니다" 가 뜨면 사용자는 뭘 해야 할지 알 수 없다.
+   */
+  await clearPlanSkills(userId, planId).catch((error) => {
+    console.error('[plans] 플랜 지침을 치우지 못했습니다:', error);
+  });
   return rows.length > 0;
 }
 
