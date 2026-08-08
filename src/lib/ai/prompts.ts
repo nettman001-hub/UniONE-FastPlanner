@@ -1,6 +1,7 @@
 import { PLATFORM_LABEL, type ArtifactKey, type Plan, type PlanBrief } from '../types';
 import { answersBlock, followupBlock } from '../brief-questions';
 import { hasArtifact } from '../artifact-status';
+import { skillBlock } from '../skills';
 
 export const SYSTEM_PROMPT = `당신은 IT 서비스 기획 전문가입니다. 사용자가 준 서비스 아이디어를 실제 개발팀이 그대로 착수할 수 있는 기획 산출물로 바꾸는 일을 합니다.
 
@@ -118,6 +119,8 @@ export function buildPrompt(
   plan: Plan,
   artifact: ArtifactKey,
   extra?: string,
+  /** 사용자가 설정에 적어 둔 이 단계의 작성 지침. */
+  skill?: string,
 ): string {
   const sections = [
     INSTRUCTION[artifact],
@@ -128,6 +131,17 @@ export function buildPrompt(
   const context = contextBlock(plan, artifact);
   if (context) {
     sections.push('', context);
+  }
+  /*
+   * 스킬을 **추가 지시보다 먼저** 넣는다.
+   *
+   * 스킬은 늘 적용되는 바탕이고, 추가 지시는 이번 한 번의 요구다. 뒤에 오는 것이
+   * 더 세게 읽히므로 이번 요구가 뒤에 와야 한다 — 스킬에 "짧게" 라고 적어 두고
+   * 이번에만 "자세히" 를 시켰는데 스킬이 이기면 곤란하다.
+   */
+  const guide = skillBlock(skill ?? '');
+  if (guide) {
+    sections.push('', guide);
   }
   if (extra) {
     sections.push('', '## 추가 지시', extra);

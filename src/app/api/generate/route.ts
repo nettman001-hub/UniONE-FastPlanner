@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { precondition, runPipeline } from '@/lib/jobs/queue';
+import { activeSkills } from '@/lib/db/skills';
 import type { ArtifactKey, Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -57,6 +58,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: blocked }, { status });
   }
 
+  /*
+   * 작성 지침은 **서버가 계정에서 읽는다.** 브라우저가 보내게 하면 남의 지침을
+   * 넣거나, 울타리를 우회하는 문장을 끼워 넣을 수 있다.
+   */
+  const skills = await activeSkills(user.id);
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -64,7 +71,7 @@ export async function POST(request: Request) {
         for await (const event of runPipeline(
           plan,
           artifacts,
-          { extra: body.extra, pageIds: body.pageIds, merge: body.merge },
+          { extra: body.extra, pageIds: body.pageIds, merge: body.merge, skills },
           request.signal,
         )) {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));

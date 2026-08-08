@@ -20,6 +20,7 @@ import { generateLocally } from '@/lib/ai/local-generator';
 import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
 import { buildPrompt } from '@/lib/ai/prompts';
 import { draftToPatch } from '@/lib/ai/apply';
+import type { SkillMap } from '@/lib/skills';
 import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
 
 /**
@@ -68,6 +69,13 @@ export interface GenerateOptions {
   extra?: string;
   pageIds?: string[];
   merge?: boolean;
+  /**
+   * 사용자가 설정에 적어 둔 단계별 작성 지침.
+   *
+   * 브라우저가 보내는 것이 아니라 **서버가 계정에서 읽어 넣는다.** 브라우저가
+   * 보내게 하면 남의 지침을 넣거나 울타리를 우회하는 문장을 끼워 넣을 수 있다.
+   */
+  skills?: SkillMap;
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -163,7 +171,7 @@ async function runStep(
   }
 
   try {
-    let prompt = buildPrompt(plan, artifact, options.extra);
+    let prompt = buildPrompt(plan, artifact, options.extra, options.skills?.[artifact]);
     if (artifact === 'wireframe') {
       const targets =
         options.pageIds && options.pageIds.length > 0
