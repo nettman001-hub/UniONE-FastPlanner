@@ -52,6 +52,36 @@ export function hasDatabase(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
 
+/** `DATABASE_URL` 이 없을 때 PGlite 가 데이터를 두는 폴더. */
+export function pgliteDir(): string {
+  return process.env.PGLITE_DIR ?? '.pglite';
+}
+
+/**
+ * 어디에 저장되고 있는가 — 화면에 그대로 보여 주기 위한 것.
+ *
+ * 예전에는 "이 서버 안에서만 (임시)" 라고만 적었는데, **로컬에서는 임시가 아니다.**
+ * PGlite 는 메모리가 아니라 폴더에 파일로 쓰므로 껐다 켜도 남는다. 그렇게 적어
+ * 두면 사장님이 자기 컴퓨터에서 만든 것이 날아간다고 오해한다.
+ *
+ * 진짜로 위험한 경우는 따로 있다 — **배포 환경인데 데이터베이스가 없을 때.**
+ * 그때는 파일이 인스턴스와 함께 사라진다. 그 경우만 골라 경고한다.
+ */
+export interface StorageInfo {
+  kind: 'postgres' | 'file';
+  /** 파일 저장일 때 그 폴더. */
+  dir?: string;
+  /** 배포 환경인데 데이터베이스가 없다 — 다시 배포하면 사라진다. */
+  ephemeral: boolean;
+}
+
+export function storageInfo(): StorageInfo {
+  if (hasDatabase()) return { kind: 'postgres', ephemeral: false };
+  // Vercel 은 이 값을 스스로 넣어 준다. 배포인지 아닌지를 짐작하지 않고 그대로 본다.
+  const hosted = Boolean(process.env.VERCEL);
+  return { kind: 'file', dir: pgliteDir(), ephemeral: hosted };
+}
+
 async function connect(): Promise<Sql> {
   const url = process.env.DATABASE_URL;
   const db = url ? await connectPostgres(url) : await connectPglite();

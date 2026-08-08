@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 
 import { currentAdmin } from '@/lib/auth/admin';
 import { adminOverview, adminUsers, grantCredits } from '@/lib/db/admin';
-import { hasDatabase } from '@/lib/db';
+import { storageInfo } from '@/lib/db';
 import { isAiEnabled, resolveProvider } from '@/lib/ai/client';
 import { signupMode } from '@/lib/auth/policy';
 
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   if (view === 'health') {
     const provider = resolveProvider();
     return NextResponse.json({
-      database: hasDatabase() ? 'postgres' : 'local',
+      storage: storageInfo(),
       signup: signupMode(),
       ai: {
         enabled: isAiEnabled(),

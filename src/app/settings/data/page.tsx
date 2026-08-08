@@ -129,10 +129,21 @@ export default function DataSettings() {
           }
         />
         <ReadRow label="계정" value={user?.email ?? '-'} />
+        {/*
+          예전에는 "이 서버 안에서만 (임시)" 라고 적었는데 **로컬에서는 임시가
+          아니다.** 파일로 남아 껐다 켜도 그대로다. 그렇게 적어 두면 자기
+          컴퓨터에서 만든 것이 날아간다고 오해한다.
+
+          사용자에게 중요한 것은 "임시인가" 가 아니라 **다른 기기에서도 보이는가** 다.
+        */}
         <ReadRow
           label="저장 위치"
-          value={database === 'postgres' ? '데이터베이스' : '이 서버 안에서만 (임시)'}
-          hint={database === 'postgres' ? undefined : '다시 배포하면 사라질 수 있습니다'}
+          value={database === 'postgres' ? '계정 데이터베이스' : '이 서버'}
+          hint={
+            database === 'postgres'
+              ? '다른 기기에서도 이어서 봅니다'
+              : '이 서버에서만 보입니다'
+          }
         />
         <div className="mt-2.5">
           <button className="btn btn-sm" onClick={() => window.location.reload()}>

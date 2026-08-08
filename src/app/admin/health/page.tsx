@@ -14,7 +14,7 @@ import { Panel, ReadRow } from '@/components/settings/Parts';
 import { Spinner } from '@/components/ui';
 
 interface Health {
-  database: 'postgres' | 'local';
+  storage: { kind: 'postgres' | 'file'; dir?: string; ephemeral: boolean };
   signup: string;
   ai: { enabled: boolean; provider: string; model: string; maxOutputTokens: number };
   stitch: string;
@@ -67,10 +67,20 @@ export default function AdminHealth() {
     <>
       <Panel title="저장">
         <ReadRow
-          label="데이터베이스"
-          value={data.database === 'postgres' ? 'Postgres' : '이 서버 안에서만 (임시)'}
-          hint={data.database === 'postgres' ? undefined : '다시 배포하면 사라집니다'}
+          label="어디에"
+          value={data.storage.kind === 'postgres' ? 'Postgres (DATABASE_URL)' : 'PGlite — 이 서버의 파일'}
         />
+        {data.storage.dir && <ReadRow label="폴더" value={data.storage.dir} />}
+        {/*
+          배포 환경인데 데이터베이스가 없을 때만 경고한다. 로컬에서 파일로 두는
+          것은 정상이고, 그걸 경고로 띄우면 진짜 경고를 흘려보게 된다.
+        */}
+        {data.storage.ephemeral && (
+          <p className="mt-2 rounded-lg border px-3 py-2.5 text-[12px] leading-relaxed" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}>
+            <b>배포 환경인데 데이터베이스가 없습니다.</b> 지금은 인스턴스의 파일에 쓰고 있어,
+            다시 배포하면 계정과 플랜이 모두 사라집니다. <code>DATABASE_URL</code> 을 넣어 주세요.
+          </p>
+        )}
         <div className="flex flex-wrap items-baseline gap-x-3 border-b border-[var(--border)] py-2.5 last:border-b-0">
           <span className="w-24 shrink-0 text-[12px] font-semibold text-[var(--fg-muted)]">
             암호화 열쇠
