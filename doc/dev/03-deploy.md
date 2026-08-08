@@ -85,6 +85,20 @@ Production · Preview · Development 를 모두 체크하세요.
 | `TESTER_EMAIL` | 예: `tester@uniboard.app` | 공용 테스트 계정 없음 |
 | `TESTER_PASSWORD` | 지인에게 알려 줄 비밀번호 (8자 이상) | 공용 테스트 계정 없음 |
 | `SIGNUP_CODE` | 초대 코드 | 가입이 닫힙니다 |
+| `ADMIN_EMAILS` | 관리자 이메일 (쉼표로 여럿) | **관리자 화면이 아무에게도 안 열립니다** |
+
+`ADMIN_EMAILS` 는 관리자 화면(`/admin`)을 열 사람을 정합니다. 여기 적힌 이메일로
+로그인해야 사용자 메뉴에 **관리자** 가 나타납니다.
+
+```ini
+ADMIN_EMAILS=me@example.com,partner@example.com
+```
+
+비워 두면 **아무도 관리자가 아닙니다.** 열어 두는 쪽이 아니라 닫아 두는 쪽이
+기본입니다 — 값을 안 넣었다고 아무나 들어가면 그것으로 끝입니다.
+관리자가 아닌 사람에게는 404 를 줍니다(403 은 "여기 뭔가 있다" 를 알려 주는 셈입니다).
+
+자세한 내용은 [관리자 화면](./08-admin.md) 을 보세요.
 
 `AUTH_SECRET` 만들기:
 
@@ -156,6 +170,23 @@ postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.
 ```
 
 `"mode": "local"` 이면 키가 제대로 들어가지 않은 것입니다. 3단계를 다시 확인하고 Redeploy 하세요.
+
+### 제대로 됐는지 한 화면에서 보기
+
+`ADMIN_EMAILS` 에 넣은 계정으로 로그인한 뒤 **사용자 메뉴 → 관리자 → 점검** 을 여세요.
+환경변수가 다 들어갔는지 한자리에서 보여 줍니다.
+
+| 줄 | 이래야 정상 |
+| --- | --- |
+| 저장 → 어디에 | `Postgres (DATABASE_URL)` |
+| 저장 → 암호화 열쇠 | `AUTH_SECRET 있음` |
+| AI → 상태 | `켜짐` |
+| 정책 → 가입 정책 | 정해 둔 것 (`초대 코드가 있어야 가입` 등) |
+
+**`어디에` 가 `PGlite — 이 서버의 파일` 이면 붉은 경고가 뜹니다.** `DATABASE_URL` 이
+안 들어간 것이고, 그대로 두면 다시 배포할 때마다 계정과 플랜이 전부 사라집니다.
+
+> 점검 화면은 관리자에게만 보입니다. 공급자와 모델 이름도 여기에만 나옵니다.
 
 ### Fluid compute 확인
 
