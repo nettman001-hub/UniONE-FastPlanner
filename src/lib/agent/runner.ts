@@ -12,6 +12,7 @@
  */
 
 import { usePlannerStore } from '../store';
+import { creditSnapshot, refreshCredits } from '../useCredits';
 import { CHAT_CREDIT_COST, type PlanDocuments } from '../types';
 
 interface ChatResponse {
@@ -73,8 +74,11 @@ export async function askAgent(
   const plan = store.plans.find((p) => p.id === planId);
   if (!plan) return 'empty';
 
-  // 크레딧은 **답을 받은 뒤에** 뺀다. 받지 못한 것에 값을 치르지 않는다.
-  if (store.credits < CHAT_CREDIT_COST) return 'no-credits';
+  /*
+   * 낼 수 있는지는 **서버가 본다**(402). 여기서는 화면에 있는 숫자로 미리
+   * 걸러 주기만 한다 — 이 숫자도 서버가 준 것이라 대개 맞지만, 근거는 아니다.
+   */
+  if (creditSnapshot().remaining < CHAT_CREDIT_COST) return 'no-credits';
 
   if (!options.resend) store.appendChat(planId, { role: 'user', content: text });
   store.setAgentBusy(planId);
@@ -94,6 +98,15 @@ export async function askAgent(
       }),
     });
     const data = (await response.json()) as ChatResponse;
+
+    /*
+     * 서버가 크레딧이 없다고 하면 대화에 실패 말풍선을 남기지 않는다 —
+     * 이건 답을 못 만든 것이 아니라 아예 걸지 못한 것이라, 알림으로 알려야 한다.
+     */
+    if (response.status === 402) {
+      void refreshCredits();
+      return 'no-credits';
+    }
 
     if (!response.ok || !data.reply) {
       usePlannerStore.getState().appendChat(planId, {
@@ -117,7 +130,8 @@ export async function askAgent(
       latest.saveVersion(planId, 'AI 에이전트 반영 전');
       usePlannerStore.getState().applyDocuments(planId, data.patch);
     }
-    latest.spendCredits(CHAT_CREDIT_COST);
+    // 값은 서버가 뺐다. 여기서는 바뀐 잔량을 다시 물어보기만 한다.
+    void refreshCredits();
     latest.appendChat(planId, {
       role: 'assistant',
       content: data.reply,

@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         for await (const event of runPipeline(
           plan,
           artifacts,
-          { extra: body.extra, pageIds: body.pageIds, merge: body.merge, skills },
+          { extra: body.extra, pageIds: body.pageIds, merge: body.merge, skills, userId: user.id },
           request.signal,
         )) {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));

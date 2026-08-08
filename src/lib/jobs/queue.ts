@@ -20,7 +20,9 @@ import { generateLocally } from '@/lib/ai/local-generator';
 import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
 import { buildPrompt } from '@/lib/ai/prompts';
 import { draftToPatch } from '@/lib/ai/apply';
+import { canAfford, spendCredits } from '@/lib/db/credits';
 import type { SkillMap } from '@/lib/skills';
+import { ARTIFACT_CREDIT_COST, ARTIFACT_LABEL } from '@/lib/types';
 import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
 
 /**
@@ -76,6 +78,12 @@ export interface GenerateOptions {
    * 보내게 하면 남의 지침을 넣거나 울타리를 우회하는 문장을 끼워 넣을 수 있다.
    */
   skills?: SkillMap;
+  /**
+   * 크레딧을 치를 계정. **서버에서만 채운다.**
+   *
+   * 비어 있으면 셈을 건너뛴다 — 검사나 내부 호출에서 쓴다.
+   */
+  userId?: string;
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -224,12 +232,34 @@ export async function* runPipeline(
       return;
     }
 
+    /*
+     * 낼 수 있는지 **서버가 본다.**
+     *
+     * 예전에는 브라우저가 봤다. 브라우저가 안 보면 그만이라 사실상 무제한이었다.
+     */
+    const cost = ARTIFACT_CREDIT_COST[artifact];
+    if (options.userId && !(await canAfford(options.userId, cost))) {
+      yield {
+        type: 'error',
+        message: `크레딧이 부족합니다. ${ARTIFACT_LABEL[artifact]} 생성에는 ${cost} 크레딧이 필요합니다. 내일 다시 충전됩니다.`,
+      };
+      return;
+    }
+
     yield { type: 'start', artifact };
 
     try {
       if (STEP_DELAY_MS > 0) await new Promise((r) => setTimeout(r, STEP_DELAY_MS));
       const result = await runStep(working, artifact, options);
       working = withPatch(working, result.patch);
+      /*
+       * 값은 **받았을 때** 치른다. 그리고 **AI 가 만든 것에만** 치른다 —
+       * AI 가 실패해 내장 생성기로 대신했으면 우리 쪽 비용이 나가지 않았다.
+       * 그걸 제값 받으면 받은 것보다 비싸게 문 셈이 된다.
+       */
+      if (options.userId && result.source === 'ai') {
+        await spendCredits(options.userId, artifact, cost);
+      }
       yield {
         type: 'step',
         artifact,

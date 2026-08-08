@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, CornerDownLeft, Eraser, RotateCw, Sparkles, Square, Target, X } from 'lucide-react';
 import { usePlannerStore } from '@/lib/store';
+import { useCredits } from '@/lib/useCredits';
 import { askAgent, cancelAgent, unansweredQuestion } from '@/lib/agent/runner';
 import { selectableItems, useSelectionStore } from '@/lib/selection';
 import { CHAT_CREDIT_COST, type Plan } from '@/lib/types';
@@ -18,7 +19,7 @@ const SUGGESTIONS = [
 export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void }) {
   const [input, setInput] = useState('');
   const clearChat = usePlannerStore((s) => s.clearChat);
-  const credits = usePlannerStore((s) => s.credits);
+  const { remaining: credits } = useCredits();
   /**
    * 진행 상태를 이 컴포넌트가 아니라 스토어에서 읽는다.
    * 요청은 컴포넌트 밖에서 도므로, 패널이 사라졌다 다시 그려져도 이어서 보인다.

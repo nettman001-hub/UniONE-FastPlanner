@@ -25,6 +25,7 @@ import {
   syncSnapshot,
 } from '@/lib/sync';
 import { usePlannerStore } from '@/lib/store';
+import { refreshCredits, resetCredits } from '@/lib/useCredits';
 import { Spinner, useToast } from './ui';
 
 /* 동기화 ------------------------------------------------------------- */
@@ -48,6 +49,16 @@ export function PlanSync() {
     if (user) void adoptUser(user.id);
     else releaseUser();
   }, [user, loading, hydrated]);
+
+  /*
+   * 크레딧도 여기서 맞춘다. 로그아웃하면 비워야 한다 — 안 그러면 다음 사람이
+   * 앞사람의 잔량을 본다.
+   */
+  useEffect(() => {
+    if (loading) return;
+    if (user) void refreshCredits();
+    else resetCredits();
+  }, [user, loading]);
 
   return null;
 }

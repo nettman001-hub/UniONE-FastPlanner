@@ -23,7 +23,8 @@ import {
   Wand2,
 } from 'lucide-react';
 
-import { usePlannerStore, DAILY_CREDIT_LIMIT } from '@/lib/store';
+import { usePlannerStore } from '@/lib/store';
+import { useCredits } from '@/lib/useCredits';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useAiMode } from '@/lib/useGenerate';
 import {
@@ -684,7 +685,7 @@ function Home() {
   const { mode } = useAiMode();
 
   const plans = usePlannerStore((s) => s.plans);
-  const credits = usePlannerStore((s) => s.credits);
+  const { remaining: credits, limit: creditLimit } = useCredits();
   const importPlan = usePlannerStore((s) => s.importPlan);
   const deletePlan = usePlannerStore((s) => s.deletePlan);
   const renamePlan = usePlannerStore((s) => s.renamePlan);
@@ -793,10 +794,10 @@ function Home() {
           <ClientOnly>
             <span
               className="chip"
-              title={`하루 ${DAILY_CREDIT_LIMIT} 크레딧이 충전됩니다. 임시로 열어 둔 한도입니다.`}
+              title={`하루 ${creditLimit} 크레딧이 충전됩니다. 임시로 열어 둔 한도입니다.`}
             >
               <Coins size={11} />
-              크레딧 {credits}/{DAILY_CREDIT_LIMIT}
+              크레딧 {credits}/{creditLimit}
               <span className="font-normal text-[var(--fg-subtle)]">(임시)</span>
             </span>
           </ClientOnly>

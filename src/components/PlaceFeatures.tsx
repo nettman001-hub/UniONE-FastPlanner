@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, PlusCircle, Sparkles, Wand2 } from 'lucide-react';
 
 import { usePlannerStore } from '@/lib/store';
+import { refreshCredits, useCredits } from '@/lib/useCredits';
 import {
   applyPlacements,
   isPurelyAdditive,
@@ -36,8 +37,7 @@ export function PlaceFeaturesModal({
   onClose: () => void;
 }) {
   const toast = useToast();
-  const credits = usePlannerStore((s) => s.credits);
-  const spendCredits = usePlannerStore((s) => s.spendCredits);
+  const { remaining: credits } = useCredits();
   const applyDocuments = usePlannerStore((s) => s.applyDocuments);
   const saveVersion = usePlannerStore((s) => s.saveVersion);
 
@@ -79,8 +79,8 @@ export function PlaceFeaturesModal({
         toast(data.error ?? '제안을 받지 못했습니다.', 'danger');
         return;
       }
-      // 크레딧은 **받은 뒤에** 뺀다. 못 받은 것에 값을 치르지 않는다.
-      spendCredits(PLACEMENT_CREDIT_COST);
+      // 값은 서버가 받은 뒤에 뺐다. 여기서는 바뀐 잔량을 다시 물어보기만 한다.
+      void refreshCredits();
       const list = data.placements ?? [];
       setPlacements(list);
       setMissed(data.missed ?? []);

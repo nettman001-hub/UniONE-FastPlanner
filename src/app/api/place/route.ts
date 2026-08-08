@@ -5,6 +5,8 @@ import { aiErrorMessage } from '@/lib/ai/errors';
 import { PLACEMENT_SCHEMA } from '@/lib/ai/schemas';
 import { buildPlacementPrompt } from '@/lib/ai/prompts';
 import { unplacedFeatures, type Placement } from '@/lib/ia/placement';
+import { canAfford, spendCredits } from '@/lib/db/credits';
+import { PLACEMENT_CREDIT_COST } from '@/lib/types';
 import type { IaPageType, Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -62,6 +64,14 @@ export async function POST(request: Request) {
     );
   }
 
+  // 낼 수 있는지 서버가 본다. 예전에는 브라우저만 셌다.
+  if (!(await canAfford(user.id, PLACEMENT_CREDIT_COST))) {
+    return NextResponse.json(
+      { error: '크레딧이 부족합니다. 내일 다시 충전됩니다.' },
+      { status: 402 },
+    );
+  }
+
   try {
     const result = await generateJson<{ placements: RawPlacement[] }>({
       prompt: buildPlacementPrompt(
@@ -112,6 +122,8 @@ export async function POST(request: Request) {
 
     // 제안이 안 온 기능이 있으면 알려 준다. 조용히 빠뜨리면 사용자가 모른다.
     const missed = targets.filter((f) => !seen.has(f.id)).map((f) => `${f.id} ${f.name}`);
+    // 값은 받았을 때 치른다. 아래 catch 로 빠지면 아무것도 못 받았으므로 안 받는다.
+    await spendCredits(user.id, 'place', PLACEMENT_CREDIT_COST);
     return NextResponse.json({ placements, missed });
   } catch (error) {
     return NextResponse.json({ error: aiErrorMessage(error) }, { status: 502 });

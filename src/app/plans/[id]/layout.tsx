@@ -21,7 +21,8 @@ import { Logo } from '@/components/Logo';
 import { ClientOnly, Spinner } from '@/components/ui';
 import { RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
 import { ResumeBanner } from '@/components/ResumeBanner';
-import { DAILY_CREDIT_LIMIT, usePlannerStore } from '@/lib/store';
+import { usePlannerStore } from '@/lib/store';
+import { useCredits } from '@/lib/useCredits';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
@@ -64,7 +65,7 @@ function PlanShell({ children }: { children: ReactNode }) {
   const planId = params.id;
   const pathname = usePathname();
   const plan = usePlannerStore((s) => s.plans.find((p) => p.id === planId));
-  const credits = usePlannerStore((s) => s.credits);
+  const { remaining: credits, limit: creditLimit } = useCredits();
   /**
    * 지금 생성 중인 산출물. 사이드바에 표시해, 생성 중에 다른 메뉴로 옮겨 가도
    * 진행 중이라는 사실이 보이게 한다. 상태는 서버 작업에서 온다.
@@ -110,10 +111,10 @@ function PlanShell({ children }: { children: ReactNode }) {
           <ClientOnly>
             <span
               className="chip"
-              title={`하루 ${DAILY_CREDIT_LIMIT} 크레딧이 충전됩니다. 임시로 열어 둔 한도입니다.`}
+              title={`하루 ${creditLimit} 크레딧이 충전됩니다. 임시로 열어 둔 한도입니다.`}
             >
               <Zap size={11} />
-              {credits} / {DAILY_CREDIT_LIMIT}
+              {credits} / {creditLimit}
               <span className="font-normal text-[var(--fg-subtle)]">(임시)</span>
             </span>
           </ClientOnly>

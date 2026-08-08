@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
+import { canAfford, spendCredits } from '@/lib/db/credits';
+import { CHAT_CREDIT_COST } from '@/lib/types';
 import { maxTokensFor } from '@/lib/jobs/queue';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { CHAT_SCHEMA } from '@/lib/ai/schemas';
@@ -81,6 +83,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ ...offlineReply(plan), source: 'local' });
   }
 
+  /*
+   * 낼 수 있는지 **서버가 본다.**
+   *
+   * 예전에는 브라우저만 셌다. 브라우저가 안 깎으면 그만이라 사실상 무제한이었다.
+   */
+  if (!(await canAfford(user.id, CHAT_CREDIT_COST))) {
+    return NextResponse.json(
+      { error: '크레딧이 부족합니다. 내일 다시 충전됩니다.' },
+      { status: 402 },
+    );
+  }
+
   try {
     const result = await generateJson<ChatResult>({
       prompt: buildChatPrompt(plan, message),
@@ -138,6 +152,9 @@ export async function POST(request: Request) {
         patch = undefined;
       }
     }
+
+    // AI 가 답했을 때만 치른다. 아래 catch 로 빠지면 내장 답변이라 값을 안 받는다.
+    await spendCredits(user.id, 'chat', CHAT_CREDIT_COST);
 
     return NextResponse.json({
       reply: blocked ? `${contentLossMessage(blocked)}\n\n---\n\n${result.reply}` : result.reply,

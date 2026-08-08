@@ -56,6 +56,24 @@ alter table integrations add column if not exists kind text not null default '';
 --
 -- 지금은 계정마다 단계별로 하나씩이다. 플랜별로 다르게 두는 것은 나중에
 -- plan_id 를 키에 더해 넓힌다.
+-- 크레딧을 무엇에 얼마나 썼는지.
+--
+-- **잔량이 아니라 쓴 내역을 적는다.** 잔량 하나만 들고 있으면 무엇에 썼는지가
+-- 남지 않아 사용 내역을 따로 만들어야 한다. 빼서 세면 둘 다 된다.
+--
+-- 브라우저에 두던 것을 옮겨 온 것이다. 예전에는 개발자도구로 고칠 수 있었고,
+-- 에이전트·기능 배치는 서버에서 아예 세지 않아 사실상 무제한이었다.
+create table if not exists credit_usage (
+  id         bigserial primary key,
+  user_id    text not null references users(id) on delete cascade,
+  -- 산출물 다섯 가지 + chat + place
+  kind       text not null,
+  amount     integer not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists credit_usage_user_time_idx on credit_usage (user_id, created_at desc);
+
 create table if not exists skills (
   user_id    text not null references users(id) on delete cascade,
   artifact   text not null,
