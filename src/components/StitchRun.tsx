@@ -35,6 +35,7 @@ import {
   subscribe,
   serverSnapshot,
 } from '@/lib/design/stitch-runner';
+import { useStitchConnection } from '@/lib/design/useStitchConnection';
 import type { Plan } from '@/lib/types';
 
 /**
@@ -50,11 +51,6 @@ const CONFIRM_OVER = 10;
 
 /** 화면 하나에 걸리는 대략 시간. 안내용 어림수다. */
 const SECONDS_EACH = 45;
-
-interface Status {
-  connected: boolean;
-  label: string;
-}
 
 interface Model {
   id: string;
@@ -80,9 +76,9 @@ const EMPHASIS_UI: Array<{ key: Emphasis; name: string; what: string }> = [
 
 export function StitchRun({ plan }: { plan: Plan }) {
   const toast = useToast();
-  const [status, setStatus] = useState<Status | null>(null);
-  const [secret, setSecret] = useState('');
-  const [saving, setSaving] = useState(false);
+  /* 연결은 설정 화면과 같은 것을 쓴다 — 계정에 하나뿐인 상태라 두 벌로 두면 어긋난다. */
+  const { status, secret, setSecret, saving, connect, disconnect, error, markDisconnected } =
+    useStitchConnection();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** 고를 수 있는 모델. 스티치에서 받아 온다. */
   const [models, setModels] = useState<Model[]>([]);
@@ -137,17 +133,6 @@ export function StitchRun({ plan }: { plan: Plan }) {
     });
   }, [pages, withWireframe, made, restored]);
 
-  useEffect(() => {
-    let alive = true;
-    fetch('/api/design/stitch')
-      .then((r) => r.json())
-      .then((d: Status) => alive && setStatus({ connected: Boolean(d.connected), label: d.label ?? '' }))
-      .catch(() => alive && setStatus({ connected: false, label: '' }));
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   /* 고를 수 있는 모델은 스티치에서 받아 온다 — 저쪽이 새 모델을 내면 바로 나온다. */
   useEffect(() => {
     let alive = true;
@@ -198,43 +183,19 @@ export function StitchRun({ plan }: { plan: Plan }) {
 
   /* 스티치가 자격증명을 거절했으면 연결 칸으로 되돌린다. */
   useEffect(() => {
-    if (session.disconnected && status?.connected) setStatus({ connected: false, label: '' });
-  }, [session.disconnected, status]);
+    if (session.disconnected) markDisconnected();
+  }, [session.disconnected, markDisconnected]);
 
-  const connect = useCallback(async () => {
-    const value = secret.trim();
-    if (!value) return;
-    setSaving(true);
-    try {
-      const res = await fetch('/api/design/stitch', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secret: value }),
-      });
-      const data = (await res.json()) as Status & { error?: string };
-      if (!res.ok) {
-        toast(data.error ?? '연결하지 못했습니다.', 'warn');
-        return;
-      }
-      setStatus({ connected: true, label: data.label ?? '' });
-      setSecret('');
-      toast('스티치를 연결했습니다.', 'ok');
-    } catch {
-      toast('연결하지 못했습니다.', 'warn');
-    } finally {
-      setSaving(false);
-    }
-  }, [secret, toast]);
+  /* 연결·해제는 훅이 하고, 여기서는 알림과 이 플랜의 진행 정리를 얹는다. */
+  const handleConnect = useCallback(async () => {
+    const ok = await connect();
+    toast(ok ? '스티치를 연결했습니다.' : (error ?? '연결하지 못했습니다.'), ok ? 'ok' : 'warn');
+  }, [connect, error, toast]);
 
-  const disconnect = useCallback(async () => {
-    try {
-      await fetch('/api/design/stitch', { method: 'DELETE' });
-    } catch {
-      /* 못 지워도 화면에서는 끊어진 것으로 본다. */
-    }
-    setStatus({ connected: false, label: '' });
+  const handleDisconnect = useCallback(async () => {
+    await disconnect();
     resetRun(plan.id);
-  }, [plan.id]);
+  }, [disconnect, plan.id]);
 
   /**
    * 만들기를 건다.
@@ -309,13 +270,13 @@ export function StitchRun({ plan }: { plan: Plan }) {
             placeholder="스티치에서 발급받은 키를 붙여 넣으세요"
             onChange={(e) => setSecret(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void connect();
+              if (e.key === 'Enter') void handleConnect();
             }}
           />
           <button
             className={`btn btn-primary btn-sm shrink-0${saving ? ' is-busy' : ''}`}
             disabled={saving || secret.trim().length === 0}
-            onClick={() => void connect()}
+            onClick={() => void handleConnect()}
           >
             {saving ? <Spinner size={13} /> : <Link2 size={13} />}
             연결
@@ -374,7 +335,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
             새 프로젝트로
           </button>
         )}
-        <button className="btn btn-sm" disabled={running} onClick={() => void disconnect()}>
+        <button className="btn btn-sm" disabled={running} onClick={() => void handleDisconnect()}>
           <Unlink size={12} />
           연결 해제
         </button>

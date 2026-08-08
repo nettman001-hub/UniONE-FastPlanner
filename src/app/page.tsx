@@ -23,7 +23,7 @@ import {
   Wand2,
 } from 'lucide-react';
 
-import { createEmptyPlan, usePlannerStore, DAILY_CREDIT_LIMIT } from '@/lib/store';
+import { usePlannerStore, DAILY_CREDIT_LIMIT } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useAiMode } from '@/lib/useGenerate';
 import {
@@ -35,6 +35,7 @@ import {
   type Platform,
 } from '@/lib/types';
 import { download, slugify, toJson } from '@/lib/export';
+import { asPlatform, parsePlan } from '@/lib/plan-file';
 import { ClientOnly, EmptyState, Field, Modal, Spinner, useConfirm, useToast } from '@/components/ui';
 import { GuestImportBanner, RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
 import { Logo } from '@/components/Logo';
@@ -106,69 +107,6 @@ function relativeTime(iso: string): string {
   const day = Math.floor(hour / 24);
   if (day < 7) return `${day}일 전`;
   return new Date(iso).toLocaleDateString('ko-KR');
-}
-
-function asString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback;
-}
-
-function asPlatform(value: unknown): Platform {
-  return PLATFORM_KEYS.includes(value as Platform) ? (value as Platform) : 'web';
-}
-
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
-}
-
-/** 내보낸 JSON 을 안전하게 Plan 으로 되돌린다. 형식이 아니면 null. */
-function parsePlan(text: string): Plan | null {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (!raw || typeof raw !== 'object') return null;
-
-  const value = raw as Partial<Plan>;
-  const brief = value.brief;
-  if (!brief || typeof brief !== 'object' || typeof brief.title !== 'string') return null;
-
-  const base = createEmptyPlan({
-    title: brief.title,
-    oneLiner: asString(brief.oneLiner),
-    idea: asString(brief.idea),
-    targetUser: asString(brief.targetUser),
-    purpose: asString(brief.purpose),
-    platform: asPlatform(brief.platform),
-    reference: asString(brief.reference),
-    mustHave: asString(brief.mustHave),
-  });
-  // 요구분석 답은 문서를 만드는 근거다. 가져오기에서 흘리면 다시 만들 때 달라진다.
-  if (brief.answers && typeof brief.answers === 'object') base.brief.answers = brief.answers;
-  if (Array.isArray(brief.followups)) base.brief.followups = brief.followups;
-
-  const generated = { ...base.generated };
-  if (value.generated && typeof value.generated === 'object') {
-    for (const key of ARTIFACT_KEYS) generated[key] = Boolean(value.generated[key]);
-  }
-
-  return {
-    ...base,
-    createdAt: asString(value.createdAt, base.createdAt),
-    updatedAt: asString(value.updatedAt, base.updatedAt),
-    generated,
-    prd: value.prd && typeof value.prd === 'object' ? { ...base.prd, ...value.prd } : base.prd,
-    requirements: asArray(value.requirements),
-    features: asArray(value.features),
-    specifications: asArray(value.specifications),
-    iaPages: asArray(value.iaPages),
-    flows: asArray(value.flows),
-    wireframes: asArray(value.wireframes),
-    chat: asArray(value.chat),
-    comments: asArray(value.comments),
-    versions: asArray(value.versions),
-  };
 }
 
 /* ------------------------------------------------------------------ */
