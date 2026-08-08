@@ -112,6 +112,8 @@
 users (id, email, name, password_hash, created_at)
 plans (id, user_id, title, data jsonb, updated_at, created_at)
        primary key (user_id, id)
+skills (user_id, plan_id, artifact, body, enabled, updated_at)
+       unique (user_id, plan_id, artifact)
 ```
 
 - 플랜 본문은 `data` 한 칸에 통째로 들어갑니다. 화면이 쓰는 모양 그대로라
@@ -121,6 +123,28 @@ plans (id, user_id, title, data jsonb, updated_at, created_at)
   조용히 실패합니다.
 - 표는 서버가 뜰 때 `create table if not exists` 로 만들어집니다. 따로 실행할
   마이그레이션 명령이 없습니다.
+
+### 작성 지침의 자리 (`skills.plan_id`)
+
+`plan_id` 가 **빈 문자열이면 계정 기본**(모든 플랜), 값이 있으면 **그 플랜만**
+입니다. 하나의 표에 두 겹을 담아, 기본과 플랜별을 한 질의로 같이 읽습니다.
+
+```sql
+where user_id = $1 and (plan_id = '' or plan_id = $2)
+```
+
+고르는 규칙은 **덮어쓰기**입니다 — 플랜 줄이 있으면 그것만 쓰고, 계정 것에
+덧붙이지 않습니다. 플랜 줄이 있는데 `enabled = false` 면 계정 기본으로
+되돌아가지 않고 **지침 없이** 만듭니다(그것이 "이 플랜은 지침 없이" 입니다).
+
+`plans` 를 외래키로 참조하지 **않습니다.** 플랜은 브라우저에서 먼저 만들어지고
+1.2초쯤 뒤에 서버로 올라가는데, 외래키를 걸면 방금 만든 플랜에 지침을 못 적게
+됩니다. 대신 플랜을 지울 때 `deletePlan` 이 그 플랜의 지침 줄도 함께 치웁니다.
+
+> 예전 배포에는 기본키가 `(user_id, artifact)` 였습니다. 서버가 뜰 때
+> `drop constraint if exists skills_pkey` 로 걷어 내고 유일 색인으로 옮깁니다.
+> 있던 줄은 `plan_id = ''` 즉 계정 기본이 되므로, 적어 둔 지침은 그대로 살아
+> 있습니다.
 
 ---
 

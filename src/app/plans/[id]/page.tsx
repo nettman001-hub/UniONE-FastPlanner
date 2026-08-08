@@ -40,6 +40,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { FixWithAi } from '@/components/FixWithAi';
+import { PlanSkills } from '@/components/PlanSkills';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
@@ -480,6 +481,15 @@ function PlanOverview() {
             })}
           </div>
         </SectionCard>
+
+        {/* -------------------------------------------------------- */}
+        {/* 이 플랜의 작성 지침                                        */}
+        {/* -------------------------------------------------------- */}
+        {/*
+          파이프라인 **바로 아래**에 둔다. 지침은 만들기 전에 정해야 쓸모가
+          있는데, 아래쪽에 두면 다 만들고 나서야 눈에 들어온다.
+        */}
+        <PlanSkills planId={planId} />
 
         {/* -------------------------------------------------------- */}
         {/* 정합성 검사                                                */}

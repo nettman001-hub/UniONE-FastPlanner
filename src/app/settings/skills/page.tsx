@@ -10,18 +10,13 @@
  * 구조가 아니다. 안 밝히면 "썼는데 반영이 안 된다" 는 불만이 나온다.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, FileUp, Info, Lightbulb, Save } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Check, Info, Save } from 'lucide-react';
 
 import { Panel } from '@/components/settings/Parts';
+import { SkillBody } from '@/components/SkillBody';
 import { Spinner, useToast } from '@/components/ui';
-import {
-  SKILL_ARTIFACTS,
-  SKILL_EXAMPLE,
-  SKILL_MAX_CHARS,
-  skillTitle,
-  type Skill,
-} from '@/lib/skills';
+import { SKILL_ARTIFACTS, skillTitle, type Skill } from '@/lib/skills';
 import type { ArtifactKey } from '@/lib/types';
 
 interface Draft {
@@ -38,7 +33,6 @@ export default function SkillSettings() {
   const toast = useToast();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(true);
-  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     let alive = true;
@@ -99,19 +93,6 @@ export default function SkillSettings() {
     [drafts, toast],
   );
 
-  const upload = async (artifact: ArtifactKey, files: FileList | null) => {
-    const file = files?.[0];
-    if (!file) return;
-    const text = await file.text();
-    if (text.length > SKILL_MAX_CHARS) {
-      toast(`${SKILL_MAX_CHARS.toLocaleString()}자를 넘습니다. 줄여서 올려 주세요.`, 'warn');
-      return;
-    }
-    edit(artifact, { body: text, dirty: true });
-    const input = fileRefs.current[artifact];
-    if (input) input.value = '';
-  };
-
   if (loading) {
     return (
       <div className="empty" style={{ minHeight: '40vh' }}>
@@ -148,11 +129,18 @@ export default function SkillSettings() {
           지금 <b>{on}개</b> 단계에 지침이 켜져 있습니다. 이 계정으로 만드는 모든 플랜에
           적용됩니다.
         </p>
+        {/*
+          여기 적은 것이 모든 플랜에 걸린다는 말만 하면, 고객사마다 용어가 다른
+          경우에 쓸 방법이 없어 보인다. 어디서 예외를 두는지 같이 알려 준다.
+        */}
+        <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
+          어떤 플랜만 다르게 하고 싶다면 그 플랜의 <b>개요 → 이 플랜의 작성 지침</b>에서 따로
+          적으면 됩니다. 그 플랜에서는 여기 것 대신 그것이 쓰입니다.
+        </p>
       </Panel>
 
       {SKILL_ARTIFACTS.map((artifact) => {
         const draft = draftOf(artifact);
-        const length = draft.body.length;
         const active = draft.enabled && draft.body.trim().length > 0;
         return (
           <section key={artifact} className="card mb-3.5 px-4 py-4">
@@ -177,15 +165,13 @@ export default function SkillSettings() {
               </label>
             </div>
 
-            <textarea
-              className="input mt-2 min-h-[132px] font-mono text-[11.5px] leading-relaxed"
+            <SkillBody
+              artifact={artifact}
               value={draft.body}
-              maxLength={SKILL_MAX_CHARS}
-              placeholder={`${skillTitle(artifact)}을(를) 만들 때 지킬 것을 적어 주세요.`}
-              onChange={(e) => edit(artifact, { body: e.target.value, dirty: true })}
-            />
-
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              disabled={draft.saving}
+              onChange={(body) => edit(artifact, { body, dirty: true })}
+              note={draft.dirty ? <b className="ml-1.5 text-[var(--warn)]">저장 안 함</b> : null}
+            >
               <button
                 className={`btn btn-primary btn-sm${draft.saving ? ' is-busy' : ''}`}
                 disabled={draft.saving || !draft.dirty}
@@ -194,37 +180,7 @@ export default function SkillSettings() {
                 {draft.saving ? <Spinner size={13} /> : <Save size={13} />}
                 저장
               </button>
-              {/* 빈 칸을 주면 아무도 안 쓴다. 고쳐 쓸 것을 준다. */}
-              <button
-                className="btn btn-sm"
-                disabled={draft.saving}
-                onClick={() => edit(artifact, { body: SKILL_EXAMPLE[artifact], dirty: true })}
-              >
-                <Lightbulb size={13} />
-                예시 넣기
-              </button>
-              <button
-                className="btn btn-sm"
-                disabled={draft.saving}
-                onClick={() => fileRefs.current[artifact]?.click()}
-              >
-                <FileUp size={13} />
-                파일에서
-              </button>
-              <input
-                ref={(el) => {
-                  fileRefs.current[artifact] = el;
-                }}
-                type="file"
-                accept=".md,.txt,text/markdown,text/plain"
-                className="hidden"
-                onChange={(e) => void upload(artifact, e.target.files)}
-              />
-              <span className="ml-auto text-[11px] text-[var(--fg-subtle)]">
-                {length.toLocaleString()} / {SKILL_MAX_CHARS.toLocaleString()}자
-                {draft.dirty && <b className="ml-1.5 text-[var(--warn)]">저장 안 함</b>}
-              </span>
-            </div>
+            </SkillBody>
           </section>
         );
       })}

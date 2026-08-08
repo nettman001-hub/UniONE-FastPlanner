@@ -49,13 +49,6 @@ create table if not exists integrations (
 -- 연결할 때 실제로 찔러 보고 되는 쪽을 여기 적어 둔다.
 alter table integrations add column if not exists kind text not null default '';
 
--- 기획 스킬 — 단계마다 "이런 식으로 써 달라" 를 적어 둔 것.
---
--- 비밀이 아니라 암호화하지 않는다. 다만 **사용자가 쓴 글이 AI 요청문에 그대로
--- 들어가므로**, 읽어 쓰는 쪽(lib/skills.ts)에서 울타리에 가둔 뒤에 넣는다.
---
--- 지금은 계정마다 단계별로 하나씩이다. 플랜별로 다르게 두는 것은 나중에
--- plan_id 를 키에 더해 넓힌다.
 -- 크레딧을 무엇에 얼마나 썼는지.
 --
 -- **잔량이 아니라 쓴 내역을 적는다.** 잔량 하나만 들고 있으면 무엇에 썼는지가
@@ -74,6 +67,10 @@ create table if not exists credit_usage (
 
 create index if not exists credit_usage_user_time_idx on credit_usage (user_id, created_at desc);
 
+-- 기획 스킬 — 단계마다 "이런 식으로 써 달라" 를 적어 둔 것.
+--
+-- 비밀이 아니라 암호화하지 않는다. 다만 **사용자가 쓴 글이 AI 요청문에 그대로
+-- 들어가므로**, 읽어 쓰는 쪽(lib/skills.ts)에서 울타리에 가둔 뒤에 넣는다.
 create table if not exists skills (
   user_id    text not null references users(id) on delete cascade,
   artifact   text not null,
@@ -82,6 +79,25 @@ create table if not exists skills (
   updated_at timestamptz not null default now(),
   primary key (user_id, artifact)
 );
+
+-- 플랜별 덮어쓰기 — "이 프로젝트만 다르게".
+--
+-- 빈 문자열이 **계정 기본**이라는 뜻이다. 따로 scope 칸을 두는 대신 이렇게 한
+-- 이유는, 기본과 플랜별을 한 질의로 같이 읽어 올 수 있어서다
+-- (where user_id = $1 and (plan_id = '' or plan_id = $2)).
+--
+-- plans 표를 참조하지 **않는다.** 플랜은 브라우저에서 먼저 만들어지고 조금 뒤에
+-- 서버로 올라가는데, 외래키를 걸면 아직 안 올라간 플랜에는 지침을 못 적는다.
+alter table skills add column if not exists plan_id text not null default '';
+
+-- 기본키가 (user_id, artifact) 라 한 단계에 한 줄뿐이다. 플랜별로 여러 줄을
+-- 두려면 키를 넓혀야 하는데, "alter table ... add primary key" 는 여러 번 돌릴
+-- 수 없다(이 파일은 서버가 뜰 때마다 통째로 다시 돈다).
+--
+-- 그래서 유일 색인으로 옮긴다 — "create unique index if not exists" 는 몇 번을
+-- 돌려도 같은 결과다. on conflict 는 색인으로도 그대로 걸린다.
+alter table skills drop constraint if exists skills_pkey;
+create unique index if not exists skills_scope_idx on skills (user_id, plan_id, artifact);
 `;
 
 /**
