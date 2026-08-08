@@ -25,6 +25,8 @@ interface AuthValue {
   signup: SignupMode;
   /** 배포에 Postgres 를 붙였는지. 'local' 이면 이 서버 안에서만 저장된다. */
   database: 'postgres' | 'local';
+  /** 관리자 차림표를 보여 줄지. 실제 차단은 서버가 한다. */
+  admin: boolean;
   refresh: () => Promise<AuthUser | null>;
   logout: () => Promise<void>;
 }
@@ -36,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [signup, setSignup] = useState<SignupMode>('closed');
   const [database, setDatabase] = useState<'postgres' | 'local'>('local');
+  const [admin, setAdmin] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -45,10 +48,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: AuthUser | null;
         signup: SignupMode;
         database: 'postgres' | 'local';
+        admin?: boolean;
       };
       setUser(data.user);
       setSignup(data.signup);
       setDatabase(data.database);
+      setAdmin(Boolean(data.admin));
       return data.user;
     } catch {
       // 네트워크가 끊겼을 뿐일 수도 있다. 로그아웃으로 단정하지 않는다.
@@ -65,11 +70,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     setUser(null);
+    setAdmin(false);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, signup, database, refresh, logout }),
-    [user, loading, signup, database, refresh, logout],
+    () => ({ user, loading, signup, database, admin, refresh, logout }),
+    [user, loading, signup, database, admin, refresh, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
