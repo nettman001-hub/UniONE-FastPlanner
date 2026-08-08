@@ -14,6 +14,7 @@
  */
 
 import { usePlannerStore } from '../store';
+import { creditSnapshot, refreshCredits } from '../useCredits';
 import { ARTIFACT_CREDIT_COST, ARTIFACT_LABEL, type ArtifactKey, type PlanDocuments } from '../types';
 
 type Toast = (message: string, tone?: 'ok' | 'warn' | 'danger') => void;
@@ -99,16 +100,15 @@ export async function runGeneration(
   if (inFlight) return false;
 
   const store = usePlannerStore;
-  const { spendCredits, applyDocuments, setActiveRun, setInterrupted } = store.getState();
+  const { applyDocuments, setActiveRun, setInterrupted } = store.getState();
 
   /*
-   * 값은 **결과를 받았을 때** 치른다.
-   *
-   * 시작할 때 미리 빼면, 그 단계가 끝나기 전에 창을 닫았을 때 받지도 못한 것에 값을
-   * 치른 셈이 된다. 시작 전에는 낼 수 있는지만 확인한다.
+   * 값은 **결과를 받았을 때** 서버가 치른다. 낼 수 있는지도 서버가 본다 —
+   * 여기서 미리 걸러 주는 것은 헛걸음을 줄이려는 것일 뿐 근거가 아니다.
+   * 부족하면 서버가 `error` 사건으로 알려 주고, 아래에서 그대로 알린다.
    */
   const firstCost = ARTIFACT_CREDIT_COST[artifacts[0]];
-  if (store.getState().credits < firstCost) {
+  if (creditSnapshot().remaining < firstCost) {
     toast(
       `크레딧이 부족합니다. ${ARTIFACT_LABEL[artifacts[0]]} 생성에는 ${firstCost} 크레딧이 필요합니다. 내일 다시 충전됩니다.`,
       'warn',
@@ -161,8 +161,8 @@ export async function runGeneration(
         if (event.type === 'step' && event.artifact && event.patch) {
           applyDocuments(planId, event.patch, [event.artifact]);
           done.push(event.artifact);
-          // 받은 것에만 값을 치른다.
-          spendCredits(ARTIFACT_CREDIT_COST[event.artifact]);
+          // 값은 서버가 뺐다. 여기서는 바뀐 잔량을 다시 물어보기만 한다.
+          void refreshCredits();
           setActiveRun({ planId, artifacts, current: null, done: [...done] });
           if (pipeline) {
             setInterrupted({
@@ -175,13 +175,11 @@ export async function runGeneration(
             toast(`${event.warning}\n대신 기본 생성기로 만들었습니다.`, 'warn');
           }
 
-          // 다음 단계 값을 못 내면 여기서 그만둔다. 서버도 함께 멈춘다.
-          const next = artifacts.find((a) => !done.includes(a));
-          if (next && store.getState().credits < ARTIFACT_CREDIT_COST[next]) {
-            failure = `크레딧이 부족해 ${ARTIFACT_LABEL[next]} 부터는 만들지 못했습니다. 내일 다시 충전됩니다.`;
-            controller.abort();
-            break;
-          }
+          /*
+           * 다음 단계 값을 못 내는지는 **서버가 본다.** 서버가 못 낸다고 하면
+           * `error` 사건을 보내고 흐름을 멈춘다. 여기서 또 세면, 방금 빼 간
+           * 값을 아직 못 받아 온 사이에 엉뚱하게 끊길 수 있다.
+           */
         }
 
         if (event.type === 'error') {

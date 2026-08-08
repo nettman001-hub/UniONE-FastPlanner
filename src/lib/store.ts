@@ -15,7 +15,6 @@ import {
   type ReviewTarget,
 } from './fs-review';
 import {
-  ARTIFACT_CREDIT_COST,
   emptyDocuments,
   pickDocuments,
   type ArtifactKey,
@@ -45,20 +44,18 @@ import {
 const STORAGE_KEY = 'unione-fastplaner:v1';
 
 /**
- * 일일 무료 크레딧.
+ * 크레딧은 **여기 없다.**
  *
- * 임시로 넉넉하게 열어 둔 값이다. 정식 요금제를 붙일 때 플랜별 한도로 바꾼다.
- * 화면에는 "(임시)" 표기를 함께 노출한다.
+ * 예전에는 잔량을 이 저장소에 두고 브라우저가 셌다. 개발자도구로 고칠 수 있었고,
+ * 에이전트·기능 배치는 서버에서 아예 세지 않아 사실상 무제한이었다.
+ * 지금은 서버가 유일한 근거다 — `lib/credits.ts`, `lib/useCredits.ts`.
+ *
+ * 저장소 판을 3 으로 올려, 브라우저에 남아 있던 옛 잔량을 버린다.
  */
-export const DAILY_CREDIT_LIMIT = 200;
-
-/** 한도가 바뀌면 이 값을 올린다 — 저장된 잔량이 옛 한도에 묶이지 않도록. */
-const CREDIT_POLICY_VERSION = 2;
+const CREDIT_POLICY_VERSION = 3;
 
 export interface PlannerState {
   plans: Plan[];
-  credits: number;
-  creditResetAt: string;
   hydrated: boolean;
 
   /**
@@ -112,11 +109,6 @@ export interface PlannerState {
   deletePlan: (planId: string) => void;
   renamePlan: (planId: string, title: string) => void;
   getPlan: (planId: string) => Plan | undefined;
-
-  /* 크레딧 */
-  spendCredits: (amount: number) => boolean;
-  refillCredits: () => void;
-  costOf: (artifact: ArtifactKey) => number;
 
   /* 산출물 일괄 반영 */
   applyDocuments: (planId: string, patch: Partial<PlanDocuments>, generated?: ArtifactKey[]) => void;
@@ -190,10 +182,6 @@ function now(): string {
   return new Date().toISOString();
 }
 
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function createEmptyPlan(brief: PlanBrief): Plan {
   const timestamp = now();
   return {
@@ -240,8 +228,6 @@ export const usePlannerStore = create<PlannerState>()(
 
       return {
         plans: [],
-        credits: DAILY_CREDIT_LIMIT,
-        creditResetAt: todayKey(),
         hydrated: false,
         activeRun: null,
         interrupted: null,
@@ -276,21 +262,6 @@ export const usePlannerStore = create<PlannerState>()(
           }),
 
         getPlan: (planId) => get().plans.find((p) => p.id === planId),
-
-        spendCredits: (amount) => {
-          const state = get();
-          // 날짜가 바뀌었으면 먼저 충전한다 (STARTER 플랜 정책).
-          const today = todayKey();
-          const available =
-            state.creditResetAt === today ? state.credits : DAILY_CREDIT_LIMIT;
-          if (available < amount) return false;
-          set({ credits: available - amount, creditResetAt: today });
-          return true;
-        },
-
-        refillCredits: () => set({ credits: DAILY_CREDIT_LIMIT, creditResetAt: todayKey() }),
-
-        costOf: (artifact) => ARTIFACT_CREDIT_COST[artifact],
 
         setActiveRun: (run) => set({ activeRun: run }),
 
@@ -631,8 +602,6 @@ export const usePlannerStore = create<PlannerState>()(
       version: CREDIT_POLICY_VERSION,
       partialize: (state) => ({
         plans: state.plans,
-        credits: state.credits,
-        creditResetAt: state.creditResetAt,
         // 끊긴 생성은 저장한다 — 돌아왔을 때 이어서 만들 수 있어야 한다.
         interrupted: state.interrupted,
         // 이 플랜들이 누구 것인지도 함께 남긴다.
@@ -646,21 +615,14 @@ export const usePlannerStore = create<PlannerState>()(
        */
       migrate: (persisted) => {
         const previous = (persisted ?? {}) as Partial<PlannerState>;
-        return {
-          ...previous,
-          credits: DAILY_CREDIT_LIMIT,
-          creditResetAt: todayKey(),
-        } as PlannerState;
+        // 옛 판에 남아 있던 잔량·충전일은 버린다. 이제 서버가 센다.
+        const { ...rest } = previous as Record<string, unknown>;
+        delete rest.credits;
+        delete rest.creditResetAt;
+        return rest as unknown as PlannerState;
       },
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        // 날짜가 지났으면 재충전한다.
-        if (state.creditResetAt !== todayKey()) {
-          state.credits = DAILY_CREDIT_LIMIT;
-          state.creditResetAt = todayKey();
-        }
-        // 한도를 낮춘 경우 잔량이 한도를 넘지 않게 맞춘다.
-        if (state.credits > DAILY_CREDIT_LIMIT) state.credits = DAILY_CREDIT_LIMIT;
         state.hydrated = true;
       },
     },

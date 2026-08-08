@@ -16,6 +16,7 @@ import { Wand2 } from 'lucide-react';
 
 import { askAgent } from '@/lib/agent/runner';
 import { usePlannerStore } from '@/lib/store';
+import { useCredits } from '@/lib/useCredits';
 import { CHAT_CREDIT_COST } from '@/lib/types';
 import { Spinner, useToast } from './ui';
 
@@ -40,7 +41,7 @@ export function FixWithAi({
   const [sending, setSending] = useState(false);
   /** 다른 요청이 도는 중. 누를 수는 없지만 **내 일은 아니다.** */
   const planBusy = usePlannerStore((s) => s.agentBusy === planId);
-  const credits = usePlannerStore((s) => s.credits);
+  const { remaining: credits } = useCredits();
   const setAgentOpen = usePlannerStore((s) => s.setAgentOpen);
   const toast = useToast();
 
