@@ -1,9 +1,8 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { BookOpen, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
+import { LogIn, ShieldCheck, UserPlus } from 'lucide-react';
 
 import { useAuth } from '@/lib/auth/client';
 import { PASSWORD_MIN_LENGTH } from '@/lib/auth/rules';
@@ -169,16 +168,15 @@ function LoginForm() {
         )}
       </div>
 
+      {/*
+        예전에는 여기에 `설명서 보기` 를 두었다. 설명서를 로그인 뒤로 옮기면서
+        뺐다 — 눌러도 이 화면으로 되돌아오는 버튼은 고장 난 것처럼 보인다.
+      */}
       <p className="text-center text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
         플랜은 계정에 저장되어 다른 기기에서도 이어서 볼 수 있습니다.
+        <br />
+        설명서는 로그인한 뒤에 볼 수 있습니다.
       </p>
-
-      <div className="flex justify-center">
-        <Link href="/docs" className="btn btn-ghost btn-sm">
-          <BookOpen size={13} />
-          설명서 보기
-        </Link>
-      </div>
     </div>
   );
 }
