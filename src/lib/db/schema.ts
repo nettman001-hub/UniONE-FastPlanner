@@ -57,6 +57,21 @@ create table if not exists integrations (
 -- 연결할 때 실제로 찔러 보고 되는 쪽을 여기 적어 둔다.
 alter table integrations add column if not exists kind text not null default '';
 
+-- 배포 전체에 걸리는 설정. 관리자 화면에서 고친다.
+--
+-- 줄이 하나뿐인 표다. only_row 를 true 로 못 박아 두 줄이 될 수 없게 한다 —
+-- 여러 줄이 생기면 어느 것이 진짜인지 알 수 없고, 인스턴스마다 다른 줄을 읽는
+-- 일이 생긴다.
+--
+-- **API 키는 여기 넣지 않는다.** 환경변수에만 둔다. 데이터베이스가 통째로 새도
+-- 키까지 함께 새지는 않게 하려는 것이다.
+create table if not exists app_settings (
+  only_row   boolean primary key default true check (only_row),
+  data       jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  updated_by text not null default ''
+);
+
 -- 크레딧을 무엇에 얼마나 썼는지.
 --
 -- **잔량이 아니라 쓴 내역을 적는다.** 잔량 하나만 들고 있으면 무엇에 썼는지가

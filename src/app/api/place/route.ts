@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { userEngine } from '@/lib/db/user-settings';
+import { readAiConfig } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { PLACEMENT_SCHEMA } from '@/lib/ai/schemas';
 import { buildPlacementPrompt } from '@/lib/ai/prompts';
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
   if (targets.length === 0) {
     return NextResponse.json({ placements: [], message: '배치할 새 기능이 없습니다.' });
   }
-  if (!isAiEnabled()) {
+  if (!isAiEnabled(await readAiConfig())) {
     return NextResponse.json(
       { error: '지금은 자동 배치를 쓸 수 없습니다. 정보구조도 화면에서 직접 연결해 주세요.' },
       { status: 503 },
@@ -76,6 +77,7 @@ export async function POST(request: Request) {
   try {
     const result = await generateJson<{ placements: RawPlacement[] }>({
       engine: await userEngine(user.id),
+      config: await readAiConfig(),
       prompt: buildPlacementPrompt(
         plan,
         targets.map((f) => ({ id: f.id, name: f.name, description: f.description })),

@@ -16,6 +16,8 @@
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
 import type { EngineTier } from '@/lib/ai/engines';
+import type { AiConfig } from '@/lib/ai/config';
+import { readAiConfig } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { generateLocally } from '@/lib/ai/local-generator';
 import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
@@ -92,6 +94,11 @@ export interface GenerateOptions {
    * 비싼 쪽을 마음대로 부를 수 있게 된다.
    */
   engine?: EngineTier;
+  /**
+   * 관리자가 화면에서 고친 AI 설정. 파이프라인이 시작할 때 **한 번만** 읽어
+   * 단계마다 돌려 쓴다 — 5단계면 같은 질의를 다섯 번 할 이유가 없다.
+   */
+  config?: AiConfig;
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -174,7 +181,8 @@ async function runStep(
   artifact: ArtifactKey,
   options: GenerateOptions,
 ): Promise<{ patch: Partial<PlanDocuments>; source: 'ai' | 'local'; warning?: string }> {
-  const useAi = isAiEnabled();
+  const over = options.config ?? (await readAiConfig());
+  const useAi = isAiEnabled(over);
 
   const toPatch = (draft: unknown) =>
     draftToPatch(artifact, draft, plan, {
@@ -203,8 +211,9 @@ async function runStep(
     const draft = await generateJson({
       prompt,
       schema: ARTIFACT_SCHEMA[artifact],
-      maxTokens: maxTokensFor(artifact, resolveProvider(options.engine).maxOutputTokens),
+      maxTokens: maxTokensFor(artifact, resolveProvider(options.engine, over).maxOutputTokens),
       engine: options.engine,
+      config: over,
     });
     return { patch: toPatch(draft), source: 'ai' };
   } catch (error) {

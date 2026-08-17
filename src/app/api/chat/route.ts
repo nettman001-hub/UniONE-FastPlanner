@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
 import { userEngine } from '@/lib/db/user-settings';
+import { readAiConfig } from '@/lib/db/ai-config';
 import { canAfford, spendCredits } from '@/lib/db/credits';
 import { CHAT_CREDIT_COST } from '@/lib/types';
 import { maxTokensFor } from '@/lib/jobs/queue';
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '메시지를 입력해 주세요.' }, { status: 400 });
   }
 
-  if (!isAiEnabled()) {
+  if (!isAiEnabled(await readAiConfig())) {
     return NextResponse.json({ ...offlineReply(plan), source: 'local' });
   }
 
@@ -98,6 +99,7 @@ export async function POST(request: Request) {
 
   try {
     const engine = await userEngine(user.id);
+    const over = await readAiConfig();
     const result = await generateJson<ChatResult>({
       prompt: buildChatPrompt(plan, message),
       schema: CHAT_SCHEMA,
@@ -106,8 +108,9 @@ export async function POST(request: Request) {
        * 사라진 것처럼 보이므로(실제로 그런 일이 있었다) 생성 단계 중 가장 긴
        * 기능명세서와 같은 분량을 잡는다. 공급자 상한을 올리면 함께 올라간다.
        */
-      maxTokens: maxTokensFor('fs', resolveProvider(engine).maxOutputTokens),
+      maxTokens: maxTokensFor('fs', resolveProvider(engine, over).maxOutputTokens),
       engine,
+      config: over,
     });
 
     const artifact = result.patch?.artifact;

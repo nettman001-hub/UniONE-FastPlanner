@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { resolveProvider } from '@/lib/ai/client';
+import { readAiConfig } from '@/lib/db/ai-config';
 import { maxTokensFor } from '@/lib/jobs/queue';
 import { getDb, hasDatabase } from '@/lib/db';
 import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
@@ -20,7 +21,7 @@ export const dynamic = 'force-dynamic';
  * 접속 문자열·키·모델 이름·드라이버 원문은 담지 않는다.
  */
 export async function GET(request: Request) {
-  const provider = resolveProvider();
+  const provider = resolveProvider(undefined, await readAiConfig());
   const base = { mode: provider.id === 'local' ? ('local' as const) : ('ai' as const) };
 
   const url = new URL(request.url);

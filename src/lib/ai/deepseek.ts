@@ -62,35 +62,40 @@ export function extractJson(text: string): string {
  * 내려온다. 다 떨어지면 파라미터를 빼고 부른다. 어디까지 되는지는 **기억해
  * 두어**, 서버가 사는 동안 같은 헛걸음을 반복하지 않는다.
  *
- * 확실히 아는 값이 있으면 `DEEPSEEK_REASONING_EFFORT` 로 못 박으면 된다.
- * 아예 끄려면 `off`.
+ * 확실히 아는 값이 있으면 관리자 화면(또는 `DEEPSEEK_REASONING_EFFORT`)에서 못
+ * 박으면 된다. 아예 끄려면 `off`.
  */
 const EFFORT_LADDER = ['max', 'xhigh', 'high'];
 
-/** 지금 쓰는 칸. 사다리를 다 내려오면 null — 파라미터 없이 부른다. */
-let effortLadder: string[] | null = null;
+/**
+ * 지금 쓰는 칸. **못 박은 값별로 따로 기억한다.**
+ *
+ * 관리자가 화면에서 값을 바꾸면 서버를 다시 띄우지 않아도 반영돼야 한다. 사다리를
+ * 하나만 두면 앞 설정에서 내려온 자리를 새 설정에도 그대로 쓰게 된다.
+ */
+const ladders = new Map<string, string[]>();
 
-function ladder(): string[] {
-  if (effortLadder) return effortLadder;
-  const forced = (process.env.DEEPSEEK_REASONING_EFFORT ?? '').trim().toLowerCase();
-  if (forced === 'off') effortLadder = [];
-  else if (forced) effortLadder = [forced];
-  else effortLadder = [...EFFORT_LADDER];
-  return effortLadder;
+function ladder(configured: string): string[] {
+  const key = configured.trim().toLowerCase();
+  const known = ladders.get(key);
+  if (known) return known;
+  const fresh = key === 'off' ? [] : key ? [key] : [...EFFORT_LADDER];
+  ladders.set(key, fresh);
+  return fresh;
 }
 
-function currentEffort(): string | null {
-  return ladder()[0] ?? null;
+function currentEffort(configured: string): string | null {
+  return ladder(configured)[0] ?? null;
 }
 
-/** 이 값 때문에 거부당했다. 한 칸 내려오고, 다시 해 볼 가치가 있는지 알려 준다. */
-function stepDownEffort(): boolean {
-  const rest = ladder().slice(1);
-  effortLadder = rest;
+/** 이 값 때문에 거부당했다. 한 칸 내려온다. */
+function stepDownEffort(configured: string): void {
+  const key = configured.trim().toLowerCase();
+  const rest = ladder(configured).slice(1);
+  ladders.set(key, rest);
   console.warn(
     `[ai] 추론 강도를 낮춥니다 → ${rest[0] ?? '(사용 안 함)'} — 앞 값을 엔드포인트가 받지 않았습니다.`,
   );
-  return true;
 }
 
 function isEffortRejection(error: unknown): boolean {
@@ -133,7 +138,7 @@ export async function generateJsonWithDeepSeek<T>({
   const cappedMaxTokens = Math.min(maxTokens, config.maxOutputTokens);
 
   const call = (jsonMode: boolean, extra?: string) => {
-    const effort = currentEffort();
+    const effort = currentEffort(config.effort);
     return openai.chat.completions.create({
       model: config.model,
       messages: [
@@ -159,8 +164,8 @@ export async function generateJsonWithDeepSeek<T>({
       try {
         return await call(jsonMode, extra);
       } catch (error) {
-        if (isEffortRejection(error) && currentEffort() !== null) {
-          stepDownEffort();
+        if (isEffortRejection(error) && currentEffort(config.effort) !== null) {
+          stepDownEffort(config.effort);
           continue;
         }
         throw error;

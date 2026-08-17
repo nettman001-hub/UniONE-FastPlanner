@@ -23,6 +23,7 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson } from '@/lib/ai/client';
 import { userEngine } from '@/lib/db/user-settings';
+import { readAiConfig } from '@/lib/db/ai-config';
 import { isAiEnabled } from '@/lib/ai/provider';
 import { answersBlock } from '@/lib/brief-questions';
 import { PLATFORM_LABEL, type PlanBrief } from '@/lib/types';
@@ -113,6 +114,7 @@ export async function POST(request: Request) {
       schema: SCHEMA,
       maxTokens: 8000,
       engine: await userEngine(user.id),
+      config: await readAiConfig(),
     });
     const questions = (result.questions ?? [])
       .filter((q) => q.question?.trim())

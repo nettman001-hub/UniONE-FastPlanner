@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT } from './prompts';
 import { resolveProvider, type ProviderConfig } from './provider';
 import { DEFAULT_ENGINE, type EngineTier } from './engines';
+import type { AiConfig } from './config';
+import { readAiConfig } from '../db/ai-config';
 import { generateJsonWithDeepSeek } from './deepseek';
 import { AiError } from './errors';
 
@@ -22,6 +24,12 @@ export interface GenerateOptions {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** 어느 엔진으로 만들지. 계정 설정에서 온다. */
   engine?: EngineTier;
+  /**
+   * 관리자가 화면에서 고친 값. 안 주면 여기서 읽는다.
+   *
+   * 부르는 쪽이 이미 읽어 두었으면 넘겨서 같은 질의를 두 번 하지 않게 한다.
+   */
+  config?: AiConfig;
 }
 
 /**
@@ -29,7 +37,8 @@ export interface GenerateOptions {
  * 어떤 공급자를 쓰는지는 호출부가 알 필요 없다.
  */
 export async function generateJson<T>(options: GenerateOptions): Promise<T> {
-  const config = resolveProvider(options.engine ?? DEFAULT_ENGINE);
+  const over = options.config ?? (await readAiConfig());
+  const config = resolveProvider(options.engine ?? DEFAULT_ENGINE, over);
 
   if (config.id === 'deepseek') {
     return generateJsonWithDeepSeek<T>({

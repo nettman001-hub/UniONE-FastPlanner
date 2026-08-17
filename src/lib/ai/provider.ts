@@ -6,6 +6,7 @@
  */
 
 import { DEFAULT_ENGINE, type EngineTier } from './engines';
+import { EMPTY_AI_CONFIG, type AiConfig } from './config';
 
 export type ProviderId = 'deepseek' | 'anthropic' | 'local';
 
@@ -20,6 +21,11 @@ export interface ProviderConfig {
   maxOutputTokens: number;
   /** 어느 등급으로 고른 것인가. 관리자 점검 화면에서 짝을 보여 줄 때 쓴다. */
   tier: EngineTier;
+  /**
+   * 추론 강도로 못 박은 값. 빈 문자열이면 자동(사다리), `off` 면 안 보낸다.
+   * 어댑터(`deepseek.ts`)가 이 값을 본다 — 환경변수를 직접 읽지 않는다.
+   */
+  effort: string;
 }
 
 const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com';
@@ -55,36 +61,57 @@ function positiveInt(value: string, fallback: number): number {
 
 let warned = false;
 
-/** 등급에 맞는 DeepSeek 모델 이름. 환경변수로 등급마다 따로 바꿀 수 있다. */
-function deepseekModel(tier: EngineTier): string {
+/**
+ * 등급에 맞는 DeepSeek 모델 이름.
+ *
+ * 고르는 차례는 **관리자 화면 > 환경변수 > 코드 기본값** 이다. 화면에서 비우면
+ * 그 자리는 환경변수로 정확히 되돌아간다.
+ */
+function deepseekModel(tier: EngineTier, over: AiConfig): string {
+  if (over.models[tier]) return over.models[tier];
   if (tier === 'basic') return env('DEEPSEEK_MODEL_BASIC') || DEEPSEEK_DEFAULT_MODEL.basic;
   return env('DEEPSEEK_MODEL_ADVANCED') || env('DEEPSEEK_MODEL') || DEEPSEEK_DEFAULT_MODEL.advanced;
 }
 
-export function resolveProvider(tier: EngineTier = DEFAULT_ENGINE): ProviderConfig {
-  const forced = env('AI_PROVIDER').toLowerCase();
+/**
+ * 지금 무엇으로 도는지 정한다.
+ *
+ * `over` 는 관리자가 화면에서 고친 값이다. 안 주면 환경변수만 본다 — 데이터베이스
+ * 없이 도는 자리(설치 점검 같은 것)에서 그대로 쓸 수 있어야 한다.
+ */
+export function resolveProvider(
+  tier: EngineTier = DEFAULT_ENGINE,
+  over: AiConfig = EMPTY_AI_CONFIG,
+): ProviderConfig {
+  const forced = (over.provider || env('AI_PROVIDER')).toLowerCase();
   const deepseekKey = env('DEEPSEEK_API_KEY');
   const anthropicKey = env('ANTHROPIC_API_KEY') || env('ANTHROPIC_AUTH_TOKEN');
 
   const deepseek = (): ProviderConfig => ({
     id: 'deepseek',
     label: 'DeepSeek',
-    model: deepseekModel(tier),
-    baseUrl: env('DEEPSEEK_BASE_URL') || DEEPSEEK_DEFAULT_BASE_URL,
+    model: deepseekModel(tier, over),
+    baseUrl: over.baseUrl || env('DEEPSEEK_BASE_URL') || DEEPSEEK_DEFAULT_BASE_URL,
     apiKey: deepseekKey,
-    maxOutputTokens: positiveInt(env('DEEPSEEK_MAX_TOKENS'), DEEPSEEK_DEFAULT_MAX_TOKENS),
+    maxOutputTokens:
+      over.maxOutputTokens ||
+      positiveInt(env('DEEPSEEK_MAX_TOKENS'), DEEPSEEK_DEFAULT_MAX_TOKENS),
     tier,
+    effort: over.effort || env('DEEPSEEK_REASONING_EFFORT'),
   });
 
   const anthropic = (): ProviderConfig => ({
     id: 'anthropic',
     label: 'Claude',
     // 이쪽은 모델이 하나다. 등급 차이는 추론 강도로만 낸다.
-    model: env('ANTHROPIC_MODEL') || ANTHROPIC_DEFAULT_MODEL,
-    baseUrl: env('ANTHROPIC_BASE_URL'),
+    model: over.models[tier] || env('ANTHROPIC_MODEL') || ANTHROPIC_DEFAULT_MODEL,
+    baseUrl: over.baseUrl || env('ANTHROPIC_BASE_URL'),
     apiKey: anthropicKey,
-    maxOutputTokens: positiveInt(env('ANTHROPIC_MAX_TOKENS'), ANTHROPIC_DEFAULT_MAX_TOKENS),
+    maxOutputTokens:
+      over.maxOutputTokens ||
+      positiveInt(env('ANTHROPIC_MAX_TOKENS'), ANTHROPIC_DEFAULT_MAX_TOKENS),
     tier,
+    effort: over.effort || env('DEEPSEEK_REASONING_EFFORT'),
   });
 
   const local = (): ProviderConfig => ({
@@ -95,6 +122,7 @@ export function resolveProvider(tier: EngineTier = DEFAULT_ENGINE): ProviderConf
     apiKey: '',
     maxOutputTokens: 0,
     tier,
+    effort: '',
   });
 
   if (forced === 'local') return local();
@@ -123,6 +151,6 @@ export function resolveProvider(tier: EngineTier = DEFAULT_ENGINE): ProviderConf
   return local();
 }
 
-export function isAiEnabled(): boolean {
-  return resolveProvider().id !== 'local';
+export function isAiEnabled(over: AiConfig = EMPTY_AI_CONFIG): boolean {
+  return resolveProvider(DEFAULT_ENGINE, over).id !== 'local';
 }
