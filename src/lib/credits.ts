@@ -20,6 +20,7 @@
  */
 
 import { ARTIFACT_CREDIT_COST, ARTIFACT_LABEL, type ArtifactKey } from './types';
+import { DEFAULT_ENGINE, type EngineTier } from './ai/engines';
 
 /**
  * 일일 무료 크레딧.
@@ -42,8 +43,31 @@ export function creditKindLabel(kind: string): string {
   return CREDIT_KIND_LABEL[kind as CreditKind] ?? kind;
 }
 
-export function costOfArtifact(artifact: ArtifactKey): number {
-  return ARTIFACT_CREDIT_COST[artifact];
+/**
+ * 엔진 등급에 따른 배수.
+ *
+ * 고급 엔진은 **두 배**로 친다. 더 큰 모델이 더 오래 생각하는 만큼 실제로 드는
+ * 값이 다르기 때문이다. 등급을 고르는 화면에서 이 사실을 먼저 밝힌다 —
+ * 나중에 사용 내역에서 발견하게 하면 안 된다.
+ */
+export const ENGINE_CREDIT_MULTIPLIER: Record<EngineTier, number> = {
+  basic: 1,
+  advanced: 2,
+};
+
+/**
+ * 이 작업에 실제로 나갈 크레딧.
+ *
+ * **화면과 서버가 반드시 같은 함수를 쓴다.** 표시하는 쪽과 깎는 쪽이 갈리면
+ * "3 크레딧이라더니 6 이 나갔다" 가 된다.
+ */
+export function costOfArtifact(artifact: ArtifactKey, engine: EngineTier = DEFAULT_ENGINE): number {
+  return ARTIFACT_CREDIT_COST[artifact] * ENGINE_CREDIT_MULTIPLIER[engine];
+}
+
+/** 산출물이 아닌 것들(에이전트·기능 배치)도 같은 배수를 따른다. */
+export function costWithEngine(base: number, engine: EngineTier = DEFAULT_ENGINE): number {
+  return base * ENGINE_CREDIT_MULTIPLIER[engine];
 }
 
 /**

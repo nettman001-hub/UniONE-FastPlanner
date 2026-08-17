@@ -26,6 +26,8 @@ import {
   toEngineTier,
   type EngineTier,
 } from '@/lib/ai/engines';
+import { ENGINE_CREDIT_MULTIPLIER } from '@/lib/credits';
+import { setEngineLocally } from '@/lib/useEngine';
 
 const ICON: Record<EngineTier, typeof Zap> = { basic: Zap, advanced: Gauge };
 
@@ -72,6 +74,8 @@ export default function GenerationSettings() {
         toast(data.error ?? '저장하지 못했습니다.', 'warn');
         return;
       }
+      // 값이 적힌 다른 화면들이 바로 따라오게 한다.
+      setEngineLocally(next);
       toast(`${ENGINE_LABEL[next]}으로 만듭니다.`, 'ok');
     } catch {
       setEngine(before);
@@ -120,6 +124,13 @@ export default function GenerationSettings() {
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-1.5">
                     <b className="text-[13.5px] tracking-tight">{ENGINE_LABEL[tier]}</b>
+                    {/*
+                      값이 몇 배인지를 **고르는 자리에서** 밝힌다. 사용 내역을 보고
+                      나서야 알게 되면 속은 기분이 든다.
+                    */}
+                    <span className={ENGINE_CREDIT_MULTIPLIER[tier] > 1 ? 'chip chip-warn' : 'chip'}>
+                      크레딧 {ENGINE_CREDIT_MULTIPLIER[tier]}배
+                    </span>
                     {on && (
                       <span className="chip chip-primary">
                         <Check size={11} />
@@ -149,8 +160,9 @@ export default function GenerationSettings() {
           <Info size={13} className="mt-0.5 shrink-0 text-[var(--fg-subtle)]" />
           <div className="min-w-0 text-[12px] leading-relaxed text-[var(--fg-muted)]">
             <p>
-              <b>크레딧은 똑같이 듭니다.</b> 어느 쪽을 고르셔도 산출물마다 드는 크레딧은
-              변하지 않습니다. 달라지는 것은 <b>걸리는 시간과 문서의 촘촘함</b>입니다.
+              <b>고급 엔진은 크레딧이 두 배 듭니다.</b> 더 큰 엔진이 더 오래 생각하는 만큼
+              실제로 드는 값이 다릅니다. 예를 들어 프로덕트 요구사항은 기본 3, 고급 6
+              크레딧입니다.
             </p>
             <p className="mt-1.5">
               {/*

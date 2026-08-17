@@ -46,9 +46,10 @@ import { hasArtifact } from '@/lib/artifact-status';
 import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
 import { issueFixPrompt } from '@/lib/ai/fix-prompt';
 import { useGenerate } from '@/lib/useGenerate';
+import { useEngine } from '@/lib/useEngine';
+import { costOfArtifact } from '@/lib/credits';
 import { issueSummary, validatePlan, LEVEL_LABEL, type Issue, type IssueLevel } from '@/lib/validate';
 import {
-  ARTIFACT_CREDIT_COST,
   ARTIFACT_LABEL,
   PLATFORM_LABEL,
   type ArtifactKey,
@@ -162,6 +163,8 @@ function PlanOverview() {
   const removeComment = usePlannerStore((s) => s.removeComment);
 
   const { generate, generateAll, pending, autoRunning, cancel } = useGenerate(plan);
+  /* 고급 엔진은 값이 두 배다. 보여 주는 값과 깎이는 값이 갈리면 안 된다. */
+  const engine = useEngine();
 
   const [briefOpen, setBriefOpen] = useState(false);
   /** 전체 자동 생성 진행 여부·현재 단계는 서버 작업 상태에서 온다. */
@@ -438,7 +441,7 @@ function PlanOverview() {
                           {STEP_DESC[key]}
                         </p>
                         <p className="mt-1 text-[11.5px] text-[var(--fg-subtle)]">
-                          {stepCount(plan, key)} · {ARTIFACT_CREDIT_COST[key]} 크레딧
+                          {stepCount(plan, key)} · {costOfArtifact(key, engine)} 크레딧
                         </p>
                         {reason && (
                           <p className="mt-1 flex items-center gap-1 text-[11.5px] font-semibold text-[var(--warn)]">

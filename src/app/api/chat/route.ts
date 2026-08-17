@@ -3,9 +3,10 @@ import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
 import { userEngine } from '@/lib/db/user-settings';
-import { readAiConfig } from '@/lib/db/ai-config';
+import { readAiRuntime } from '@/lib/db/ai-config';
 import { canAfford, spendCredits } from '@/lib/db/credits';
 import { CHAT_CREDIT_COST } from '@/lib/types';
+import { costWithEngine } from '@/lib/credits';
 import { maxTokensFor } from '@/lib/jobs/queue';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { CHAT_SCHEMA } from '@/lib/ai/schemas';
@@ -81,7 +82,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '메시지를 입력해 주세요.' }, { status: 400 });
   }
 
-  if (!isAiEnabled(await readAiConfig())) {
+  // 설정·키·등급은 여기서 한 번만 읽는다. 아래에서 그대로 돌려 쓴다.
+  const runtime = await readAiRuntime();
+  const engine = await userEngine(user.id);
+  const cost = costWithEngine(CHAT_CREDIT_COST, engine);
+
+  if (!isAiEnabled(runtime.config, runtime.apiKey)) {
     return NextResponse.json({ ...offlineReply(plan), source: 'local' });
   }
 
@@ -90,7 +96,7 @@ export async function POST(request: Request) {
    *
    * 예전에는 브라우저만 셌다. 브라우저가 안 깎으면 그만이라 사실상 무제한이었다.
    */
-  if (!(await canAfford(user.id, CHAT_CREDIT_COST))) {
+  if (!(await canAfford(user.id, cost))) {
     return NextResponse.json(
       { error: '크레딧이 부족합니다. 내일 다시 충전됩니다.' },
       { status: 402 },
@@ -98,8 +104,6 @@ export async function POST(request: Request) {
   }
 
   try {
-    const engine = await userEngine(user.id);
-    const over = await readAiConfig();
     const result = await generateJson<ChatResult>({
       prompt: buildChatPrompt(plan, message),
       schema: CHAT_SCHEMA,
@@ -108,9 +112,10 @@ export async function POST(request: Request) {
        * 사라진 것처럼 보이므로(실제로 그런 일이 있었다) 생성 단계 중 가장 긴
        * 기능명세서와 같은 분량을 잡는다. 공급자 상한을 올리면 함께 올라간다.
        */
-      maxTokens: maxTokensFor('fs', resolveProvider(engine, over).maxOutputTokens),
+      maxTokens: maxTokensFor('fs', resolveProvider(engine, runtime.config, runtime.apiKey).maxOutputTokens),
       engine,
-      config: over,
+      config: runtime.config,
+      apiKey: runtime.apiKey,
     });
 
     const artifact = result.patch?.artifact;
@@ -160,7 +165,7 @@ export async function POST(request: Request) {
     }
 
     // AI 가 답했을 때만 치른다. 아래 catch 로 빠지면 내장 답변이라 값을 안 받는다.
-    await spendCredits(user.id, 'chat', CHAT_CREDIT_COST);
+    await spendCredits(user.id, 'chat', cost);
 
     return NextResponse.json({
       reply: blocked ? `${contentLossMessage(blocked)}\n\n---\n\n${result.reply}` : result.reply,

@@ -17,7 +17,10 @@ import { Panel, ReadRow } from '@/components/settings/Parts';
 import { Spinner } from '@/components/ui';
 import { creditKindLabel, type CreditEntry } from '@/lib/credits';
 import { refreshCredits, useCredits } from '@/lib/useCredits';
-import { ARTIFACT_CREDIT_COST, ARTIFACT_LABEL, CHAT_CREDIT_COST, PLACEMENT_CREDIT_COST, type ArtifactKey } from '@/lib/types';
+import { ARTIFACT_LABEL, CHAT_CREDIT_COST, PLACEMENT_CREDIT_COST, type ArtifactKey } from '@/lib/types';
+import { ENGINE_LABEL } from '@/lib/ai/engines';
+import { costOfArtifact, costWithEngine } from '@/lib/credits';
+import { useEngine } from '@/lib/useEngine';
 
 const ORDER: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
 
@@ -43,7 +46,9 @@ export default function UsageSettings() {
     };
   }, []);
 
-  const total = ORDER.reduce((sum, key) => sum + ARTIFACT_CREDIT_COST[key], 0);
+  /* 값은 등급에 따라 달라진다. 지금 고른 등급으로 적어야 실제와 맞는다. */
+  const engine = useEngine();
+  const total = ORDER.reduce((sum, key) => sum + costOfArtifact(key, engine), 0);
   const percent = limit > 0 ? Math.round((remaining / limit) * 100) : 0;
 
   return (
@@ -74,15 +79,29 @@ export default function UsageSettings() {
         </p>
       </Panel>
 
-      <Panel title="무엇에 얼마나 드나">
+      <Panel
+        title="무엇에 얼마나 드나"
+        description={`지금 쓰시는 ${ENGINE_LABEL[engine]} 기준입니다.`}
+      >
         {ORDER.map((key) => (
-          <ReadRow key={key} label={ARTIFACT_LABEL[key]} value={`${ARTIFACT_CREDIT_COST[key]} 크레딧`} />
+          <ReadRow key={key} label={ARTIFACT_LABEL[key]} value={`${costOfArtifact(key, engine)} 크레딧`} />
         ))}
         <ReadRow label="전체 자동 생성" value={`${total} 크레딧`} hint="다섯 단계를 이어서" />
-        <ReadRow label="AI 에이전트" value={`${CHAT_CREDIT_COST} 크레딧`} hint="한 번 물을 때마다" />
-        <ReadRow label="기능 배치" value={`${PLACEMENT_CREDIT_COST} 크레딧`} />
+        <ReadRow
+          label="AI 에이전트"
+          value={`${costWithEngine(CHAT_CREDIT_COST, engine)} 크레딧`}
+          hint="한 번 물을 때마다"
+        />
+        <ReadRow label="기능 배치" value={`${costWithEngine(PLACEMENT_CREDIT_COST, engine)} 크레딧`} />
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
           AI 가 만들지 못해 <b>기본 생성기로 대신했을 때는 크레딧이 들지 않습니다.</b>
+        </p>
+        {/*
+          여기서만 보면 "원래 이만큼 드는구나" 로 읽힌다. 등급을 바꾸면 값도
+          바뀐다는 것을 어디로 가면 되는지와 함께 적는다.
+        */}
+        <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
+          <b>고급 엔진은 두 배</b>가 듭니다. <b>설정 → 만들기</b>에서 바꾸실 수 있습니다.
         </p>
       </Panel>
 

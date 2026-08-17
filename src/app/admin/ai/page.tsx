@@ -9,15 +9,19 @@
  * 때문이다. 적어 둔 것만 보이면 "비워 뒀는데 뭘로 도는 거지" 를 알 수 없고,
  * 도는 값만 보이면 그게 화면에서 정한 건지 환경변수에서 온 건지 알 수 없다.
  *
- * ## 키는 여기서 다루지 않는다
+ * ## API 키
  *
- * API 키는 환경변수에만 둔다 — 데이터베이스가 통째로 새도 키까지 새지는 않게
- * 하려는 것이다. 대신 **고른 공급자의 키가 있는지**를 먼저 알려 준다. 없으면
- * 아무리 잘 골라도 내장 생성기로 떨어진다.
+ * 넣을 수 있다. 다만 **넣은 값을 다시 보여 주지는 않는다.** 저장할 때 잠그고
+ * (`AUTH_SECRET` 에서 뽑은 열쇠로 AES-256-GCM), 화면에는 꼬리표(`••••7890`)와
+ * 어디서 온 키인지만 내려온다. 키가 브라우저로 내려가면 관리자 화면을 여는
+ * 것만으로 새어 나가기 때문이다.
+ *
+ * 칸을 비워 두고 저장하면 **건드리지 않는다.** 다른 칸만 고칠 때 매번 키를 다시
+ * 치게 하면 안 된다. 지우려면 `키 지우기` 를 따로 누른다.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Check, RotateCcw, Save } from 'lucide-react';
+import { AlertTriangle, Check, KeyRound, RotateCcw, Save, Trash2 } from 'lucide-react';
 
 import { Panel, ReadRow } from '@/components/settings/Parts';
 import { Spinner, useToast } from '@/components/ui';
@@ -39,6 +43,8 @@ interface Effective {
   effort: string;
   maxOutputTokens: number;
   hasKey: boolean;
+  /** 키가 어디서 왔는지 — 화면에서 넣은 것인지, 환경변수인지, 아예 없는지. */
+  keyFrom: 'screen' | 'env' | 'none';
 }
 
 interface Loaded {
@@ -82,6 +88,11 @@ export default function AdminAi() {
   const [data, setData] = useState<Loaded | null>(null);
   const [draft, setDraft] = useState<AiConfig>(EMPTY_AI_CONFIG);
   const [saving, setSaving] = useState(false);
+  /*
+   * 키는 초안에 담지 않는다. 저장된 값을 화면으로 내려받지 않으므로 담을 것이
+   * 없고, 빈 칸을 "지우기" 로 오해하면 안 되기 때문이다. **적었을 때만** 보낸다.
+   */
+  const [keyDraft, setKeyDraft] = useState('');
 
   const load = useCallback(async () => {
     const res = await fetch('/api/admin?view=ai', { cache: 'no-store' });
@@ -96,19 +107,49 @@ export default function AdminAi() {
 
   const edit = (patch: Partial<AiConfig>) => setDraft((prev) => ({ ...prev, ...patch }));
 
+  /** 넣어 둔 키를 지운다. 환경변수로 되돌아간다. */
+  const clearKey = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'ai', config: draft, apiKey: null }),
+      });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        toast(body.error ?? '지우지 못했습니다.', 'warn');
+        return;
+      }
+      setKeyDraft('');
+      await load();
+      toast('키를 지웠습니다. 환경변수의 키를 씁니다.', 'ok');
+    } catch {
+      toast('지우지 못했습니다.', 'warn');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const save = async () => {
     setSaving(true);
     try {
       const res = await fetch('/api/admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'ai', config: draft }),
+        body: JSON.stringify({
+          action: 'ai',
+          config: draft,
+          // 안 적었으면 아예 안 보낸다 = 건드리지 않는다.
+          ...(keyDraft.trim() ? { apiKey: keyDraft } : {}),
+        }),
       });
       const body = (await res.json()) as { error?: string };
       if (!res.ok) {
         toast(body.error ?? '저장하지 못했습니다.', 'warn');
         return;
       }
+      setKeyDraft('');
       await load();
       toast('저장했습니다. 다음 생성부터 적용됩니다.', 'ok');
     } catch {
@@ -155,6 +196,17 @@ export default function AdminAi() {
           value={`${effective.maxOutputTokens.toLocaleString()} 토큰`}
         />
 
+        <ReadRow
+          label="API 키"
+          value={
+            effective.keyFrom === 'screen'
+              ? `${data.config.apiKeyLabel || '설정됨'} (이 화면에서 넣음)`
+              : effective.keyFrom === 'env'
+                ? '환경변수'
+                : '없음'
+          }
+        />
+
         {!effective.hasKey && effective.provider !== 'local' && (
           <p
             className="mt-2 flex items-start gap-1.5 rounded-lg border px-3 py-2.5 text-[12px] leading-relaxed"
@@ -162,8 +214,8 @@ export default function AdminAi() {
           >
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
             <span>
-              <b>이 공급자의 API 키가 없습니다.</b> 지금은 내장 생성기로 만들고 있습니다. 키는
-              보안상 여기서 넣지 않습니다 — 환경변수에 넣고 다시 배포해 주세요.
+              <b>이 공급자의 API 키가 없습니다.</b> 지금은 내장 생성기로 만들고 있습니다.
+              아래 <b>API 키</b> 칸에 넣어 주세요.
             </span>
           </p>
         )}
@@ -258,6 +310,44 @@ export default function AdminAi() {
           </select>
         </Field>
 
+        {/*
+          키는 초안(`draft`)이 아니라 따로 둔다. 저장된 값을 내려받지 않으므로
+          채워 넣을 것이 없고, 빈 칸을 "지우기" 로 읽으면 안 되기 때문이다.
+        */}
+        <Field
+          label="API 키"
+          hint={
+            effective.keyFrom === 'screen'
+              ? `지금 ${data.config.apiKeyLabel || '설정됨'} 이(가) 들어 있습니다. 비워 두고 저장하면 그대로 둡니다.`
+              : effective.keyFrom === 'env'
+                ? '지금은 환경변수의 키를 쓰고 있습니다. 여기에 넣으면 이 값이 앞섭니다.'
+                : '넣으면 잠가서 보관합니다. 넣은 값은 다시 볼 수 없고, 끝 네 자리만 보입니다.'
+          }
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input
+              className="input font-mono text-[12px]"
+              style={{ flex: '1 1 260px' }}
+              type="password"
+              autoComplete="off"
+              value={keyDraft}
+              placeholder={effective.keyFrom === 'screen' ? '(그대로 둡니다)' : '키를 붙여 넣으세요'}
+              onChange={(e) => setKeyDraft(e.target.value)}
+            />
+            {effective.keyFrom === 'screen' && (
+              <button
+                className="btn btn-sm shrink-0"
+                style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                disabled={saving}
+                onClick={() => void clearKey()}
+              >
+                <Trash2 size={13} />
+                키 지우기
+              </button>
+            )}
+          </div>
+        </Field>
+
         <Field
           label="출력 상한 (토큰)"
           hint={`비우면 환경변수를 따릅니다. ${MIN_OUTPUT_TOKENS.toLocaleString()} ~ ${MAX_OUTPUT_TOKENS.toLocaleString()} · 모델이 받아 주는 값보다 크면 매 호출이 실패합니다.`}
@@ -274,7 +364,7 @@ export default function AdminAi() {
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <button
             className={`btn btn-primary btn-sm${saving ? ' is-busy' : ''}`}
-            disabled={saving || !dirty}
+            disabled={saving || (!dirty && !keyDraft.trim())}
             onClick={() => void save()}
           >
             {saving ? <Spinner size={13} /> : <Save size={13} />}
@@ -296,8 +386,13 @@ export default function AdminAi() {
           >
             모두 비우기
           </button>
-          {dirty && <span className="ml-auto text-[11.5px] font-semibold text-[var(--warn)]">저장 안 함</span>}
-          {!dirty && (
+          {(dirty || keyDraft.trim()) && (
+            <span className="ml-auto flex items-center gap-1 text-[11.5px] font-semibold text-[var(--warn)]">
+              {keyDraft.trim() && <KeyRound size={11} />}
+              저장 안 함
+            </span>
+          )}
+          {!dirty && !keyDraft.trim() && (
             <span className="ml-auto flex items-center gap-1 text-[11.5px] text-[var(--fg-subtle)]">
               <Check size={11} />
               저장됨
@@ -309,8 +404,9 @@ export default function AdminAi() {
       <Panel title="알아 두실 것">
         <ul className="flex flex-col gap-1.5 text-[12px] leading-relaxed text-[var(--fg-muted)]">
           <li>
-            · <b>API 키는 여기서 넣지 않습니다.</b> 환경변수에만 둡니다 — 데이터베이스가 통째로
-            새도 키까지 함께 새지 않게 하려는 것입니다.
+            · <b>넣은 API 키는 잠가서 보관합니다.</b> 다시 볼 수는 없고 끝 네 자리만 보입니다.
+            <code>AUTH_SECRET</code> 을 바꾸면 이 키를 못 풀게 되어 환경변수로 되돌아갑니다 —
+            그때는 다시 넣으시면 됩니다.
           </li>
           <li>
             · 저장하면 <b>다음 생성부터</b> 적용됩니다. 지금 만들고 있는 것은 시작할 때의 설정을
