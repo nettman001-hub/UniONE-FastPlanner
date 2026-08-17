@@ -41,6 +41,7 @@ import {
 } from '@/components/ui';
 import { FixWithAi } from '@/components/FixWithAi';
 import { PlanSkills } from '@/components/PlanSkills';
+import { EngineSwitch } from '@/components/EngineSwitch';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
@@ -381,6 +382,13 @@ function PlanOverview() {
           }
         >
           <div className="flex flex-col gap-2.5">
+            {/*
+              **누르는 자리 옆에 둔다.** 설정 안쪽에만 있으면, 값이 두 배 차이 나는
+              것을 모른 채 `AI로 생성` 을 누르게 된다. 여기서 바꾸면 아래 단계별
+              크레딧 표시도 그 자리에서 함께 바뀐다.
+            */}
+            <EngineSwitch disabled={busy} />
+
             {running && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-2 text-[12.5px] font-semibold text-[var(--primary)]">
                 <Spinner size={13} />
