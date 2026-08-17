@@ -22,6 +22,8 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson } from '@/lib/ai/client';
+import { userEngine } from '@/lib/db/user-settings';
+import { readAiConfig } from '@/lib/db/ai-config';
 import { isAiEnabled } from '@/lib/ai/provider';
 import { answersBlock } from '@/lib/brief-questions';
 import { PLATFORM_LABEL, type PlanBrief } from '@/lib/types';
@@ -107,7 +109,13 @@ export async function POST(request: Request) {
      * `too-long` 으로 던져지고, 아래 catch 가 삼켜서 "질문 없음" 으로 보였다.
      * 다른 산출물 생성이 16000~32000 을 쓰는 것에 비하면 2000 은 유별나게 작았다.
      */
-    const result = await generateJson<Generated>({ prompt, schema: SCHEMA, maxTokens: 8000 });
+    const result = await generateJson<Generated>({
+      prompt,
+      schema: SCHEMA,
+      maxTokens: 8000,
+      engine: await userEngine(user.id),
+      config: await readAiConfig(),
+    });
     const questions = (result.questions ?? [])
       .filter((q) => q.question?.trim())
       .slice(0, 5)

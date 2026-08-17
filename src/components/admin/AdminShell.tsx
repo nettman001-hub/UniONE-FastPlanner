@@ -11,6 +11,7 @@ import { Logo } from '@/components/Logo';
 const TABS = [
   { href: '/admin', name: '대시보드' },
   { href: '/admin/users', name: '사용자' },
+  { href: '/admin/ai', name: 'AI 설정' },
   { href: '/admin/health', name: '점검' },
 ];
 

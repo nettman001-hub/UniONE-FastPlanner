@@ -26,12 +26,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
   { key: 'skills', name: '기획 스킬', what: '단계마다 이런 식으로 써 달라고 적어 두기' },
   { key: 'usage', name: '사용량', what: '오늘 남은 크레딧' },
   { key: 'data', name: '데이터', what: '백업·동기화·기록 지우기' },
-  {
-    key: 'generation',
-    name: '만들기 기본값',
-    what: '디자인 결·와이어프레임 가중치',
-    soon: '지금은 만들 때마다 고르게 되어 있습니다. 기본값으로 기억하는 기능을 준비 중입니다.',
-  },
+  { key: 'generation', name: '만들기', what: '어느 엔진으로 만들지' },
   {
     key: 'appearance',
     name: '화면',

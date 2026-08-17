@@ -30,6 +30,14 @@ create table if not exists plans (
 
 create index if not exists plans_user_updated_idx on plans (user_id, updated_at desc);
 
+-- 계정마다 고른 것들. 지금은 만들기 엔진 하나뿐이다.
+--
+-- 칸을 하나씩 늘리지 않고 jsonb 한 칸에 담는다. 앞으로 들어올 것들(알림, 테마)이
+-- 전부 "고른 값 하나" 라서, 그때마다 alter table 을 하느니 여기에 키를 더한다.
+-- 읽는 쪽(lib/db/user-settings.ts)에서 모르는 값은 기본으로 되돌리므로,
+-- 옛 배포가 남긴 키가 섞여 있어도 문제가 되지 않는다.
+alter table users add column if not exists settings jsonb not null default '{}'::jsonb;
+
 -- 바깥 서비스에 접속할 자격증명. 지금은 스티치 하나뿐이다.
 --
 -- **암호문만 들어온다.** 이 값은 사용자의 스티치 계정을 그대로 여는 열쇠라,
@@ -48,6 +56,21 @@ create table if not exists integrations (
 -- 어떤 헤더로 보내야 하는 값인지. 값 모양만 보고 짐작하면 틀린다 —
 -- 연결할 때 실제로 찔러 보고 되는 쪽을 여기 적어 둔다.
 alter table integrations add column if not exists kind text not null default '';
+
+-- 배포 전체에 걸리는 설정. 관리자 화면에서 고친다.
+--
+-- 줄이 하나뿐인 표다. only_row 를 true 로 못 박아 두 줄이 될 수 없게 한다 —
+-- 여러 줄이 생기면 어느 것이 진짜인지 알 수 없고, 인스턴스마다 다른 줄을 읽는
+-- 일이 생긴다.
+--
+-- **API 키는 여기 넣지 않는다.** 환경변수에만 둔다. 데이터베이스가 통째로 새도
+-- 키까지 함께 새지는 않게 하려는 것이다.
+create table if not exists app_settings (
+  only_row   boolean primary key default true check (only_row),
+  data       jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  updated_by text not null default ''
+);
 
 -- 크레딧을 무엇에 얼마나 썼는지.
 --

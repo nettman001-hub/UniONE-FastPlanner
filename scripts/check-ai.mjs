@@ -79,11 +79,21 @@ if (provider === 'anthropic') {
 /* --- DeepSeek 실호출 ---------------------------------------------- */
 
 const baseUrl = (env('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com').replace(/\/+$/, '');
-const model = env('DEEPSEEK_MODEL') || 'deepseek-v4-pro';
+/*
+ * 등급별 모델. 고르는 규칙은 `src/lib/ai/provider.ts` 와 **같아야 한다** —
+ * 여기서 통과했는데 앱에서 다른 모델을 부르면 점검이 거짓말을 하는 셈이다.
+ */
+const models = {
+  기본: env('DEEPSEEK_MODEL_BASIC') || 'deepseek-v4-flash',
+  고급: env('DEEPSEEK_MODEL_ADVANCED') || env('DEEPSEEK_MODEL') || 'deepseek-v4-pro',
+};
+/** 실제로 부를 때 쓸 것 — 가벼운 쪽으로 검사한다. */
+const model = models.기본;
 const maxTokens = Number.parseInt(env('DEEPSEEK_MAX_TOKENS') || '8192', 10) || 8192;
 
 console.log(`Base URL      : ${baseUrl}`);
-console.log(`모델          : ${model}`);
+console.log(`기본 엔진     : ${models.기본}`);
+console.log(`고급 엔진     : ${models.고급}${models.기본 === models.고급 ? '  ⚠ 기본과 같습니다' : ''}`);
 console.log(`출력 상한     : ${maxTokens} 토큰`);
 console.log(`API 키        : ${mask(deepseekKey)}`);
 console.log('');
@@ -130,13 +140,19 @@ const reachable = await step('엔드포인트 연결 및 모델 목록', async (
   if (!response.ok) throw new Error(await readError(response));
   const data = await response.json();
   const ids = (data?.data ?? []).map((m) => m.id);
-  if (ids.length > 0 && !ids.includes(model)) {
+  if (ids.length === 0) return '모델 목록 비어 있음(건너뜀)';
+
+  // 두 등급을 **모두** 본다. 하나만 보면 고급만 틀린 경우를 놓친다.
+  const missing = Object.entries(models).filter(([, id]) => !ids.includes(id));
+  if (missing.length > 0) {
+    const envName = { 기본: 'DEEPSEEK_MODEL_BASIC', 고급: 'DEEPSEEK_MODEL_ADVANCED' };
     throw new Error(
-      `모델 '${model}' 이(가) 목록에 없습니다. 사용 가능: ${ids.join(', ')}\n  ` +
-        `.env.local 의 DEEPSEEK_MODEL 을 위 목록 중 하나로 바꿔 주세요.`,
+      missing.map(([tier, id]) => `${tier} 엔진 '${id}' 이(가) 목록에 없습니다.`).join('\n  ') +
+        `\n  사용 가능: ${ids.join(', ')}` +
+        `\n  .env.local 의 ${missing.map(([tier]) => envName[tier]).join(' · ')} 을(를) 위 목록 중 하나로 바꿔 주세요.`,
     );
   }
-  return ids.length > 0 ? `사용 가능 모델 ${ids.length}개` : '모델 목록 비어 있음(건너뜀)';
+  return `사용 가능 모델 ${ids.length}개 · 두 등급 모두 있음`;
 });
 
 if (reachable) {
@@ -166,6 +182,42 @@ if (reachable) {
     if (typeof parsed.ok !== 'boolean') throw new Error(`예상과 다른 응답: ${text.slice(0, 120)}`);
     const usage = data?.usage;
     return usage ? `토큰 ${usage.prompt_tokens}→${usage.completion_tokens}` : 'JSON 파싱 성공';
+  });
+
+  /*
+   * 추론 강도를 **어느 단계까지 받는지** 확인한다.
+   *
+   * 앱은 `max → xhigh → high` 순으로 시도하다가 거부당하면 한 칸 내려오고,
+   * 다 떨어지면 파라미터를 빼고 부른다. 생성이 멈추지 않으니 조용히 넘어가는데,
+   * **조용하면 낮은 값으로 도는 줄도 모른다.** 여기서 한 번 드러내 준다.
+   */
+  await step('추론 강도 (reasoning_effort)', async () => {
+    const ladder = env('DEEPSEEK_REASONING_EFFORT')
+      ? [env('DEEPSEEK_REASONING_EFFORT')]
+      : ['max', 'xhigh', 'high'];
+    const rejected = [];
+    for (const level of ladder) {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          model,
+          max_tokens: 16,
+          reasoning_effort: level,
+          messages: [{ role: 'user', content: '1+1 은? 숫자만.' }],
+        }),
+      });
+      if (response.ok) {
+        return rejected.length === 0
+          ? `'${level}' 로 동작합니다 (가장 높은 단계)`
+          : `'${level}' 로 동작합니다 — ${rejected.join(', ')} 은(는) 거부됨`;
+      }
+      const detail = await readError(response);
+      if (!/reasoning[_ ]?effort/i.test(detail)) throw new Error(detail);
+      rejected.push(`'${level}'`);
+    }
+    // 전부 거부당하는 것도 정상 동작이다 — 앱이 파라미터를 빼고 부른다.
+    return `이 엔드포인트는 안 받습니다 (${rejected.join(', ')}). 파라미터 없이 만듭니다.`;
   });
 
   await step('잔액 조회', async () => {
