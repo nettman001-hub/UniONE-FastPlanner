@@ -3,7 +3,7 @@ import { SYSTEM_PROMPT } from './prompts';
 import { resolveProvider, type ProviderConfig } from './provider';
 import { DEFAULT_ENGINE, type EngineTier } from './engines';
 import type { AiConfig } from './config';
-import { readAiConfig } from '../db/ai-config';
+import { readAiRuntime } from '../db/ai-config';
 import { generateJsonWithDeepSeek } from './deepseek';
 import { AiError } from './errors';
 
@@ -30,6 +30,8 @@ export interface GenerateOptions {
    * 부르는 쪽이 이미 읽어 두었으면 넘겨서 같은 질의를 두 번 하지 않게 한다.
    */
   config?: AiConfig;
+  /** 화면에서 넣어 둔 API 키. 없으면 환경변수를 쓴다. */
+  apiKey?: string;
 }
 
 /**
@@ -37,8 +39,10 @@ export interface GenerateOptions {
  * 어떤 공급자를 쓰는지는 호출부가 알 필요 없다.
  */
 export async function generateJson<T>(options: GenerateOptions): Promise<T> {
-  const over = options.config ?? (await readAiConfig());
-  const config = resolveProvider(options.engine ?? DEFAULT_ENGINE, over);
+  const runtime = options.config ? null : await readAiRuntime();
+  const over = options.config ?? runtime!.config;
+  const key = options.apiKey ?? runtime?.apiKey ?? '';
+  const config = resolveProvider(options.engine ?? DEFAULT_ENGINE, over, key);
 
   if (config.id === 'deepseek') {
     return generateJsonWithDeepSeek<T>({

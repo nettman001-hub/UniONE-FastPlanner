@@ -82,10 +82,19 @@ function deepseekModel(tier: EngineTier, over: AiConfig): string {
 export function resolveProvider(
   tier: EngineTier = DEFAULT_ENGINE,
   over: AiConfig = EMPTY_AI_CONFIG,
+  savedKey = '',
 ): ProviderConfig {
   const forced = (over.provider || env('AI_PROVIDER')).toLowerCase();
-  const deepseekKey = env('DEEPSEEK_API_KEY');
-  const anthropicKey = env('ANTHROPIC_API_KEY') || env('ANTHROPIC_AUTH_TOKEN');
+  /*
+   * 화면에서 넣은 키가 환경변수보다 앞선다. 넣지 않았으면(`savedKey` 가 빈
+   * 문자열) 예전처럼 환경변수를 쓴다.
+   *
+   * 키는 **공급자마다 따로 두지 않는다.** 한 배포가 동시에 두 공급자를 쓰는 일이
+   * 없고, 자리를 나누면 "어느 칸에 넣어야 하지" 를 매번 묻게 된다. 지금 고른
+   * 공급자의 키라고 본다.
+   */
+  const deepseekKey = savedKey || env('DEEPSEEK_API_KEY');
+  const anthropicKey = savedKey || env('ANTHROPIC_API_KEY') || env('ANTHROPIC_AUTH_TOKEN');
 
   const deepseek = (): ProviderConfig => ({
     id: 'deepseek',
@@ -151,6 +160,6 @@ export function resolveProvider(
   return local();
 }
 
-export function isAiEnabled(over: AiConfig = EMPTY_AI_CONFIG): boolean {
-  return resolveProvider(DEFAULT_ENGINE, over).id !== 'local';
+export function isAiEnabled(over: AiConfig = EMPTY_AI_CONFIG, savedKey = ''): boolean {
+  return resolveProvider(DEFAULT_ENGINE, over, savedKey).id !== 'local';
 }

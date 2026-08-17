@@ -8,10 +8,10 @@
 import { NextResponse } from 'next/server';
 
 import { currentAdmin } from '@/lib/auth/admin';
-import { adminOverview, adminUsers, grantCredits } from '@/lib/db/admin';
+import { adminOverview, adminUserPlans, adminUsers, grantCredits } from '@/lib/db/admin';
 import { storageInfo } from '@/lib/db';
 import { isAiEnabled, resolveProvider } from '@/lib/ai/client';
-import { readAiConfigRecord, writeAiConfig } from '@/lib/db/ai-config';
+import { readAiConfigRecord, readAiKey, writeAiConfig } from '@/lib/db/ai-config';
 import { aiConfigProblem, parseAiConfig } from '@/lib/ai/config';
 import { signupMode } from '@/lib/auth/policy';
 
@@ -31,40 +31,51 @@ export async function GET(request: Request) {
     return NextResponse.json({ users: await adminUsers(params.get('q') ?? '') });
   }
 
+  if (view === 'plans') {
+    const userId = (params.get('userId') ?? '').trim();
+    if (!userId) return NextResponse.json({ error: '누구의 플랜인지 없습니다.' }, { status: 400 });
+    // 본문은 담기지 않는다. 제목·시각·진행 상태뿐이다(lib/db/admin.ts 참고).
+    return NextResponse.json({ plans: await adminUserPlans(userId) });
+  }
+
   if (view === 'ai') {
     /*
      * 화면은 **적어 둔 값**과 **지금 실제로 도는 값**을 나란히 봐야 한다.
      * 빈 칸은 환경변수를 따르므로, 적어 둔 것만 보면 무엇이 도는지 알 수 없다.
      */
     const record = await readAiConfigRecord();
-    const basic = resolveProvider('basic', record.config);
-    const advanced = resolveProvider('advanced', record.config);
+    const savedKey = await readAiKey();
+    const basic = resolveProvider('basic', record.config, savedKey);
+    const advanced = resolveProvider('advanced', record.config, savedKey);
     return NextResponse.json({
       config: record.config,
       updatedAt: record.updatedAt,
       updatedBy: record.updatedBy,
       effective: {
         provider: basic.id,
-        enabled: isAiEnabled(record.config),
+        enabled: isAiEnabled(record.config, savedKey),
         baseUrl: basic.baseUrl,
         models: { basic: basic.model, advanced: advanced.model },
         effort: basic.effort,
         maxOutputTokens: basic.maxOutputTokens,
-        /** 키는 절대 안 내보낸다. **있는지 없는지**만 알려 준다. */
+        /** 키는 절대 안 내보낸다. **있는지 없는지**와 어디서 왔는지만 알려 준다. */
         hasKey: Boolean(basic.apiKey),
+        keyFrom: savedKey ? ('screen' as const) : basic.apiKey ? ('env' as const) : ('none' as const),
       },
     });
   }
 
   if (view === 'health') {
     const over = (await readAiConfigRecord()).config;
-    const basic = resolveProvider('basic', over);
-    const advanced = resolveProvider('advanced', over);
+    // 여기서도 화면에서 넣은 키를 봐야 한다. 안 보면 "꺼짐" 으로 잘못 나온다.
+    const savedKey = await readAiKey();
+    const basic = resolveProvider('basic', over, savedKey);
+    const advanced = resolveProvider('advanced', over, savedKey);
     return NextResponse.json({
       storage: storageInfo(),
       signup: signupMode(),
       ai: {
-        enabled: isAiEnabled(over),
+        enabled: isAiEnabled(over, savedKey),
         /*
          * 여기서는 공급자와 모델을 **보여도 된다.** 사용자에게 감추는 규칙은
          * 일반 화면에 대한 것이고, 관리자는 무엇이 도는지 알아야 고칠 수 있다.
@@ -89,7 +100,13 @@ export async function POST(request: Request) {
   const admin = await currentAdmin();
   if (!admin) return notFound();
 
-  let body: { userId?: unknown; amount?: unknown; action?: unknown; config?: unknown };
+  let body: {
+    userId?: unknown;
+    amount?: unknown;
+    action?: unknown;
+    config?: unknown;
+    apiKey?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -104,8 +121,23 @@ export async function POST(request: Request) {
     const problem = aiConfigProblem(body.config);
     if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
-    const saved = await writeAiConfig(parseAiConfig(body.config), admin.email);
-    console.warn(`[admin] ${admin.email} 이(가) AI 설정을 고쳤습니다.`);
+    /*
+     * 키는 세 가지 뜻이 있다.
+     *   보내지 않음 — 건드리지 않는다. 다른 칸만 고칠 때 매번 다시 치게 하면 안 된다.
+     *   null        — 지운다. 환경변수로 되돌아간다.
+     *   문자열      — 그 값으로 새로 넣는다.
+     */
+    let apiKey: string | null | undefined;
+    if (body.apiKey === null) apiKey = null;
+    else if (typeof body.apiKey === 'string' && body.apiKey.trim()) apiKey = body.apiKey;
+    if (typeof apiKey === 'string' && apiKey.trim().length > 400) {
+      return NextResponse.json({ error: 'API 키가 너무 깁니다.' }, { status: 400 });
+    }
+
+    const saved = await writeAiConfig(parseAiConfig(body.config), admin.email, apiKey);
+    // 키를 건드렸는지도 남긴다. 값은 절대 안 남긴다.
+    const keyNote = apiKey === null ? ' (키 삭제)' : apiKey ? ' (키 교체)' : '';
+    console.warn(`[admin] ${admin.email} 이(가) AI 설정을 고쳤습니다.${keyNote}`);
     return NextResponse.json({ ok: true, config: saved });
   }
 

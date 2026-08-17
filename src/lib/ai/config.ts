@@ -14,9 +14,14 @@
  *
  *     화면에 적은 값  >  환경변수  >  코드 기본값
  *
- * **API 키는 여기서 다루지 않는다.** 환경변수에만 둔다 — 데이터베이스가 통째로
- * 새도 키까지 함께 새지는 않게 하려는 것이다. 그래서 공급자를 바꿀 때는 그
- * 공급자의 키가 환경변수에 있어야 하고, 화면이 그것을 먼저 알려 준다.
+ * ## API 키
+ *
+ * 키도 화면에서 넣는다. 다만 **이 타입에는 키가 없다.** 이 타입은 브라우저로
+ * 그대로 내려가므로, 여기에 담으면 관리자 화면을 여는 것만으로 키가 새어 나간다.
+ * 꼬리표(`••••7890`)와 있는지 여부만 담고, 키 자체는 잠가서 따로 둔다
+ * (`db/ai-config.ts` 의 `readAiKey`).
+ *
+ * 화면에서 넣지 않으면 환경변수의 키를 그대로 쓴다.
  */
 
 import { ENGINE_TIERS, type EngineTier } from './engines';
@@ -52,6 +57,14 @@ export interface AiConfig {
   effort: EffortChoice;
   /** 요청당 출력 토큰 상한. 0 이면 환경변수를 따른다. */
   maxOutputTokens: number;
+  /**
+   * API 키의 **꼬리표**(`••••7890`). 키 자체가 아니다.
+   *
+   * 이 타입은 브라우저로 그대로 내려간다. 키를 여기에 두면 관리자 화면을 여는
+   * 것만으로 키가 새어 나간다. 키는 서버에서 따로 읽는다(`readAiKey`).
+   */
+  apiKeyLabel: string;
+  hasApiKey: boolean;
 }
 
 export const EMPTY_AI_CONFIG: AiConfig = {
@@ -60,13 +73,23 @@ export const EMPTY_AI_CONFIG: AiConfig = {
   models: { basic: '', advanced: '' },
   effort: '',
   maxOutputTokens: 0,
+  apiKeyLabel: '',
+  hasApiKey: false,
 };
 
 /** 모델 이름·주소가 아무리 길어도 이 이상은 실수다. */
 const MAX_TEXT = 200;
-/** 출력 상한으로 받아 줄 범위. 너무 작으면 매 호출이 잘리고, 너무 크면 400 이 난다. */
+/**
+ * 출력 상한으로 받아 줄 범위.
+ *
+ * 위쪽을 넓게 잡는다. **진짜 상한은 공급자가 정하는 것**이고 그 값은 모델마다
+ * 다르다(DeepSeek 은 386,000 이다). 여기서 좁게 잡아 두면 관리자가 자기 공급자의
+ * 실제 상한을 못 넣는다 — 처음 200,000 으로 잡았다가 바로 그 일이 났다.
+ *
+ * 아래쪽만 지킨다. 너무 작으면 매 호출이 중간에 잘려 문서가 조각난다.
+ */
 export const MIN_OUTPUT_TOKENS = 256;
-export const MAX_OUTPUT_TOKENS = 200_000;
+export const MAX_OUTPUT_TOKENS = 1_000_000;
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim().slice(0, MAX_TEXT) : '';
@@ -97,6 +120,9 @@ export function parseAiConfig(raw: unknown): AiConfig {
       Number.isFinite(limit) && limit >= MIN_OUTPUT_TOKENS && limit <= MAX_OUTPUT_TOKENS
         ? Math.floor(limit)
         : 0,
+    // 꼬리표는 저장된 것을 그대로 읽는다. 키 자체는 여기로 오지 않는다.
+    apiKeyLabel: text(value.apiKeyLabel),
+    hasApiKey: Boolean(value.apiKeyEnc),
   };
 }
 

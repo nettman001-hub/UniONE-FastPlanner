@@ -17,7 +17,7 @@ import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
 import type { EngineTier } from '@/lib/ai/engines';
 import type { AiConfig } from '@/lib/ai/config';
-import { readAiConfig } from '@/lib/db/ai-config';
+import { readAiRuntime } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { generateLocally } from '@/lib/ai/local-generator';
 import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
@@ -25,7 +25,8 @@ import { buildPrompt } from '@/lib/ai/prompts';
 import { draftToPatch } from '@/lib/ai/apply';
 import { canAfford, spendCredits } from '@/lib/db/credits';
 import type { SkillMap } from '@/lib/skills';
-import { ARTIFACT_CREDIT_COST, ARTIFACT_LABEL } from '@/lib/types';
+import { costOfArtifact } from '@/lib/credits';
+import { ARTIFACT_LABEL } from '@/lib/types';
 import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
 
 /**
@@ -99,6 +100,8 @@ export interface GenerateOptions {
    * 단계마다 돌려 쓴다 — 5단계면 같은 질의를 다섯 번 할 이유가 없다.
    */
   config?: AiConfig;
+  /** 화면에서 넣어 둔 API 키. 설정과 함께 서버가 읽어 넣는다. */
+  apiKey?: string;
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -181,8 +184,10 @@ async function runStep(
   artifact: ArtifactKey,
   options: GenerateOptions,
 ): Promise<{ patch: Partial<PlanDocuments>; source: 'ai' | 'local'; warning?: string }> {
-  const over = options.config ?? (await readAiConfig());
-  const useAi = isAiEnabled(over);
+  const runtime = options.config ? null : await readAiRuntime();
+  const over = options.config ?? runtime!.config;
+  const key = options.apiKey ?? runtime?.apiKey ?? '';
+  const useAi = isAiEnabled(over, key);
 
   const toPatch = (draft: unknown) =>
     draftToPatch(artifact, draft, plan, {
@@ -211,9 +216,10 @@ async function runStep(
     const draft = await generateJson({
       prompt,
       schema: ARTIFACT_SCHEMA[artifact],
-      maxTokens: maxTokensFor(artifact, resolveProvider(options.engine, over).maxOutputTokens),
+      maxTokens: maxTokensFor(artifact, resolveProvider(options.engine, over, key).maxOutputTokens),
       engine: options.engine,
       config: over,
+      apiKey: key,
     });
     return { patch: toPatch(draft), source: 'ai' };
   } catch (error) {
@@ -255,7 +261,11 @@ export async function* runPipeline(
      *
      * 예전에는 브라우저가 봤다. 브라우저가 안 보면 그만이라 사실상 무제한이었다.
      */
-    const cost = ARTIFACT_CREDIT_COST[artifact];
+    /*
+     * **고급 엔진은 두 배다.** 화면이 값을 보여 줄 때도 같은 함수를 쓰므로,
+     * "3 크레딧이라더니 6 이 나갔다" 가 생기지 않는다.
+     */
+    const cost = costOfArtifact(artifact, options.engine);
     if (options.userId && !(await canAfford(options.userId, cost))) {
       yield {
         type: 'error',

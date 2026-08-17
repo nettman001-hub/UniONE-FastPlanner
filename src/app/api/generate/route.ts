@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/auth/server';
 import { precondition, runPipeline } from '@/lib/jobs/queue';
 import { activeSkills } from '@/lib/db/skills';
 import { userEngine } from '@/lib/db/user-settings';
+import { readAiRuntime } from '@/lib/db/ai-config';
 import type { ArtifactKey, Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -73,6 +74,8 @@ export async function POST(request: Request) {
    * 요청을 손봐서 비싼 쪽을 마음대로 부를 수 있다.
    */
   const engine = await userEngine(user.id);
+  // 관리자 설정과 키는 여기서 한 번만 읽어 5단계가 돌려 쓴다.
+  const runtime = await readAiRuntime();
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -81,7 +84,16 @@ export async function POST(request: Request) {
         for await (const event of runPipeline(
           plan,
           artifacts,
-          { extra: body.extra, pageIds: body.pageIds, merge: body.merge, skills, userId: user.id, engine },
+          {
+            extra: body.extra,
+            pageIds: body.pageIds,
+            merge: body.merge,
+            skills,
+            userId: user.id,
+            engine,
+            config: runtime.config,
+            apiKey: runtime.apiKey,
+          },
           request.signal,
         )) {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
