@@ -30,6 +30,14 @@ create table if not exists plans (
 
 create index if not exists plans_user_updated_idx on plans (user_id, updated_at desc);
 
+-- 계정마다 고른 것들. 지금은 만들기 엔진 하나뿐이다.
+--
+-- 칸을 하나씩 늘리지 않고 jsonb 한 칸에 담는다. 앞으로 들어올 것들(알림, 테마)이
+-- 전부 "고른 값 하나" 라서, 그때마다 alter table 을 하느니 여기에 키를 더한다.
+-- 읽는 쪽(lib/db/user-settings.ts)에서 모르는 값은 기본으로 되돌리므로,
+-- 옛 배포가 남긴 키가 섞여 있어도 문제가 되지 않는다.
+alter table users add column if not exists settings jsonb not null default '{}'::jsonb;
+
 -- 바깥 서비스에 접속할 자격증명. 지금은 스티치 하나뿐이다.
 --
 -- **암호문만 들어온다.** 이 값은 사용자의 스티치 계정을 그대로 여는 열쇠라,

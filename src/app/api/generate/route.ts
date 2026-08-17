@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { precondition, runPipeline } from '@/lib/jobs/queue';
 import { activeSkills } from '@/lib/db/skills';
+import { userEngine } from '@/lib/db/user-settings';
 import type { ArtifactKey, Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -67,6 +68,11 @@ export async function POST(request: Request) {
    * 남의 지침이 딸려 올 수는 없다.
    */
   const skills = await activeSkills(user.id, plan.id);
+  /*
+   * 어느 엔진으로 만들지도 **서버가 계정에서 읽는다.** 브라우저가 보내게 하면
+   * 요청을 손봐서 비싼 쪽을 마음대로 부를 수 있다.
+   */
+  const engine = await userEngine(user.id);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -75,7 +81,7 @@ export async function POST(request: Request) {
         for await (const event of runPipeline(
           plan,
           artifacts,
-          { extra: body.extra, pageIds: body.pageIds, merge: body.merge, skills, userId: user.id },
+          { extra: body.extra, pageIds: body.pageIds, merge: body.merge, skills, userId: user.id, engine },
           request.signal,
         )) {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));

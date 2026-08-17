@@ -15,6 +15,7 @@
 
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
+import type { EngineTier } from '@/lib/ai/engines';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { generateLocally } from '@/lib/ai/local-generator';
 import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
@@ -84,6 +85,13 @@ export interface GenerateOptions {
    * 비어 있으면 셈을 건너뛴다 — 검사나 내부 호출에서 쓴다.
    */
   userId?: string;
+  /**
+   * 어느 엔진으로 만들지. 계정 설정에서 서버가 읽어 넣는다.
+   *
+   * 브라우저가 보내게 하지 않는 이유는 지침과 같다 — 요청을 손보면 값을 더 낸다는
+   * 비싼 쪽을 마음대로 부를 수 있게 된다.
+   */
+  engine?: EngineTier;
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -195,7 +203,8 @@ async function runStep(
     const draft = await generateJson({
       prompt,
       schema: ARTIFACT_SCHEMA[artifact],
-      maxTokens: maxTokensFor(artifact, resolveProvider().maxOutputTokens),
+      maxTokens: maxTokensFor(artifact, resolveProvider(options.engine).maxOutputTokens),
+      engine: options.engine,
     });
     return { patch: toPatch(draft), source: 'ai' };
   } catch (error) {

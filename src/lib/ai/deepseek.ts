@@ -46,6 +46,58 @@ export function extractJson(text: string): string {
   return body;
 }
 
+/* ------------------------------------------------------------------ */
+/* 추론 강도                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * **가장 세게 생각하도록 요청한다.**
+ *
+ * 문제는 이 엔드포인트가 어떤 값을 받는지 **확인할 방법이 없다**는 것이다.
+ * OpenAI 호환이라 `reasoning_effort` 를 받는 것이 보통이지만, 받는 단계는
+ * 공급자·모델마다 다르고 아예 안 받는 것도 있다. 모르는 값을 보내면 400 이
+ * 떨어지고 **생성 자체가 실패한다** — 그것만은 안 된다.
+ *
+ * 그래서 사다리로 둔다. 위에서부터 시도하고, 그 값 때문에 거부당하면 한 칸
+ * 내려온다. 다 떨어지면 파라미터를 빼고 부른다. 어디까지 되는지는 **기억해
+ * 두어**, 서버가 사는 동안 같은 헛걸음을 반복하지 않는다.
+ *
+ * 확실히 아는 값이 있으면 `DEEPSEEK_REASONING_EFFORT` 로 못 박으면 된다.
+ * 아예 끄려면 `off`.
+ */
+const EFFORT_LADDER = ['max', 'xhigh', 'high'];
+
+/** 지금 쓰는 칸. 사다리를 다 내려오면 null — 파라미터 없이 부른다. */
+let effortLadder: string[] | null = null;
+
+function ladder(): string[] {
+  if (effortLadder) return effortLadder;
+  const forced = (process.env.DEEPSEEK_REASONING_EFFORT ?? '').trim().toLowerCase();
+  if (forced === 'off') effortLadder = [];
+  else if (forced) effortLadder = [forced];
+  else effortLadder = [...EFFORT_LADDER];
+  return effortLadder;
+}
+
+function currentEffort(): string | null {
+  return ladder()[0] ?? null;
+}
+
+/** 이 값 때문에 거부당했다. 한 칸 내려오고, 다시 해 볼 가치가 있는지 알려 준다. */
+function stepDownEffort(): boolean {
+  const rest = ladder().slice(1);
+  effortLadder = rest;
+  console.warn(
+    `[ai] 추론 강도를 낮춥니다 → ${rest[0] ?? '(사용 안 함)'} — 앞 값을 엔드포인트가 받지 않았습니다.`,
+  );
+  return true;
+}
+
+function isEffortRejection(error: unknown): boolean {
+  if (!(error instanceof OpenAI.APIError) || error.status !== 400) return false;
+  return /reasoning[_ ]?effort/i.test(error.message);
+}
+
 function buildUserContent(prompt: string, schema: unknown): string {
   return [
     prompt,
@@ -80,8 +132,9 @@ export async function generateJsonWithDeepSeek<T>({
   // 모델별 출력 상한을 넘기면 400 이 나므로 공급자 설정으로 한 번 더 조인다.
   const cappedMaxTokens = Math.min(maxTokens, config.maxOutputTokens);
 
-  const call = (jsonMode: boolean, extra?: string) =>
-    openai.chat.completions.create({
+  const call = (jsonMode: boolean, extra?: string) => {
+    const effort = currentEffort();
+    return openai.chat.completions.create({
       model: config.model,
       messages: [
         { role: 'system', content: system },
@@ -90,12 +143,35 @@ export async function generateJsonWithDeepSeek<T>({
       ],
       max_tokens: cappedMaxTokens,
       ...(jsonMode ? { response_format: { type: 'json_object' as const } } : {}),
-    });
+      // SDK 타입에 아직 없을 수 있어 따로 얹는다. 값은 위 사다리가 정한다.
+      ...(effort ? { reasoning_effort: effort } : {}),
+    } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
+  };
+
+  /**
+   * 추론 강도 때문에 거부당하면 **한 칸 내려 같은 요청을 다시** 보낸다.
+   *
+   * 사다리는 부를 때마다 짧아지고, 다 떨어지면 `currentEffort()` 가 null 이라
+   * 더 돌지 않는다. 다른 오류는 그대로 올려보낸다.
+   */
+  const sendWithEffortFallback = async (jsonMode: boolean, extra?: string) => {
+    for (;;) {
+      try {
+        return await call(jsonMode, extra);
+      } catch (error) {
+        if (isEffortRejection(error) && currentEffort() !== null) {
+          stepDownEffort();
+          continue;
+        }
+        throw error;
+      }
+    }
+  };
 
   const once = async (extra?: string): Promise<T> => {
     let completion: OpenAI.Chat.ChatCompletion;
     try {
-      completion = await call(true, extra);
+      completion = await sendWithEffortFallback(true, extra);
     } catch (error) {
       // JSON 모드를 지원하지 않는 모델이면 프롬프트만으로 다시 시도한다.
       const message = error instanceof Error ? error.message : String(error);
@@ -104,7 +180,7 @@ export async function generateJsonWithDeepSeek<T>({
         error.status === 400 &&
         /response_format|json/i.test(message)
       ) {
-        completion = await call(false, extra);
+        completion = await sendWithEffortFallback(false, extra);
       } else {
         throw classify(error);
       }

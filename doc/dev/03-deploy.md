@@ -166,10 +166,14 @@ postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.
 배포되면 `https://프로젝트이름.vercel.app/api/status` 를 열어 확인하세요.
 
 ```json
-{ "mode": "ai", "provider": "deepseek", "model": "deepseek-v4-pro" }
+{ "mode": "ai" }
 ```
 
 `"mode": "local"` 이면 키가 제대로 들어가지 않은 것입니다. 3단계를 다시 확인하고 Redeploy 하세요.
+
+> **공급자와 모델 이름은 여기에 안 나옵니다.** 이 주소는 로그인 없이 누구나 열 수
+> 있어, 서비스가 무엇으로 돌아가는지 알려 주게 됩니다. 그 값은 관리자 화면의
+> **점검** 탭에서만 보입니다.
 
 ### 제대로 됐는지 한 화면에서 보기
 
@@ -181,7 +185,12 @@ postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.
 | 저장 → 어디에 | `Postgres (DATABASE_URL)` |
 | 저장 → 암호화 열쇠 | `AUTH_SECRET 있음` |
 | AI → 상태 | `켜짐` |
+| AI → 기본 엔진 · 고급 엔진 | **서로 다른** 모델 이름 |
 | 정책 → 가입 정책 | 정해 둔 것 (`초대 코드가 있어야 가입` 등) |
+
+두 엔진이 **같은 모델**이면 붉은 글씨로 알려 줍니다. 그대로 두면 사용자가 고급을
+골라도 달라지는 것이 없는데 화면에는 골랐다고 나옵니다. 자세한 것은
+[AI 공급자와 크레딧](./04-ai-providers.md) 을 보세요.
 
 **`어디에` 가 `PGlite — 이 서버의 파일` 이면 붉은 경고가 뜹니다.** `DATABASE_URL` 이
 안 들어간 것이고, 그대로 두면 다시 배포할 때마다 계정과 플랜이 전부 사라집니다.

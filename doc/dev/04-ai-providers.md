@@ -23,6 +23,55 @@ AI_PROVIDER 지정  →  DEEPSEEK_API_KEY  →  ANTHROPIC_API_KEY  →  내장 �
 `AI_PROVIDER=local` 로 두면 키가 있어도 내장 생성기를 씁니다. 오프라인 작업이나
 비용 없이 구조만 잡아볼 때 유용합니다.
 
+## 엔진 등급 — 기본 / 고급
+
+사용자는 **설정 → 만들기**에서 둘 중 하나를 고릅니다. 계정마다 하나이고,
+그 계정으로 만드는 모든 플랜에 적용됩니다.
+
+| 화면에 보이는 것 | 실제로 부르는 것 |
+| --- | --- |
+| `기본 엔진` | `DEEPSEEK_MODEL_BASIC` |
+| `고급 엔진` | `DEEPSEEK_MODEL_ADVANCED` |
+
+**모델 이름은 화면에 절대 나가지 않습니다.** 브라우저로 가는 파일
+(`lib/ai/engines.ts`)에는 등급 이름만 있고, 어떤 모델인지는 서버만 아는 값
+(`lib/ai/provider.ts`)입니다. 알아도 사용자가 할 수 있는 일이 없는데 서비스
+내부 구성만 드러나고, 모델을 갈아 끼울 때마다 화면·문서를 따라 고쳐야 합니다.
+
+고른 값은 **서버가 계정에서 읽습니다.** 브라우저가 보내게 하면 요청을 손봐서
+비싼 쪽을 마음대로 부를 수 있습니다.
+
+크레딧은 등급과 무관하게 같습니다. 달라지는 것은 걸리는 시간과 문서의 촘촘함입니다.
+
+### 추론 강도
+
+**두 등급 모두 가장 깊게 생각하도록 요청합니다.** 등급 차이는 모델 자체의
+크기에서 나오지, 생각을 덜 하게 해서 내는 것이 아닙니다.
+
+문제는 이 엔드포인트가 `reasoning_effort` 를 **어느 단계까지 받는지 알 수 없다**는
+것입니다. 모르는 값을 보내면 400 이 떨어지고 생성이 실패합니다. 그래서 사다리로
+둡니다.
+
+```
+max → xhigh → high → (파라미터 없이)
+```
+
+위에서부터 보내다가 **그 값 때문에** 거부당하면 한 칸 내려와 같은 요청을 다시
+보냅니다. 다 떨어지면 파라미터를 빼고 부릅니다. 어디까지 되는지는 기억해 두어
+서버가 사는 동안 같은 헛걸음을 반복하지 않습니다.
+
+어느 단계까지 받는지 확인하려면:
+
+```bash
+npm run check:ai
+```
+
+```
+▶ 추론 강도 (reasoning_effort) … ok — 'max' 로 동작합니다 (가장 높은 단계)
+```
+
+확실히 아는 값이 있으면 `DEEPSEEK_REASONING_EFFORT` 로 못 박으면 됩니다.
+
 ## 환경변수 전체 목록
 
 ### DeepSeek
@@ -31,7 +80,10 @@ AI_PROVIDER 지정  →  DEEPSEEK_API_KEY  →  ANTHROPIC_API_KEY  →  내장 �
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | — | [platform.deepseek.com](https://platform.deepseek.com) 에서 발급 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI 호환 엔드포인트 |
-| `DEEPSEEK_MODEL` | `deepseek-v4-pro` | 모델명 |
+| `DEEPSEEK_MODEL_BASIC` | `deepseek-v4-flash` | **기본 엔진**이 쓸 모델 |
+| `DEEPSEEK_MODEL_ADVANCED` | `deepseek-v4-pro` | **고급 엔진**이 쓸 모델 |
+| `DEEPSEEK_MODEL` | — | 등급이 생기기 전 이름. 넣으면 고급 쪽 기본값 |
+| `DEEPSEEK_REASONING_EFFORT` | (자동) | 추론 강도를 못 박을 때. `off` 면 안 보냄 |
 | `DEEPSEEK_MAX_TOKENS` | `8192` | 요청당 출력 토큰 상한 |
 
 ### Anthropic
@@ -80,7 +132,7 @@ AI_PROVIDER 지정  →  DEEPSEEK_API_KEY  →  ANTHROPIC_API_KEY  →  내장 �
 | --- | --- |
 | API 키가 올바르지 않습니다 | 키를 다시 확인하세요. 앞뒤 공백이 섞였을 수 있습니다 |
 | 계정의 잔액이 부족합니다 | 공급자 콘솔에서 충전하세요 |
-| 모델 '…' 을(를) 찾을 수 없습니다 | `npm run check:ai` 로 사용 가능한 모델 목록을 확인해 `DEEPSEEK_MODEL` 을 바꾸세요 |
+| 모델 '…' 을(를) 찾을 수 없습니다 | `npm run check:ai` 로 사용 가능한 모델 목록을 확인해 `DEEPSEEK_MODEL_BASIC` · `DEEPSEEK_MODEL_ADVANCED` 를 바꾸세요 |
 | 요청이 한도를 초과했습니다 | 잠시 후 다시 시도하세요 |
 | 응답이 출력 한도에서 잘렸습니다 | `DEEPSEEK_MAX_TOKENS` 를 올리거나 생성 범위를 좁히세요 |
 | 응답을 JSON 으로 해석하지 못했습니다 | 모델이 형식을 벗어난 경우입니다. 다시 시도하면 대개 해결됩니다 |

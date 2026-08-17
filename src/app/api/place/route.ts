@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
+import { userEngine } from '@/lib/db/user-settings';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { PLACEMENT_SCHEMA } from '@/lib/ai/schemas';
 import { buildPlacementPrompt } from '@/lib/ai/prompts';
@@ -74,6 +75,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await generateJson<{ placements: RawPlacement[] }>({
+      engine: await userEngine(user.id),
       prompt: buildPlacementPrompt(
         plan,
         targets.map((f) => ({ id: f.id, name: f.name, description: f.description })),

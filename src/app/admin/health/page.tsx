@@ -16,7 +16,13 @@ import { Spinner } from '@/components/ui';
 interface Health {
   storage: { kind: 'postgres' | 'file'; dir?: string; ephemeral: boolean };
   signup: string;
-  ai: { enabled: boolean; provider: string; model: string; maxOutputTokens: number };
+  ai: {
+    enabled: boolean;
+    provider: string;
+    /** 등급마다 실제로 걸린 모델. 짝으로 봐야 한쪽만 넣어 둔 것을 잡는다. */
+    engines: { basic: string; advanced: string };
+    maxOutputTokens: number;
+  };
   stitch: string;
   authSecret: boolean;
 }
@@ -104,10 +110,26 @@ export default function AdminHealth() {
           </span>
         </div>
         <ReadRow label="공급자" value={data.ai.provider} />
-        <ReadRow label="모델" value={data.ai.model || '-'} />
+        <ReadRow label="기본 엔진" value={data.ai.engines.basic || '-'} />
+        <ReadRow label="고급 엔진" value={data.ai.engines.advanced || '-'} />
         <ReadRow label="출력 상한" value={`${data.ai.maxOutputTokens.toLocaleString()} 토큰`} />
+        {/*
+          둘이 같으면 환경변수를 한쪽만 넣어 둔 것이다. 그대로 두면 사용자가
+          고급을 골라도 달라지는 게 없는데, 화면에는 골랐다고 나온다.
+        */}
+        {data.ai.enabled && data.ai.engines.basic === data.ai.engines.advanced && (
+          <p
+            className="mt-2 rounded-lg border px-3 py-2.5 text-[12px] leading-relaxed"
+            style={{ borderColor: 'var(--warn)', color: 'var(--warn)' }}
+          >
+            <b>두 등급이 같은 모델을 씁니다.</b> 사용자가 고급을 골라도 달라지는 것이
+            없습니다. <code>DEEPSEEK_MODEL_BASIC</code> · <code>DEEPSEEK_MODEL_ADVANCED</code> 를
+            확인하세요.
+          </p>
+        )}
         <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
-          공급자와 모델은 <b>이 화면에서만</b> 보입니다. 일반 사용자 화면에는 나가지 않습니다.
+          공급자와 모델은 <b>이 화면에서만</b> 보입니다. 일반 사용자 화면에는 등급 이름
+          (<b>기본</b>·<b>고급</b>)만 나갑니다.
         </p>
       </Panel>
 

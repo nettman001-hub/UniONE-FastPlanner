@@ -30,7 +30,8 @@ export async function GET(request: Request) {
   }
 
   if (view === 'health') {
-    const provider = resolveProvider();
+    const basic = resolveProvider('basic');
+    const advanced = resolveProvider('advanced');
     return NextResponse.json({
       storage: storageInfo(),
       signup: signupMode(),
@@ -39,10 +40,13 @@ export async function GET(request: Request) {
         /*
          * 여기서는 공급자와 모델을 **보여도 된다.** 사용자에게 감추는 규칙은
          * 일반 화면에 대한 것이고, 관리자는 무엇이 도는지 알아야 고칠 수 있다.
+         *
+         * 등급마다 어떤 모델이 걸렸는지를 **짝으로** 보여 준다. 하나만 보여 주면
+         * 환경변수를 한쪽만 넣어 둔 것을 못 잡는다.
          */
-        provider: provider.id,
-        model: provider.model,
-        maxOutputTokens: provider.maxOutputTokens,
+        provider: basic.id,
+        engines: { basic: basic.model, advanced: advanced.model },
+        maxOutputTokens: basic.maxOutputTokens,
       },
       stitch: process.env.STITCH_MCP_URL || 'https://stitch.googleapis.com/mcp',
       authSecret: Boolean(process.env.AUTH_SECRET),
