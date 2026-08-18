@@ -8,7 +8,7 @@
 import { NextResponse } from 'next/server';
 
 import { currentAdmin } from '@/lib/auth/admin';
-import { adminOverview, adminUserPlans, adminUsers, grantCredits } from '@/lib/db/admin';
+import { adminOverview, adminPlanBody, adminUserPlans, adminUsers, grantCredits } from '@/lib/db/admin';
 import { storageInfo } from '@/lib/db';
 import { isAiEnabled, resolveProvider } from '@/lib/ai/client';
 import { readAiConfigRecord, readAiKey, writeAiConfig } from '@/lib/db/ai-config';
@@ -34,8 +34,36 @@ export async function GET(request: Request) {
   if (view === 'plans') {
     const userId = (params.get('userId') ?? '').trim();
     if (!userId) return NextResponse.json({ error: '누구의 플랜인지 없습니다.' }, { status: 400 });
-    // 본문은 담기지 않는다. 제목·시각·진행 상태뿐이다(lib/db/admin.ts 참고).
+    // 목록에는 본문이 담기지 않는다. 제목·시각·진행 상태뿐이다(lib/db/admin.ts 참고).
     return NextResponse.json({ plans: await adminUserPlans(userId) });
+  }
+
+  if (view === 'plan') {
+    /*
+     * 기획서 본문. **고른 하나만, 열 때만 간다.**
+     *
+     * 목록에 본문을 섞지 않은 이유가 여기 있다 — 관리자가 목록을 열었다고 해서
+     * 그 사람의 기획서를 다 본 것이 되면 안 된다. 본 것은 본 것으로 남긴다.
+     */
+    const userId = (params.get('userId') ?? '').trim();
+    const planId = (params.get('planId') ?? '').trim();
+    if (!userId || !planId) {
+      return NextResponse.json({ error: '어느 플랜인지 없습니다.' }, { status: 400 });
+    }
+
+    const found = await adminPlanBody(userId, planId);
+    /*
+     * 없는 것과 남의 것을 **구분해서 알려 주지 않는다.** 주인이 다르면 404 와
+     * 403 이 갈리는데, 그 차이만으로 "이 id 는 존재한다" 가 새어 나간다.
+     */
+    if (!found) return notFound();
+
+    /*
+     * 누가 누구의 무엇을 열었는지 남긴다. 값은 남기지 않는다 — 기록하려고
+     * 본문을 한 번 더 흘리면 남기는 일이 새는 일이 된다.
+     */
+    console.warn(`[admin] ${admin.email} 이(가) ${userId} 의 플랜 ${planId} 본문을 열었습니다.`);
+    return NextResponse.json({ plan: found });
   }
 
   if (view === 'ai') {

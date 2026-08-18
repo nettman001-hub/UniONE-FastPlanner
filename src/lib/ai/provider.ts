@@ -44,8 +44,16 @@ const DEEPSEEK_DEFAULT_MODEL: Record<EngineTier, string> = {
   advanced: 'deepseek-v4-pro',
 };
 
-/** DeepSeek 모델의 출력 상한이 모델마다 달라 보수적으로 잡는다. 필요하면 환경변수로 올린다. */
-const DEEPSEEK_DEFAULT_MAX_TOKENS = 8192;
+/**
+ * DeepSeek 요청 하나가 뽑을 수 있는 출력 토큰 수.
+ *
+ * 이 값은 **상한이자 기준**이다. `lib/jobs/queue.ts` 의 `maxTokensFor` 가 이 값에
+ * 비례해 산출물별 요청량을 늘리므로, 올리면 결과물이 실제로 길어진다.
+ *
+ * 모델이 받는 것보다 크게 잡으면 400 이 떨어진다. 필요하면 관리자 화면이나
+ * `DEEPSEEK_MAX_TOKENS` 로 내린다.
+ */
+const DEEPSEEK_DEFAULT_MAX_TOKENS = 128000;
 
 const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5';
 const ANTHROPIC_DEFAULT_MAX_TOKENS = 32000;

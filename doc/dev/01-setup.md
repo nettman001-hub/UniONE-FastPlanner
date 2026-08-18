@@ -37,7 +37,7 @@ AI_PROVIDER=deepseek
 DEEPSEEK_API_KEY=sk-여기에_키
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
-DEEPSEEK_MAX_TOKENS=8192
+DEEPSEEK_MAX_TOKENS=128000
 ```
 
 **키를 넣지 않아도 앱은 완전히 동작합니다.** 이 경우 내장 생성기(규칙 기반)가 산출물을
@@ -95,7 +95,7 @@ AI_PROVIDER   : deepseek
 선택된 공급자 : deepseek
 Base URL      : https://api.deepseek.com
 모델          : deepseek-v4-pro
-출력 상한     : 8192 토큰
+출력 상한     : 128000 토큰
 API 키        : sk-abc…7890 (35자)
 
 ▶ 엔드포인트 연결 및 모델 목록 … ok — 사용 가능 모델 3개

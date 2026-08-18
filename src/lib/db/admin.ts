@@ -1,13 +1,17 @@
 /**
  * 관리자 화면이 읽는 질의.
  *
- * **남의 기획서 본문은 읽지 않는다.** 제목과 언제 고쳤는지까지다. 목록과 통계로
- * 운영에 필요한 것은 다 되고, 본문은 남의 것이라 볼 이유가 없다. 봐야 할 일이
- * 생기면 그때 "왜 열었는지" 를 남기는 장치와 함께 만든다.
+ * **본문은 목록에 섞어 담지 않는다.** 목록·통계 질의는 제목과 개수까지만 꺼낸다.
+ * 목록을 여는 것만으로 모든 기획서가 딸려 오면, 볼 생각이 없었어도 이미 본 것이
+ * 된다.
+ *
+ * 본문이 필요하면 `adminPlanBody` 로 **한 번에 하나씩** 따로 부른다. 부르는 쪽에서
+ * 누가 무엇을 열었는지 기록을 남긴다(`app/api/admin/route.ts`).
  */
 
 import { getDb } from './index';
 import { DAILY_CREDIT_LIMIT, dayKey, dayStart } from '../credits';
+import type { Plan } from '../types';
 
 export interface AdminOverview {
   users: number;
@@ -23,6 +27,10 @@ export interface AdminOverview {
   integrations: number;
   /** 작성 지침을 켜 둔 계정 수 */
   skills: number;
+}
+
+function iso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 async function count(sql: string, params: unknown[] = []): Promise<number> {
@@ -64,17 +72,11 @@ export interface AdminUser {
 }
 
 /**
- * 사용자 목록.
- *
- * `query` 는 이메일과 이름에서 찾는다. 대소문자를 가리지 않는다 — 관리자가
- * 정확한 표기를 기억하고 있을 리 없다.
- */
-/**
  * 한 사용자의 플랜 목록.
  *
- * **기획서 본문은 담지 않는다.** 운영에 필요한 것은 "몇 개를 언제까지 만들었나"
- * 이지 남의 기획 내용이 아니다. 표의 `data` 칸을 통째로 꺼내면 관리자 화면을
- * 여는 것만으로 모든 기획서를 읽게 된다.
+ * **여기에는 본문을 담지 않는다.** 표의 `data` 칸을 통째로 꺼내면 목록을 여는
+ * 것만으로 그 사람의 기획서가 전부 딸려 온다. 본문은 고른 하나만
+ * `adminPlanBody` 로 따로 가져온다.
  *
  * 대신 **무엇이 만들어졌는지**는 세어서 보여 준다. 이건 본문이 아니라 진행
  * 상태라, 지원할 때 실제로 쓸모가 있다.
@@ -144,6 +146,63 @@ export async function adminUserPlans(userId: string, limit = 200): Promise<Admin
       counts,
     };
   });
+}
+
+/**
+ * 사용자 목록.
+ *
+ * `query` 는 이메일과 이름에서 찾는다. 대소문자를 가리지 않는다 — 관리자가
+ * 정확한 표기를 기억하고 있을 리 없다.
+ */
+/**
+ * 플랜 하나의 본문.
+ *
+ * 목록과 **일부러 떼어 놓았다.** 목록은 자주 열리고 본문은 가끔 열리는데, 한
+ * 질의로 묶으면 목록을 여는 것만으로 그 사람의 기획서 전부가 서버 메모리에
+ * 올라온다. 여기는 고른 하나만, 부를 때만 꺼낸다.
+ *
+ * `userId` 를 함께 받아 **주인과 짝이 맞을 때만** 준다. 플랜 id 만으로 찾게
+ * 두면 화면에서 고르지 않은 남의 플랜도 id 만 알면 열린다.
+ *
+ * 없으면 `null` 이다. 지워진 플랜과 남의 플랜을 구분해서 알려 주지 않는다.
+ */
+export interface AdminPlanBody {
+  id: string;
+  title: string;
+  updatedAt: string;
+  createdAt: string;
+  plan: Plan;
+}
+
+export async function adminPlanBody(userId: string, planId: string): Promise<AdminPlanBody | null> {
+  const db = await getDb();
+  const { rows } = await db.query<{
+    id: string;
+    title: string;
+    data: Plan;
+    updated_at: string | Date;
+    created_at: string | Date;
+  }>(
+    'select id, title, data, updated_at, created_at from plans where user_id = $1 and id = $2',
+    [userId, planId],
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const updatedAt = iso(row.updated_at);
+  /*
+   * 본문 안의 `id` 와 `updatedAt` 보다 **열 값을 정답으로 본다.** 저장 규칙이
+   * 그렇다(`lib/db/plans.ts` 의 `toPlan`). 여기서만 다르게 보면 관리자 화면에
+   * 보이는 시각이 사용자 화면과 어긋난다.
+   */
+  return {
+    id: row.id,
+    title: row.title,
+    updatedAt,
+    createdAt: iso(row.created_at),
+    plan: { ...row.data, id: row.id, updatedAt },
+  };
 }
 
 export async function adminUsers(query = '', limit = 50): Promise<AdminUser[]> {
