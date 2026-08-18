@@ -17,7 +17,10 @@ import { Wand2 } from 'lucide-react';
 import { askAgent } from '@/lib/agent/runner';
 import { usePlannerStore } from '@/lib/store';
 import { useCredits } from '@/lib/useCredits';
+import { useEngine } from '@/lib/useEngine';
+import { costWithEngine } from '@/lib/credits';
 import { CHAT_CREDIT_COST } from '@/lib/types';
+import { EngineToggle } from './EngineToggle';
 import { Spinner, useToast } from './ui';
 
 export function FixWithAi({
@@ -45,7 +48,14 @@ export function FixWithAi({
   const setAgentOpen = usePlannerStore((s) => s.setAgentOpen);
   const toast = useToast();
 
-  const outOfCredits = credits < CHAT_CREDIT_COST;
+  /*
+   * **등급에 따라 값이 다르다.** 고급이면 두 배다. 서버가 그렇게 깎으므로
+   * (`api/chat/route.ts`) 여기서 1 로 적어 두면 "1 크레딧이라더니 2 가
+   * 나갔다" 가 된다.
+   */
+  const engine = useEngine();
+  const cost = costWithEngine(CHAT_CREDIT_COST, engine);
+  const outOfCredits = credits < cost;
   const othersBusy = planBusy && !sending;
 
   const run = async () => {
@@ -70,20 +80,27 @@ export function FixWithAi({
   };
 
   return (
-    <button
-      className={className}
-      onClick={() => void run()}
-      disabled={planBusy || outOfCredits}
-      title={
-        outOfCredits
-          ? '크레딧을 모두 사용했습니다.'
-          : othersBusy
-            ? '다른 요청이 진행 중입니다. 끝나면 누를 수 있습니다.'
-            : `AI 에이전트에게 이 문제를 고쳐 달라고 요청합니다. (${CHAT_CREDIT_COST} 크레딧)`
-      }
-    >
-      {sending ? <Spinner size={12} /> : <Wand2 size={12} />}
-      {sending ? '보내는 중' : label}
-    </button>
+    /*
+      **누르기 직전에 어느 엔진인지 보여야 한다.** 값이 두 배 차이 나는데
+      그것을 모른 채 누르면 나중에 사용 내역에서 발견하게 된다.
+    */
+    <span className="inline-flex shrink-0 items-center gap-1.5">
+      <EngineToggle target="agent" disabled={planBusy} />
+      <button
+        className={className}
+        onClick={() => void run()}
+        disabled={planBusy || outOfCredits}
+        title={
+          outOfCredits
+            ? '크레딧을 모두 사용했습니다.'
+            : othersBusy
+              ? '다른 요청이 진행 중입니다. 끝나면 누를 수 있습니다.'
+              : `AI 에이전트에게 이 문제를 고쳐 달라고 요청합니다. (${cost} 크레딧)`
+        }
+      >
+        {sending ? <Spinner size={12} /> : <Wand2 size={12} />}
+        {sending ? '보내는 중' : label}
+      </button>
+    </span>
   );
 }

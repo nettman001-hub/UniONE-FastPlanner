@@ -22,7 +22,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson } from '@/lib/ai/client';
-import { userEngine } from '@/lib/db/user-settings';
+import { userAgentEngine } from '@/lib/db/user-settings';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { isAiEnabled } from '@/lib/ai/provider';
 import { answersBlock } from '@/lib/brief-questions';
@@ -113,7 +113,7 @@ export async function POST(request: Request) {
       prompt,
       schema: SCHEMA,
       maxTokens: 8000,
-      engine: await userEngine(user.id),
+      engine: await userAgentEngine(user.id),
       ...(await readAiRuntime()),
     });
     const questions = (result.questions ?? [])

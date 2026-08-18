@@ -7,6 +7,9 @@ import { useCredits } from '@/lib/useCredits';
 import { askAgent, cancelAgent, unansweredQuestion } from '@/lib/agent/runner';
 import { selectableItems, useSelectionStore } from '@/lib/selection';
 import { CHAT_CREDIT_COST, type Plan } from '@/lib/types';
+import { useEngine } from '@/lib/useEngine';
+import { costWithEngine } from '@/lib/credits';
+import { EngineToggle } from './EngineToggle';
 import { Spinner, useToast } from './ui';
 
 const SUGGESTIONS = [
@@ -30,7 +33,13 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
   const toast = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
   const items = useMemo(() => selectableItems(plan), [plan]);
-  const outOfCredits = credits < CHAT_CREDIT_COST;
+  /*
+   * **등급에 따라 값이 다르다.** 서버가 `costWithEngine` 으로 깎으므로
+   * (`api/chat/route.ts`) 여기서 1 로 적어 두면 화면과 실제가 갈린다.
+   */
+  const engine = useEngine();
+  const cost = costWithEngine(CHAT_CREDIT_COST, engine);
+  const outOfCredits = credits < cost;
 
   /** 답을 받지 못한 채 남은 질문 — 새로고침이나 연결 끊김으로 요청이 사라진 경우. */
   const stranded = busy ? null : unansweredQuestion(plan.chat);
@@ -218,8 +227,12 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
         )}
 
         <div className="relative">
+          {/*
+            오른쪽 아래에 엔진 단추와 보내기를 나란히 둔다. 글이 그 아래로
+            깔리지 않도록 오른쪽 여백을 그만큼 넓힌다(`pr-32`).
+          */}
           <textarea
-            className="textarea pr-11 text-[12.5px]"
+            className="textarea pr-32 text-[12.5px]"
             rows={3}
             placeholder={
               outOfCredits
@@ -236,17 +249,24 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
               }
             }}
           />
-          <button
-            className="btn btn-primary btn-sm absolute right-2 bottom-2"
-            onClick={() => void send(input)}
-            disabled={busy || outOfCredits || !input.trim()}
-            aria-label="보내기"
-          >
-            {busy ? <Spinner size={13} /> : <CornerDownLeft size={13} />}
-          </button>
+          <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
+            {/*
+              **보내기 바로 옆이다.** 값이 두 배 차이 나는 것을 누르기 직전에
+              알아야 한다. 아래 줄의 `메시지당 N 크레딧` 이 이 단추를 따라간다.
+            */}
+            <EngineToggle target="agent" disabled={busy} />
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => void send(input)}
+              disabled={busy || outOfCredits || !input.trim()}
+              aria-label="보내기"
+            >
+              {busy ? <Spinner size={13} /> : <CornerDownLeft size={13} />}
+            </button>
+          </div>
         </div>
         <p className="mt-1.5 text-[11px] text-[var(--fg-subtle)]">
-          ⌘/Ctrl + Enter 로 전송 · 메시지당 {CHAT_CREDIT_COST} 크레딧
+          ⌘/Ctrl + Enter 로 전송 · 메시지당 {cost} 크레딧
         </p>
       </div>
     </aside>

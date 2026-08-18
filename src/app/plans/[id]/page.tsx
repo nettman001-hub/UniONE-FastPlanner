@@ -381,7 +381,7 @@ function PlanOverview() {
                 단계를 다 돌기 때문이다. 단계마다 다르게 골라 두었으면 `섞임`
                 으로 적는다 — 그대로 돌리면 각 단계가 제 등급으로 만들어진다.
               */}
-              <EngineToggle disabled={busy} below />
+              <EngineToggle target="all" disabled={busy} below />
               <button
                 className={`btn btn-primary btn-sm${running ? ' is-busy' : ''}`}
                 disabled={busy}
@@ -485,7 +485,7 @@ function PlanOverview() {
                         막아 두면 앞 단계를 만들기 전에는 뒤 단계 등급을 정할 수
                         없어서, 전체 자동 생성 전에 준비해 둘 방법이 사라진다.
                       */}
-                      <EngineToggle artifact={key} disabled={busy} />
+                      <EngineToggle target={key} disabled={busy} />
                       <button
                         className={`btn btn-primary btn-sm${pending === key ? ' is-busy' : ''}${
                           nudged ? ' nudge' : ''

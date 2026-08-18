@@ -4,8 +4,9 @@
  * **모델 이름은 오가지 않는다.** 브라우저는 `basic` / `advanced` 만 알고,
  * 그것이 어떤 모델인지는 서버(`lib/ai/provider.ts`)만 안다.
  *
- * 엔진은 **단계마다 따로** 정한다(`engines`). `engine` 은 단계가 아닌 것들
- * (에이전트 대화·기능 배치·브리프 질문)이 쓰는 값이다.
+ * 엔진은 **단계마다 따로** 정한다(`engines`). AI 에이전트는 단계가 아니라서
+ * 따로 둔다(`agentEngine`). `engine` 은 예전 값이고, 둘이 비어 있을 때의
+ * 기본으로만 남는다.
  */
 
 import { NextResponse } from 'next/server';
@@ -28,7 +29,7 @@ export async function PATCH(request: Request) {
   const { user, response } = await requireUser();
   if (!user) return response;
 
-  let body: { engine?: unknown; engines?: unknown };
+  let body: { engine?: unknown; engines?: unknown; agentEngine?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -36,6 +37,9 @@ export async function PATCH(request: Request) {
   }
 
   if (body.engine !== undefined && !isEngineTier(body.engine)) {
+    return NextResponse.json({ error: '없는 엔진입니다.' }, { status: 400 });
+  }
+  if (body.agentEngine !== undefined && !isEngineTier(body.agentEngine)) {
     return NextResponse.json({ error: '없는 엔진입니다.' }, { status: 400 });
   }
 
@@ -64,6 +68,7 @@ export async function PATCH(request: Request) {
 
   const patch = {
     ...(body.engine === undefined ? {} : { engine: body.engine }),
+    ...(body.agentEngine === undefined ? {} : { agentEngine: body.agentEngine }),
     ...(engines === undefined ? {} : { engines }),
   };
   return NextResponse.json({ settings: await writeSettings(user.id, patch) });

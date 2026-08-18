@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
-import { userEngine } from '@/lib/db/user-settings';
+import { userAgentEngine } from '@/lib/db/user-settings';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { canAfford, spendCredits } from '@/lib/db/credits';
 import { CHAT_CREDIT_COST } from '@/lib/types';
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
 
   // 설정·키·등급은 여기서 한 번만 읽는다. 아래에서 그대로 돌려 쓴다.
   const runtime = await readAiRuntime();
-  const engine = await userEngine(user.id);
+  const engine = await userAgentEngine(user.id);
   const cost = costWithEngine(CHAT_CREDIT_COST, engine);
 
   if (!isAiEnabled(runtime.config, runtime.apiKey)) {

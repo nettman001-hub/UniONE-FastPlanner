@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
-import { userEngine } from '@/lib/db/user-settings';
+import { userAgentEngine } from '@/lib/db/user-settings';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { PLACEMENT_SCHEMA } from '@/lib/ai/schemas';
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ placements: [], message: '배치할 새 기능이 없습니다.' });
   }
   const runtime = await readAiRuntime();
-  const engine = await userEngine(user.id);
+  const engine = await userAgentEngine(user.id);
   const cost = costWithEngine(PLACEMENT_CREDIT_COST, engine);
 
   if (!isAiEnabled(runtime.config, runtime.apiKey)) {
