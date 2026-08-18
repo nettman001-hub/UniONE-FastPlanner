@@ -15,7 +15,7 @@
 
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
-import type { EngineTier } from '@/lib/ai/engines';
+import { DEFAULT_ENGINE, type EngineTier } from '@/lib/ai/engines';
 import type { AiConfig } from '@/lib/ai/config';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
@@ -96,12 +96,29 @@ export interface GenerateOptions {
    */
   engine?: EngineTier;
   /**
+   * 단계마다 고른 등급. 여기 있는 단계는 `engine` 대신 이 값을 쓴다.
+   *
+   * 사용자는 프로덕트 요구사항만 고급으로 뽑고 나머지는 기본으로 넘기는 식으로
+   * 섞어 쓴다. 파이프라인 한 번에 서로 다른 등급이 돌 수 있다는 뜻이다.
+   */
+  engines?: Partial<Record<ArtifactKey, EngineTier>>;
+  /**
    * 관리자가 화면에서 고친 AI 설정. 파이프라인이 시작할 때 **한 번만** 읽어
    * 단계마다 돌려 쓴다 — 5단계면 같은 질의를 다섯 번 할 이유가 없다.
    */
   config?: AiConfig;
   /** 화면에서 넣어 둔 API 키. 설정과 함께 서버가 읽어 넣는다. */
   apiKey?: string;
+}
+
+/**
+ * 이 단계를 어느 등급으로 만들 것인가.
+ *
+ * **값을 매기는 자리와 부르는 자리가 같은 함수를 봐야 한다.** 갈리면 기본으로
+ * 만들어 놓고 고급 값을 물리거나 그 반대가 된다.
+ */
+export function engineFor(artifact: ArtifactKey, options: GenerateOptions): EngineTier {
+  return options.engines?.[artifact] ?? options.engine ?? DEFAULT_ENGINE;
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -188,6 +205,8 @@ async function runStep(
   const over = options.config ?? runtime!.config;
   const key = options.apiKey ?? runtime?.apiKey ?? '';
   const useAi = isAiEnabled(over, key);
+  // 이 단계의 등급. 파이프라인 한 번에도 단계마다 다를 수 있다.
+  const tier = engineFor(artifact, options);
 
   const toPatch = (draft: unknown) =>
     draftToPatch(artifact, draft, plan, {
@@ -216,8 +235,8 @@ async function runStep(
     const draft = await generateJson({
       prompt,
       schema: ARTIFACT_SCHEMA[artifact],
-      maxTokens: maxTokensFor(artifact, resolveProvider(options.engine, over, key).maxOutputTokens),
-      engine: options.engine,
+      maxTokens: maxTokensFor(artifact, resolveProvider(tier, over, key).maxOutputTokens),
+      engine: tier,
       config: over,
       apiKey: key,
     });
@@ -265,7 +284,7 @@ export async function* runPipeline(
      * **고급 엔진은 두 배다.** 화면이 값을 보여 줄 때도 같은 함수를 쓰므로,
      * "3 크레딧이라더니 6 이 나갔다" 가 생기지 않는다.
      */
-    const cost = costOfArtifact(artifact, options.engine);
+    const cost = costOfArtifact(artifact, engineFor(artifact, options));
     if (options.userId && !(await canAfford(options.userId, cost))) {
       yield {
         type: 'error',

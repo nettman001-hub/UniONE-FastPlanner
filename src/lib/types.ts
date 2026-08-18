@@ -449,6 +449,14 @@ export interface Plan extends PlanDocuments {
 
 export type ArtifactKey = 'prd' | 'fs' | 'ia' | 'flow' | 'wireframe';
 
+/**
+ * 만드는 순서. 파이프라인이 도는 차례와 같다.
+ *
+ * 같은 배열이 화면마다 따로 적혀 있었는데, 단계마다 값을 따로 들고 다니게
+ * 되면서 **한 군데를 정답으로 둘 자리**가 필요해졌다.
+ */
+export const ARTIFACT_KEYS: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
+
 export const ARTIFACT_LABEL: Record<ArtifactKey, string> = {
   prd: '프로덕트 요구사항',
   fs: '기능명세서',

@@ -26,6 +26,7 @@ import {
 } from '@/lib/sync';
 import { usePlannerStore } from '@/lib/store';
 import { refreshCredits, resetCredits } from '@/lib/useCredits';
+import { refreshEngine, resetEngine } from '@/lib/useEngine';
 import { Spinner, useToast } from './ui';
 
 /* 동기화 ------------------------------------------------------------- */
@@ -51,13 +52,21 @@ export function PlanSync() {
   }, [user, loading, hydrated]);
 
   /*
-   * 크레딧도 여기서 맞춘다. 로그아웃하면 비워야 한다 — 안 그러면 다음 사람이
-   * 앞사람의 잔량을 본다.
+   * 크레딧과 엔진도 여기서 맞춘다. 로그아웃하면 비워야 한다 — 안 그러면 다음
+   * 사람이 앞사람의 잔량과 등급을 본다.
+   *
+   * 엔진은 단계마다 다섯 개라 더 눈에 띈다. 앞사람이 고급으로 둔 단계가 그대로
+   * 보이면 새로 들어온 사람은 값이 두 배인 줄 모르고 누른다.
    */
   useEffect(() => {
     if (loading) return;
-    if (user) void refreshCredits();
-    else resetCredits();
+    if (user) {
+      void refreshCredits();
+      void refreshEngine();
+    } else {
+      resetCredits();
+      resetEngine();
+    }
   }, [user, loading]);
 
   return null;

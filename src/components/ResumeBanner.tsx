@@ -14,7 +14,7 @@ import { PlayCircle, X } from 'lucide-react';
 import type { InterruptedRun } from '@/lib/jobs/progress';
 import { ARTIFACT_LABEL } from '@/lib/types';
 import { costOfArtifact } from '@/lib/credits';
-import { useEngine } from '@/lib/useEngine';
+import { useEngines } from '@/lib/useEngine';
 
 export function ResumeBanner({
   run,
@@ -26,8 +26,9 @@ export function ResumeBanner({
   onDiscard: () => void;
 }) {
   const total = run.done.length + run.remaining.length;
-  const engine = useEngine();
-  const cost = run.remaining.reduce((sum, a) => sum + costOfArtifact(a, engine), 0);
+  /* 남은 단계마다 **제 등급으로** 센다. 하나로 묶어 세면 실제와 어긋난다. */
+  const engines = useEngines();
+  const cost = run.remaining.reduce((sum, a) => sum + costOfArtifact(a, engines[a]), 0);
 
   return (
     <div className="no-print border-b border-[var(--border)] bg-[var(--warn-soft)] px-4 py-2.5">

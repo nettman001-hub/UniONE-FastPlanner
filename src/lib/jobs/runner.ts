@@ -17,7 +17,7 @@ import { usePlannerStore } from '../store';
 import { creditSnapshot, refreshCredits } from '../useCredits';
 import { ARTIFACT_LABEL, type ArtifactKey, type PlanDocuments } from '../types';
 import { costOfArtifact } from '../credits';
-import { engineSnapshot } from '../useEngine';
+import { engineSnapshotFor } from '../useEngine';
 
 type Toast = (message: string, tone?: 'ok' | 'warn' | 'danger') => void;
 
@@ -109,7 +109,7 @@ export async function runGeneration(
    * 여기서 미리 걸러 주는 것은 헛걸음을 줄이려는 것일 뿐 근거가 아니다.
    * 부족하면 서버가 `error` 사건으로 알려 주고, 아래에서 그대로 알린다.
    */
-  const firstCost = costOfArtifact(artifacts[0], engineSnapshot());
+  const firstCost = costOfArtifact(artifacts[0], engineSnapshotFor(artifacts[0]));
   if (creditSnapshot().remaining < firstCost) {
     toast(
       `크레딧이 부족합니다. ${ARTIFACT_LABEL[artifacts[0]]} 생성에는 ${firstCost} 크레딧이 필요합니다. 내일 다시 충전됩니다.`,

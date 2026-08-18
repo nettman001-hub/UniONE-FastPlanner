@@ -47,7 +47,7 @@ import { hasArtifact } from '@/lib/artifact-status';
 import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
 import { issueFixPrompt } from '@/lib/ai/fix-prompt';
 import { useGenerate } from '@/lib/useGenerate';
-import { useEngine } from '@/lib/useEngine';
+import { useEngines } from '@/lib/useEngine';
 import { costOfArtifact } from '@/lib/credits';
 import { issueSummary, validatePlan, LEVEL_LABEL, type Issue, type IssueLevel } from '@/lib/validate';
 import {
@@ -165,7 +165,7 @@ function PlanOverview() {
 
   const { generate, generateAll, pending, autoRunning, cancel } = useGenerate(plan);
   /* 고급 엔진은 값이 두 배다. 보여 주는 값과 깎이는 값이 갈리면 안 된다. */
-  const engine = useEngine();
+  const engines = useEngines();
 
   const [briefOpen, setBriefOpen] = useState(false);
   /** 전체 자동 생성 진행 여부·현재 단계는 서버 작업 상태에서 온다. */
@@ -376,6 +376,10 @@ function PlanOverview() {
                 **생성 버튼 바로 앞에 둔다.** 값이 두 배 차이 나는 것을 누르기
                 직전에 알아야 한다. 크기는 같게, 색은 다르게 — 같은 색이면
                 생성 버튼이 둘인 줄 알고 잘못 누른다.
+
+                여기는 다섯 단계를 **한꺼번에** 바꾼다. 전체 자동 생성이 다섯
+                단계를 다 돌기 때문이다. 단계마다 다르게 골라 두었으면 `섞임`
+                으로 적는다 — 그대로 돌리면 각 단계가 제 등급으로 만들어진다.
               */}
               <EngineToggle disabled={busy} below />
               <button
@@ -450,7 +454,7 @@ function PlanOverview() {
                           {STEP_DESC[key]}
                         </p>
                         <p className="mt-1 text-[11.5px] text-[var(--fg-subtle)]">
-                          {stepCount(plan, key)} · {costOfArtifact(key, engine)} 크레딧
+                          {stepCount(plan, key)} · {costOfArtifact(key, engines[key])} 크레딧
                         </p>
                         {reason && (
                           <p className="mt-1 flex items-center gap-1 text-[11.5px] font-semibold text-[var(--warn)]">
@@ -471,8 +475,17 @@ function PlanOverview() {
                           여기서 시작하세요
                         </span>
                       )}
-                      {/* 이 단계에 몇 크레딧이 드는지는 왼쪽에 적혀 있다. 그 값을 정하는 것이 이 버튼이다. */}
-                      <EngineToggle disabled={busy || reason !== null} />
+                      {/*
+                        **이 단계만** 바꾼다. 왼쪽에 적힌 크레딧이 이 버튼을 따라
+                        바뀐다. 단계마다 필요한 촘촘함이 달라서 하나로 묶지 않는다.
+
+                        **아직 못 만드는 단계여도 고를 수 있어야 한다**(`reason` 으로
+                        막지 않는다). 이 단추는 만드는 것이 아니라 어떻게 만들지를
+                        적어 두는 것이고, 전체 자동 생성은 다섯 단계를 다 돈다 —
+                        막아 두면 앞 단계를 만들기 전에는 뒤 단계 등급을 정할 수
+                        없어서, 전체 자동 생성 전에 준비해 둘 방법이 사라진다.
+                      */}
+                      <EngineToggle artifact={key} disabled={busy} />
                       <button
                         className={`btn btn-primary btn-sm${pending === key ? ' is-busy' : ''}${
                           nudged ? ' nudge' : ''
