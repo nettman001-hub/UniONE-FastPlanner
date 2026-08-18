@@ -127,7 +127,7 @@ npm run check:ai
 | `DEEPSEEK_MODEL_ADVANCED` | `deepseek-v4-pro` | **고급 엔진**이 쓸 모델 |
 | `DEEPSEEK_MODEL` | — | 등급이 생기기 전 이름. 넣으면 고급 쪽 기본값 |
 | `DEEPSEEK_REASONING_EFFORT` | (자동) | 추론 강도를 못 박을 때. `off` 면 안 보냄 |
-| `DEEPSEEK_MAX_TOKENS` | `8192` | 요청당 출력 토큰 상한. DeepSeek 의 실제 상한은 386,000 |
+| `DEEPSEEK_MAX_TOKENS` | `128000` | 요청당 출력 토큰 상한. DeepSeek 의 실제 상한은 386,000 |
 
 ### Anthropic
 

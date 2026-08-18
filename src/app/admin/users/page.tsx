@@ -3,16 +3,21 @@
 /**
  * 사용자 목록.
  *
- * **기획서 본문은 보지 않는다.** 몇 개인지, 언제 썼는지까지다. 운영에 필요한
- * 것은 그것으로 되고, 본문은 남의 것이라 볼 이유가 없다.
+ * 플랜 숫자를 누르면 목록이, 목록에서 제목을 누르면 **본문**이 열린다.
+ *
+ * 본문은 **고른 하나만 그때 가져온다.** 목록에 실어 보내면 목록을 여는 것만으로
+ * 그 사람의 기획서를 전부 받게 된다. 그리고 연 것은 서버 로그에 남는다
+ * (`app/api/admin/route.ts`).
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Coins, FolderOpen, Search } from 'lucide-react';
+import { ArrowLeft, Coins, FileText, FolderOpen, Search } from 'lucide-react';
 
+import { MarkdownView } from '@/components/MarkdownView';
 import { Panel } from '@/components/settings/Parts';
 import { Modal, Spinner, useToast } from '@/components/ui';
-import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
+import { toMarkdown } from '@/lib/export';
+import { ARTIFACT_LABEL, type ArtifactKey, type Plan } from '@/lib/types';
 
 interface AdminUser {
   id: string;
@@ -26,10 +31,11 @@ interface AdminUser {
 }
 
 /**
- * 한 사용자의 플랜 하나.
+ * 목록에 실리는 플랜 하나.
  *
- * **본문은 오지 않는다.** 제목·시각과 무엇이 만들어졌는지까지다 —
- * 서버(`lib/db/admin.ts`)가 애초에 그것만 세어서 보낸다.
+ * **여기에는 본문이 없다.** 제목·시각과 무엇이 만들어졌는지까지다 —
+ * 서버(`lib/db/admin.ts`)가 목록 질의에서는 그것만 세어서 보낸다. 본문은
+ * 아래 `AdminPlanBody` 로 하나씩 따로 온다.
  */
 interface AdminPlan {
   id: string;
@@ -46,7 +52,34 @@ interface AdminPlan {
   };
 }
 
+/** 열어 본 플랜 하나. 이쪽에는 본문이 통째로 들어 있다. */
+interface AdminPlanBody {
+  id: string;
+  title: string;
+  updatedAt: string;
+  createdAt: string;
+  plan: Plan;
+}
+
 const STEPS: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
+
+/**
+ * 본문을 읽을 수 있는 글로 조립한다.
+ *
+ * 내보내기와 **같은 함수**를 쓴다. 관리자용으로 따로 만들면 내려받은 것과 화면에
+ * 보이는 것이 조금씩 갈라져, "여기선 이렇게 나오는데" 를 매번 확인해야 한다.
+ *
+ * 오래 전에 저장된 플랜은 지금 모양과 달라 조립이 실패할 수 있다. 그때는 빈 화면
+ * 대신 **날것이라도 보여 준다** — 본문을 보러 들어온 사람에게 아무것도 안 주는
+ * 것이 가장 나쁘다.
+ */
+function readable(plan: Plan): string {
+  try {
+    return toMarkdown(plan);
+  } catch {
+    return ['> 저장된 모양이 지금과 달라 그대로 보여 줍니다.', '', '```json', JSON.stringify(plan, null, 2), '```'].join('\n');
+  }
+}
 
 function day(iso: string | null): string {
   if (!iso) return '-';
@@ -63,10 +96,20 @@ export default function AdminUsers() {
   /** 플랜 숫자를 누르면 열리는 창. 누구 것인지와 목록을 함께 들고 있는다. */
   const [plansOf, setPlansOf] = useState<AdminUser | null>(null);
   const [plans, setPlans] = useState<AdminPlan[] | null>(null);
+  /**
+   * 지금 본문을 보고 있는 플랜. `null` 이면 목록 화면이다.
+   *
+   * 창을 하나만 쓰고 안에서 갈아 끼운다. 창 위에 창을 또 띄우면 닫기가 두 번이
+   * 되고, 어느 것을 닫는지가 헷갈린다.
+   */
+  const [reading, setReading] = useState<AdminPlan | null>(null);
+  const [body, setBody] = useState<AdminPlanBody | null>(null);
 
   const openPlans = async (user: AdminUser) => {
     setPlansOf(user);
     setPlans(null);
+    setReading(null);
+    setBody(null);
     try {
       const res = await fetch(`/api/admin?view=plans&userId=${encodeURIComponent(user.id)}`, {
         cache: 'no-store',
@@ -78,6 +121,36 @@ export default function AdminUsers() {
       toast('플랜을 불러오지 못했습니다.', 'warn');
       setPlans([]);
     }
+  };
+
+  /**
+   * 본문을 연다.
+   *
+   * 실패하면 **목록으로 되돌린다.** 빈 본문 화면에 남겨 두면 "원래 이 플랜이
+   * 비어 있는 것" 처럼 보인다. 불러오지 못한 것과 내용이 없는 것은 다르다.
+   */
+  const openBody = async (user: AdminUser, plan: AdminPlan) => {
+    setReading(plan);
+    setBody(null);
+    try {
+      const res = await fetch(
+        `/api/admin?view=plan&userId=${encodeURIComponent(user.id)}&planId=${encodeURIComponent(plan.id)}`,
+        { cache: 'no-store' },
+      );
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { plan?: AdminPlanBody };
+      if (!data.plan) throw new Error('본문이 비었습니다.');
+      setBody(data.plan);
+    } catch {
+      toast('본문을 불러오지 못했습니다.', 'warn');
+      setReading(null);
+    }
+  };
+
+  const closePlans = () => {
+    setPlansOf(null);
+    setReading(null);
+    setBody(null);
   };
 
   const load = useCallback(
@@ -134,7 +207,7 @@ export default function AdminUsers() {
   };
 
   return (
-    <Panel title="사용자" description="기획서 본문은 보지 않습니다. 개수와 사용량까지입니다.">
+    <Panel title="사용자" description="플랜 숫자를 누르면 목록이, 제목을 누르면 본문이 열립니다.">
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         <input
           className="input min-w-0 flex-1"
@@ -185,14 +258,14 @@ export default function AdminUsers() {
                   <td className="py-2 pr-3 whitespace-nowrap">
                     {/*
                       숫자만 있으면 "이 사람이 뭘 만들었지" 에서 막힌다. 눌러서
-                      목록을 볼 수 있게 한다 — 본문은 여전히 안 보여 준다.
+                      목록을 보고, 거기서 제목을 누르면 본문까지 볼 수 있다.
                     */}
                     {user.plans > 0 ? (
                       <button
                         type="button"
                         className="font-semibold text-[var(--primary)] underline underline-offset-2"
                         onClick={() => void openPlans(user)}
-                        title="이 사용자의 플랜 목록을 봅니다. 기획서 본문은 보이지 않습니다."
+                        title="이 사용자의 플랜 목록을 봅니다."
                       >
                         {user.plans}
                       </button>
@@ -232,12 +305,46 @@ export default function AdminUsers() {
 
       <Modal
         open={plansOf !== null}
-        title={`${plansOf?.name || plansOf?.email || ''} 님의 플랜`}
-        description="제목과 진행 상태만 보입니다. 기획서 본문은 여기서도 볼 수 없습니다."
-        onClose={() => setPlansOf(null)}
-        width={680}
+        title={
+          reading
+            ? reading.title || '(제목 없음)'
+            : `${plansOf?.name || plansOf?.email || ''} 님의 플랜`
+        }
+        description={
+          reading
+            ? '기획서 본문입니다. 누가 무엇을 열었는지는 서버 기록에 남습니다.'
+            : '제목을 누르면 본문을 봅니다.'
+        }
+        onClose={closePlans}
+        width={reading ? 900 : 680}
       >
-        {plans === null ? (
+        {reading ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button className="btn btn-sm" onClick={() => { setReading(null); setBody(null); }}>
+                <ArrowLeft size={12} />
+                목록
+              </button>
+              <span className="text-[11px] text-[var(--fg-subtle)]">
+                수정 {day(reading.updatedAt)} · 만듦 {day(reading.createdAt)}
+              </span>
+            </div>
+
+            {body === null ? (
+              <div className="py-10 text-center">
+                <Spinner size={16} />
+              </div>
+            ) : (
+              /*
+                긴 기획서가 창을 무한정 늘리지 않게 여기서만 스크롤한다. 창 전체가
+                길어지면 `목록` 버튼이 화면 밖으로 밀려 돌아갈 길이 사라진다.
+              */
+              <div className="max-h-[62vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3.5">
+                <MarkdownView markdown={readable(body.plan)} />
+              </div>
+            )}
+          </div>
+        ) : plans === null ? (
           <div className="py-6 text-center">
             <Spinner size={16} />
           </div>
@@ -254,10 +361,28 @@ export default function AdminUsers() {
               >
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <FolderOpen size={13} className="translate-y-0.5 text-[var(--fg-subtle)]" />
-                  <b className="min-w-0 flex-1 truncate text-[13px]">{plan.title || '(제목 없음)'}</b>
+                  {/*
+                    제목 자체를 누르게 한다. 옆에 `본문` 단추만 두면 제목을 눌러
+                    보고 아무 일도 안 일어나는 쪽을 먼저 겪는다.
+                  */}
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 truncate text-left text-[13px] font-bold underline decoration-[var(--border)] underline-offset-2 hover:decoration-[var(--primary)]"
+                    onClick={() => plansOf && void openBody(plansOf, plan)}
+                    title="기획서 본문을 봅니다."
+                  >
+                    {plan.title || '(제목 없음)'}
+                  </button>
                   <span className="text-[11px] whitespace-nowrap text-[var(--fg-subtle)]">
                     수정 {day(plan.updatedAt)} · 만듦 {day(plan.createdAt)}
                   </span>
+                  <button
+                    className="btn btn-sm shrink-0"
+                    onClick={() => plansOf && void openBody(plansOf, plan)}
+                  >
+                    <FileText size={12} />
+                    본문
+                  </button>
                 </div>
 
                 {/* 다섯 단계 중 무엇이 만들어졌는지 — 지원할 때 실제로 쓸모가 있다. */}
