@@ -13,6 +13,8 @@
 
 import { usePlannerStore } from '../store';
 import { creditSnapshot, refreshCredits } from '../useCredits';
+import { engineSnapshot } from '../useEngine';
+import { costWithEngine } from '../credits';
 import { CHAT_CREDIT_COST, type PlanDocuments } from '../types';
 
 interface ChatResponse {
@@ -78,7 +80,9 @@ export async function askAgent(
    * 낼 수 있는지는 **서버가 본다**(402). 여기서는 화면에 있는 숫자로 미리
    * 걸러 주기만 한다 — 이 숫자도 서버가 준 것이라 대개 맞지만, 근거는 아니다.
    */
-  if (creditSnapshot().remaining < CHAT_CREDIT_COST) return 'no-credits';
+  // 등급에 따라 값이 다르다. 서버가 깎는 것과 같은 함수로 센다.
+  const cost = costWithEngine(CHAT_CREDIT_COST, engineSnapshot());
+  if (creditSnapshot().remaining < cost) return 'no-credits';
 
   if (!options.resend) store.appendChat(planId, { role: 'user', content: text });
   store.setAgentBusy(planId);
@@ -136,7 +140,7 @@ export async function askAgent(
       role: 'assistant',
       content: data.reply,
       changes: data.changes,
-      credits: CHAT_CREDIT_COST,
+      credits: cost,
     });
     return 'ok';
   } catch (error) {

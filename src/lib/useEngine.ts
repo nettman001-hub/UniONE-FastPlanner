@@ -17,7 +17,8 @@
  * 프로덕트 요구사항은 촘촘하게 뽑고 정보구조도는 빠르게 넘기고 싶을 수 있다.
  * 하나로 묶어 두면 단계를 옮길 때마다 설정을 오가야 한다.
  *
- * `engine` 은 단계가 아닌 것들(에이전트 대화·기능 배치)이 쓰는 값으로 남는다.
+ * AI 에이전트는 단계가 아니라 따로 둔다(`agentEngine`) — 대화는 다섯 산출물을
+ * 넘나들며 고치므로 어느 단계에 매달 수가 없다.
  */
 
 import { useSyncExternalStore } from 'react';
@@ -63,12 +64,20 @@ export async function refreshEngine(): Promise<void> {
     const res = await fetch('/api/settings', { cache: 'no-store' });
     if (!res.ok) return;
     const body = (await res.json()) as {
-      settings?: { engine?: unknown; engines?: unknown };
+      settings?: { engine?: unknown; engines?: unknown; agentEngine?: unknown };
     };
-    const nextEngine = toEngineTier(body.settings?.engine);
+    /*
+     * `engine` 은 **예전 값**이라 단계와 에이전트가 비어 있을 때의 기본으로만
+     * 쓴다. 에이전트 값을 여기에 두면 에이전트를 바꾸는 것만으로 아직 안 건드린
+     * 단계들이 함께 끌려간다.
+     */
+    const legacy = toEngineTier(body.settings?.engine);
+    const nextEngine = isEngineTier(body.settings?.agentEngine)
+      ? body.settings.agentEngine
+      : legacy;
     const saved = (body.settings?.engines ?? {}) as Record<string, unknown>;
     const nextEngines = Object.fromEntries(
-      ARTIFACT_KEYS.map((key) => [key, isEngineTier(saved[key]) ? saved[key] : nextEngine]),
+      ARTIFACT_KEYS.map((key) => [key, isEngineTier(saved[key]) ? saved[key] : legacy]),
     ) as EngineMap;
 
     if (nextEngine === engine && sameMap(nextEngines, engines)) return;
@@ -104,7 +113,7 @@ export function setEnginesLocally(next: EngineMap | EngineTier): void {
   emit();
 }
 
-/** 단계 밖에서 쓰는 등급(에이전트·기능 배치). */
+/** AI 에이전트 등급. */
 export function setEngineLocally(next: EngineTier): void {
   if (next === engine) return;
   engine = next;
@@ -132,6 +141,11 @@ export function engineSnapshotFor(artifact: ArtifactKey): EngineTier {
   return engines[artifact];
 }
 
+/** AI 에이전트 등급 — 에이전트를 거는 자리에서 쓴다. */
+export function engineSnapshot(): EngineTier {
+  return engine;
+}
+
 export function useEngines(): EngineMap {
   return useSyncExternalStore(subscribe, snapshotEngines, () => FALLBACK);
 }
@@ -141,7 +155,7 @@ export function useEngineFor(artifact: ArtifactKey): EngineTier {
   return useEngines()[artifact];
 }
 
-/** 단계 밖에서 쓰는 등급. */
+/** AI 에이전트 등급. */
 export function useEngine(): EngineTier {
   return useSyncExternalStore(subscribe, snapshotEngine, () => DEFAULT_ENGINE);
 }

@@ -10,11 +10,22 @@
  * 프로덕트 요구사항은 고급으로 촘촘하게 뽑고, 정보구조도는 기본으로 빠르게
  * 넘기고 싶을 수 있다. 하나로 묶어 두면 그때마다 설정을 오가야 한다.
  *
- * 그래서 `engines` 에 **단계별로** 적는다. `engine` 은 그대로 두는데, 단계가
- * 아닌 것들(에이전트 대화·기능 배치·브리프 질문)이 쓸 값이 여전히 필요하고,
- * **예전 계정이 적어 둔 값이 그 자리에 있기 때문이다.** 단계별 값이 없으면
- * 거기로 되돌아가므로, 고급을 쓰던 사람은 이 변경 뒤에도 다섯 단계 모두
+ * 그래서 값을 셋으로 나눈다.
+ *
+ * | 키 | 무엇 |
+ * | --- | --- |
+ * | `engines` | 다섯 단계 각각 |
+ * | `agentEngine` | AI 에이전트 — 대화·기능 배치·브리프 질문 |
+ * | `engine` | **예전 값.** 위 둘이 비어 있을 때의 기본으로만 쓴다 |
+ *
+ * `engine` 을 계속 쓰는 것은 **예전 계정이 적어 둔 값이 그 자리에 있기
+ * 때문이다.** 고급을 쓰던 사람은 이 변경 뒤에도 다섯 단계와 에이전트 모두
  * 고급으로 보인다.
+ *
+ * 에이전트를 `engine` 에 그대로 두지 않은 이유가 있다. 그러면 에이전트 등급을
+ * 바꾸는 것만으로 **아직 단계를 한 번도 안 건드린 계정의 다섯 단계가 함께
+ * 끌려간다** — `engines` 가 비어 있어 `engine` 을 따라가기 때문이다. 실제로
+ * 그렇게 동작해서 갈라 두었다.
  */
 
 import { getDb } from './index';
@@ -25,13 +36,15 @@ export type EngineMap = Record<ArtifactKey, EngineTier>;
 
 export interface UserSettings {
   /**
-   * 단계 밖에서 쓰는 등급 — 에이전트 대화, 기능 배치, 브리프 질문.
+   * 예전 값. **아래 둘이 비어 있을 때의 기본으로만 쓴다.**
    *
-   * 단계별로 안 정해 둔 자리의 기본값이기도 하다.
+   * 새로 쓰는 곳은 없다. 지우지 않는 것은 예전 계정이 여기에만 값을 적어 두어서다.
    */
   engine: EngineTier;
   /** 단계마다 고른 등급. 안 고른 단계는 `engine` 을 따른다. */
   engines: EngineMap;
+  /** AI 에이전트 — 대화, 기능 배치, 브리프 질문. 없으면 `engine` 을 따른다. */
+  agentEngine: EngineTier;
 }
 
 export function engineMapOf(engine: EngineTier): EngineMap {
@@ -41,6 +54,7 @@ export function engineMapOf(engine: EngineTier): EngineMap {
 export const DEFAULT_SETTINGS: UserSettings = {
   engine: DEFAULT_ENGINE,
   engines: engineMapOf(DEFAULT_ENGINE),
+  agentEngine: DEFAULT_ENGINE,
 };
 
 function parse(raw: unknown): UserSettings {
@@ -54,7 +68,8 @@ function parse(raw: unknown): UserSettings {
   const engines = Object.fromEntries(
     ARTIFACT_KEYS.map((key) => [key, isEngineTier(saved[key]) ? saved[key] : engine]),
   ) as EngineMap;
-  return { engine, engines };
+  const agentEngine = isEngineTier(value.agentEngine) ? value.agentEngine : engine;
+  return { engine, engines, agentEngine };
 }
 
 /**
@@ -73,7 +88,11 @@ export async function readSettings(userId: string): Promise<UserSettings> {
     return parse(rows[0]?.settings);
   } catch (error) {
     console.error('[settings] 설정을 읽지 못했습니다:', error);
-    return { engine: DEFAULT_ENGINE, engines: engineMapOf(DEFAULT_ENGINE) };
+    return {
+      engine: DEFAULT_ENGINE,
+      engines: engineMapOf(DEFAULT_ENGINE),
+      agentEngine: DEFAULT_ENGINE,
+    };
   }
 }
 
@@ -81,6 +100,7 @@ export interface SettingsPatch {
   engine?: EngineTier;
   /** 준 단계만 바꾼다. 안 준 단계는 그대로 둔다. */
   engines?: Partial<EngineMap>;
+  agentEngine?: EngineTier;
 }
 
 /**
@@ -95,7 +115,10 @@ export async function writeSettings(
   patch: SettingsPatch,
 ): Promise<UserSettings> {
   const db = await getDb();
-  const top = patch.engine === undefined ? {} : { engine: patch.engine };
+  const top = {
+    ...(patch.engine === undefined ? {} : { engine: patch.engine }),
+    ...(patch.agentEngine === undefined ? {} : { agentEngine: patch.agentEngine }),
+  };
   const steps = patch.engines ?? {};
   const { rows } = await db.query<{ settings: unknown }>(
     `update users
@@ -111,10 +134,10 @@ export async function writeSettings(
   return parse(rows[0]?.settings);
 }
 
-/** 단계 밖(에이전트·기능 배치·브리프 질문)에서 쓸 등급. */
-export async function userEngine(userId: string | undefined): Promise<EngineTier> {
+/** AI 에이전트(대화·기능 배치·브리프 질문)가 쓸 등급. */
+export async function userAgentEngine(userId: string | undefined): Promise<EngineTier> {
   if (!userId) return DEFAULT_ENGINE;
-  return (await readSettings(userId)).engine;
+  return (await readSettings(userId)).agentEngine;
 }
 
 /** 생성 경로에서 쓰는 단계별 등급. */

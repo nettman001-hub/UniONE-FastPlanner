@@ -33,7 +33,7 @@ import {
 } from '@/lib/ai/engines';
 import { ENGINE_CREDIT_MULTIPLIER } from '@/lib/credits';
 import { ARTIFACT_KEYS } from '@/lib/types';
-import { setEngineLocally, setEnginesLocally } from '@/lib/useEngine';
+import { setEnginesLocally } from '@/lib/useEngine';
 
 const ICON: Record<EngineTier, typeof Zap> = { basic: Zap, advanced: Gauge };
 
@@ -86,15 +86,14 @@ export default function GenerationSettings() {
     setSaving(next);
     try {
       /*
-       * `engine` 과 다섯 단계를 **함께** 보낸다. `engine` 만 보내면 이미 단계별로
-       * 골라 둔 사람에게는 아무 일도 안 일어난다 — 단계 값이 앞서기 때문이다.
-       * 여기서 고른 것이 화면에 안 먹으면 고장으로 읽힌다.
+       * **다섯 단계만** 보낸다. 이 화면은 만들기 등급을 정하는 자리이고,
+       * AI 에이전트는 여기서 건드리지 않는다 — 대화까지 같이 비싸지면
+       * 고른 사람이 예상하지 못한다.
        */
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          engine: next,
           engines: Object.fromEntries(ARTIFACT_KEYS.map((key) => [key, next])),
         }),
       });
@@ -105,7 +104,6 @@ export default function GenerationSettings() {
         return;
       }
       // 값이 적힌 다른 화면들이 바로 따라오게 한다.
-      setEngineLocally(next);
       setEnginesLocally(next);
       toast(`다섯 단계 모두 ${ENGINE_LABEL[next]}으로 만듭니다.`, 'ok');
     } catch {
