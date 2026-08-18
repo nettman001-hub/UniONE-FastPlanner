@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 지금 계정이 고른 만들기 등급.
+ * 지금 계정이 고른 만들기 등급 — **단계마다 하나씩.**
  *
  * ## 왜 따로 두나
  *
@@ -11,13 +11,30 @@
  *
  * 화면마다 따로 불러오면 같은 질의가 여러 번 나가고, 한 화면에서 바꾼 것이 다른
  * 화면에 안 비친다. 그래서 `useCredits` 와 같은 모양으로 **모듈에 하나만** 둔다.
+ *
+ * ## 왜 단계마다인가
+ *
+ * 프로덕트 요구사항은 촘촘하게 뽑고 정보구조도는 빠르게 넘기고 싶을 수 있다.
+ * 하나로 묶어 두면 단계를 옮길 때마다 설정을 오가야 한다.
+ *
+ * `engine` 은 단계가 아닌 것들(에이전트 대화·기능 배치)이 쓰는 값으로 남는다.
  */
 
 import { useSyncExternalStore } from 'react';
 
-import { DEFAULT_ENGINE, toEngineTier, type EngineTier } from './ai/engines';
+import { DEFAULT_ENGINE, isEngineTier, toEngineTier, type EngineTier } from './ai/engines';
+import { ARTIFACT_KEYS, type ArtifactKey } from './types';
 
-let current: EngineTier = DEFAULT_ENGINE;
+export type EngineMap = Record<ArtifactKey, EngineTier>;
+
+function mapOf(engine: EngineTier): EngineMap {
+  return Object.fromEntries(ARTIFACT_KEYS.map((key) => [key, engine])) as EngineMap;
+}
+
+const FALLBACK: EngineMap = mapOf(DEFAULT_ENGINE);
+
+let engine: EngineTier = DEFAULT_ENGINE;
+let engines: EngineMap = FALLBACK;
 let loaded = false;
 const listeners = new Set<() => void>();
 
@@ -45,39 +62,86 @@ export async function refreshEngine(): Promise<void> {
   try {
     const res = await fetch('/api/settings', { cache: 'no-store' });
     if (!res.ok) return;
-    const body = (await res.json()) as { settings?: { engine?: unknown } };
-    const next = toEngineTier(body.settings?.engine);
-    if (next === current) return;
-    current = next;
+    const body = (await res.json()) as {
+      settings?: { engine?: unknown; engines?: unknown };
+    };
+    const nextEngine = toEngineTier(body.settings?.engine);
+    const saved = (body.settings?.engines ?? {}) as Record<string, unknown>;
+    const nextEngines = Object.fromEntries(
+      ARTIFACT_KEYS.map((key) => [key, isEngineTier(saved[key]) ? saved[key] : nextEngine]),
+    ) as EngineMap;
+
+    if (nextEngine === engine && sameMap(nextEngines, engines)) return;
+    engine = nextEngine;
+    engines = nextEngines;
     emit();
   } catch {
     /* 그대로 둔다 */
   }
 }
 
-/** 설정 화면에서 바꾼 직후, 다시 불러오기를 기다리지 않고 바로 반영한다. */
+function sameMap(a: EngineMap, b: EngineMap): boolean {
+  return ARTIFACT_KEYS.every((key) => a[key] === b[key]);
+}
+
+/**
+ * 한 단계만 바꿔 둔다 — 저장이 돌아오기 전에 화면이 먼저 따라오게.
+ *
+ * **새 객체를 만든다.** 제자리에서 고치면 `useSyncExternalStore` 가 같은 참조를
+ * 보고 다시 그리지 않는다.
+ */
+export function setEngineFor(artifact: ArtifactKey, next: EngineTier): void {
+  if (engines[artifact] === next) return;
+  engines = { ...engines, [artifact]: next };
+  emit();
+}
+
+/** 다섯 단계를 한꺼번에. 설정 화면과 머리글 버튼이 쓴다. */
+export function setEnginesLocally(next: EngineMap | EngineTier): void {
+  const map = typeof next === 'string' ? mapOf(next) : next;
+  if (sameMap(map, engines)) return;
+  engines = map;
+  emit();
+}
+
+/** 단계 밖에서 쓰는 등급(에이전트·기능 배치). */
 export function setEngineLocally(next: EngineTier): void {
-  if (next === current) return;
-  current = next;
+  if (next === engine) return;
+  engine = next;
   emit();
 }
 
 /** 로그아웃하면 다음 사람이 앞사람의 등급을 보면 안 된다. */
 export function resetEngine(): void {
-  current = DEFAULT_ENGINE;
+  engine = DEFAULT_ENGINE;
+  engines = FALLBACK;
   loaded = false;
   emit();
 }
 
-function snapshot(): EngineTier {
-  return current;
+function snapshotEngines(): EngineMap {
+  return engines;
+}
+
+function snapshotEngine(): EngineTier {
+  return engine;
 }
 
 /** 훅 밖(생성을 거는 자리)에서 지금 값만 필요할 때. */
-export function engineSnapshot(): EngineTier {
-  return current;
+export function engineSnapshotFor(artifact: ArtifactKey): EngineTier {
+  return engines[artifact];
 }
 
+export function useEngines(): EngineMap {
+  return useSyncExternalStore(subscribe, snapshotEngines, () => FALLBACK);
+}
+
+/** 이 단계의 등급 하나만 필요할 때. */
+export function useEngineFor(artifact: ArtifactKey): EngineTier {
+  return useEngines()[artifact];
+}
+
+/** 단계 밖에서 쓰는 등급. */
 export function useEngine(): EngineTier {
-  return useSyncExternalStore(subscribe, snapshot, () => DEFAULT_ENGINE);
+  return useSyncExternalStore(subscribe, snapshotEngine, () => DEFAULT_ENGINE);
 }

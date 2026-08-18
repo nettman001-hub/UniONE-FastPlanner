@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { precondition, runPipeline } from '@/lib/jobs/queue';
 import { activeSkills } from '@/lib/db/skills';
-import { userEngine } from '@/lib/db/user-settings';
+import { userEngines } from '@/lib/db/user-settings';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import type { ArtifactKey, Plan } from '@/lib/types';
 
@@ -72,8 +72,11 @@ export async function POST(request: Request) {
   /*
    * 어느 엔진으로 만들지도 **서버가 계정에서 읽는다.** 브라우저가 보내게 하면
    * 요청을 손봐서 비싼 쪽을 마음대로 부를 수 있다.
+   *
+   * 단계마다 다를 수 있으므로 표째로 넘긴다 — 파이프라인이 단계에 맞는 것을
+   * 골라 쓴다(`engineFor`).
    */
-  const engine = await userEngine(user.id);
+  const engines = await userEngines(user.id);
   // 관리자 설정과 키는 여기서 한 번만 읽어 5단계가 돌려 쓴다.
   const runtime = await readAiRuntime();
 
@@ -90,7 +93,7 @@ export async function POST(request: Request) {
             merge: body.merge,
             skills,
             userId: user.id,
-            engine,
+            engines,
             config: runtime.config,
             apiKey: runtime.apiKey,
           },

@@ -20,7 +20,7 @@ import { refreshCredits, useCredits } from '@/lib/useCredits';
 import { ARTIFACT_LABEL, CHAT_CREDIT_COST, PLACEMENT_CREDIT_COST, type ArtifactKey } from '@/lib/types';
 import { ENGINE_LABEL } from '@/lib/ai/engines';
 import { costOfArtifact, costWithEngine } from '@/lib/credits';
-import { useEngine } from '@/lib/useEngine';
+import { useEngine, useEngines } from '@/lib/useEngine';
 
 const ORDER: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
 
@@ -46,9 +46,11 @@ export default function UsageSettings() {
     };
   }, []);
 
-  /* 값은 등급에 따라 달라진다. 지금 고른 등급으로 적어야 실제와 맞는다. */
+  /* 값은 등급에 따라 달라진다. **단계마다 고른 등급**으로 적어야 실제와 맞는다. */
+  const engines = useEngines();
+  /* 단계가 아닌 것들(에이전트·기능 배치)은 계정에 하나로 둔 등급을 따른다. */
   const engine = useEngine();
-  const total = ORDER.reduce((sum, key) => sum + costOfArtifact(key, engine), 0);
+  const total = ORDER.reduce((sum, key) => sum + costOfArtifact(key, engines[key]), 0);
   const percent = limit > 0 ? Math.round((remaining / limit) * 100) : 0;
 
   return (
@@ -81,10 +83,19 @@ export default function UsageSettings() {
 
       <Panel
         title="무엇에 얼마나 드나"
-        description={`지금 쓰시는 ${ENGINE_LABEL[engine]} 기준입니다.`}
+        description="단계마다 고른 엔진 기준입니다."
       >
+        {/*
+          단계마다 등급이 다를 수 있으므로 **줄마다 어느 엔진인지 적는다.**
+          하나로 뭉뚱그리면 어느 단계가 두 배인지 알 수 없다.
+        */}
         {ORDER.map((key) => (
-          <ReadRow key={key} label={ARTIFACT_LABEL[key]} value={`${costOfArtifact(key, engine)} 크레딧`} />
+          <ReadRow
+            key={key}
+            label={ARTIFACT_LABEL[key]}
+            value={`${costOfArtifact(key, engines[key])} 크레딧`}
+            hint={ENGINE_LABEL[engines[key]]}
+          />
         ))}
         <ReadRow label="전체 자동 생성" value={`${total} 크레딧`} hint="다섯 단계를 이어서" />
         <ReadRow
@@ -101,7 +112,9 @@ export default function UsageSettings() {
           바뀐다는 것을 어디로 가면 되는지와 함께 적는다.
         */}
         <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
-          <b>고급 엔진은 두 배</b>가 듭니다. <b>설정 → 만들기</b>에서 바꾸실 수 있습니다.
+          <b>고급 엔진은 두 배</b>가 듭니다. 단계마다 따로 고르려면 <b>플랜 화면</b>에서 각
+          단계의 생성 버튼 앞 단추를, 다섯 단계를 한꺼번에 맞추려면 <b>설정 → 만들기</b>를
+          쓰세요.
         </p>
       </Panel>
 

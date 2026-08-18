@@ -3,6 +3,10 @@
 /**
  * 만들기 — 어느 엔진으로 만들지.
  *
+ * **여기서 고르면 다섯 단계가 모두 그것으로 맞춰진다.** 단계마다 다르게 쓰고
+ * 싶으면 플랜 화면에서 생성 버튼 앞의 단추로 단계별로 바꾼다. 이 화면은
+ * "전부 이걸로" 를 한 번에 하는 자리다.
+ *
  * **어떤 회사의 어떤 모델인지는 여기 적지 않는다.** 알아도 할 수 있는 일이 없고,
  * 대신 서비스 내부 구성이 드러난다. 모델을 갈아 끼울 때마다 이 화면을 따라
  * 고쳐야 하는 것도 문제다.
@@ -20,6 +24,7 @@ import { Spinner, useToast } from '@/components/ui';
 import {
   DEFAULT_ENGINE,
   ENGINE_LABEL,
+  isEngineTier,
   ENGINE_TIERS,
   ENGINE_WHAT,
   ENGINE_WHEN,
@@ -27,13 +32,19 @@ import {
   type EngineTier,
 } from '@/lib/ai/engines';
 import { ENGINE_CREDIT_MULTIPLIER } from '@/lib/credits';
-import { setEngineLocally } from '@/lib/useEngine';
+import { ARTIFACT_KEYS } from '@/lib/types';
+import { setEngineLocally, setEnginesLocally } from '@/lib/useEngine';
 
 const ICON: Record<EngineTier, typeof Zap> = { basic: Zap, advanced: Gauge };
 
 export default function GenerationSettings() {
   const toast = useToast();
-  const [engine, setEngine] = useState<EngineTier>(DEFAULT_ENGINE);
+  /**
+   * 다섯 단계가 모두 같으면 그 등급, 갈리면 `null`.
+   *
+   * 하나를 골라 `쓰는 중` 이라고 적으면 나머지 네 단계를 잘못 알려 주는 셈이다.
+   */
+  const [engine, setEngine] = useState<EngineTier | null>(DEFAULT_ENGINE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<EngineTier | null>(null);
 
@@ -41,8 +52,19 @@ export default function GenerationSettings() {
     let alive = true;
     fetch('/api/settings')
       .then((r) => r.json())
-      .then((d: { settings?: { engine?: unknown } }) => {
-        if (alive) setEngine(toEngineTier(d.settings?.engine));
+      .then((d: { settings?: { engine?: unknown; engines?: unknown } }) => {
+        if (!alive) return;
+        /*
+         * **단계별 값을 본다.** `engine` 을 보면 플랜 화면에서 다섯 단계를
+         * 고급으로 바꿔 둔 사람에게 여기만 `기본` 이라고 적힌다 — 어느 쪽이
+         * 참인지 알 수 없어진다.
+         */
+        const fallback = toEngineTier(d.settings?.engine);
+        const saved = (d.settings?.engines ?? {}) as Record<string, unknown>;
+        const map = ARTIFACT_KEYS.map((key) =>
+          isEngineTier(saved[key]) ? saved[key] : fallback,
+        );
+        setEngine(map.every((t) => t === map[0]) ? map[0] : null);
       })
       .catch(() => {
         if (alive) toast('설정을 불러오지 못했습니다.', 'warn');
@@ -63,10 +85,18 @@ export default function GenerationSettings() {
     setEngine(next);
     setSaving(next);
     try {
+      /*
+       * `engine` 과 다섯 단계를 **함께** 보낸다. `engine` 만 보내면 이미 단계별로
+       * 골라 둔 사람에게는 아무 일도 안 일어난다 — 단계 값이 앞서기 때문이다.
+       * 여기서 고른 것이 화면에 안 먹으면 고장으로 읽힌다.
+       */
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ engine: next }),
+        body: JSON.stringify({
+          engine: next,
+          engines: Object.fromEntries(ARTIFACT_KEYS.map((key) => [key, next])),
+        }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
@@ -76,7 +106,8 @@ export default function GenerationSettings() {
       }
       // 값이 적힌 다른 화면들이 바로 따라오게 한다.
       setEngineLocally(next);
-      toast(`${ENGINE_LABEL[next]}으로 만듭니다.`, 'ok');
+      setEnginesLocally(next);
+      toast(`다섯 단계 모두 ${ENGINE_LABEL[next]}으로 만듭니다.`, 'ok');
     } catch {
       setEngine(before);
       toast('저장하지 못했습니다.', 'warn');
@@ -97,8 +128,20 @@ export default function GenerationSettings() {
     <>
       <Panel
         title="만들기 엔진"
-        description="AI가 문서를 만들 때 얼마나 오래 생각할지 정합니다. 지금 고른 것이 모든 플랜에 적용됩니다."
+        description="여기서 고르면 다섯 단계가 모두 그것으로 맞춰집니다. 단계마다 다르게 쓰려면 플랜 화면에서 단계별로 바꾸세요."
       >
+        {/*
+          단계마다 다르게 골라 둔 상태에서 여기 아무 표시가 없으면, 어느 것도
+          `쓰는 중` 이 아니라 고장으로 읽힌다. **왜 아무것도 안 켜져 있는지**를
+          먼저 적는다.
+        */}
+        {engine === null && (
+          <p className="mb-2 rounded-lg border border-[var(--warn-border,var(--border))] bg-[var(--warn-soft)] px-3 py-2.5 text-[12px] leading-relaxed">
+            지금은 <b>단계마다 다른 엔진</b>을 쓰고 있습니다. 플랜 화면에서 단계별로 골라
+            두신 것입니다. 아래에서 하나를 고르면 <b>다섯 단계가 모두</b> 그것으로
+            맞춰집니다.
+          </p>
+        )}
         <div className="flex flex-col gap-2">
           {ENGINE_TIERS.map((tier) => {
             const Icon = ICON[tier];
@@ -175,6 +218,15 @@ export default function GenerationSettings() {
             <p className="mt-1.5">
               두 엔진 모두 <b>가장 깊게 생각하도록</b> 맞춰 두었습니다. 등급 차이는
               엔진 자체의 크기 차이입니다.
+            </p>
+            <p className="mt-1.5">
+              {/*
+                여기서 고른 뒤 플랜 화면에서 단계별로 바꾸면 이 화면과 달라 보인다.
+                어느 쪽이 이기는지 미리 밝혀 둔다.
+              */}
+              <b>단계마다 따로 고를 수 있습니다.</b> 플랜 화면에서 각 단계의 생성 버튼
+              앞에 있는 단추로 바꾸며, 그렇게 고른 것이 이 화면의 값보다 앞섭니다.
+              여기서 다시 고르면 다섯 단계가 모두 그것으로 되돌아갑니다.
             </p>
           </div>
         </div>
