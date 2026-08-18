@@ -353,6 +353,67 @@ pre,
     color: var(--fg-subtle);
     font-size: 13px;
   }
+
+  /*
+   * 잠깐 떴다 사라지는 말풍선.
+   *
+   * 크레딧이 두 배가 된다는 것은 **누른 그 자리에서** 알려야 한다. 토스트로
+   * 띄우면 화면 구석에 떠서 방금 누른 버튼과 연결이 안 되고, 늘 적어 두면
+   * 배경처럼 읽혀 아무도 안 본다.
+   */
+  .bubble {
+    position: absolute;
+    bottom: calc(100% + 7px);
+    right: 0;
+    z-index: 20;
+    white-space: nowrap;
+    border-radius: 7px;
+    padding: 5px 9px;
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1.3;
+    background: var(--warn);
+    color: var(--surface);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
+    animation: fp-bubble 180ms ease-out;
+  }
+  /* 꼬리 — 어느 버튼에서 나온 말인지 가리킨다. */
+  .bubble::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    right: 14px;
+    border: 5px solid transparent;
+    border-top-color: var(--warn);
+  }
+
+  /*
+   * 아래로 띄우는 쪽.
+   *
+   * 카드 머리글처럼 **위가 잘리는 자리**가 있다(`card` 는 overflow-hidden 이다).
+   * 거기서는 위로 띄우면 말풍선이 반쯤 잘려 무슨 말인지 안 보인다.
+   */
+  .bubble-below {
+    bottom: auto;
+    top: calc(100% + 7px);
+  }
+  .bubble-below::after {
+    top: auto;
+    bottom: 100%;
+    border-top-color: transparent;
+    border-bottom-color: var(--warn);
+  }
+}
+
+@keyframes fp-bubble {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes fp-spin {

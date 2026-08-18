@@ -41,6 +41,7 @@ import {
 } from '@/components/ui';
 import { FixWithAi } from '@/components/FixWithAi';
 import { PlanSkills } from '@/components/PlanSkills';
+import { EngineToggle } from '@/components/EngineToggle';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
 import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
@@ -370,14 +371,22 @@ function PlanOverview() {
           title="산출물 파이프라인"
           description="PRD부터 와이어프레임까지 순서대로 만들어 나갑니다."
           action={
-            <button
-              className={`btn btn-primary btn-sm${running ? ' is-busy' : ''}`}
-              disabled={busy}
-              onClick={() => void handleGenerateAll()}
-            >
-              {running ? <Spinner size={13} /> : <Wand2 size={13} />}
-              {running && autoStep ? `${ARTIFACT_LABEL[autoStep]} 생성중` : '전체 자동 생성'}
-            </button>
+            <>
+              {/*
+                **생성 버튼 바로 앞에 둔다.** 값이 두 배 차이 나는 것을 누르기
+                직전에 알아야 한다. 크기는 같게, 색은 다르게 — 같은 색이면
+                생성 버튼이 둘인 줄 알고 잘못 누른다.
+              */}
+              <EngineToggle disabled={busy} below />
+              <button
+                className={`btn btn-primary btn-sm${running ? ' is-busy' : ''}`}
+                disabled={busy}
+                onClick={() => void handleGenerateAll()}
+              >
+                {running ? <Spinner size={13} /> : <Wand2 size={13} />}
+                {running && autoStep ? `${ARTIFACT_LABEL[autoStep]} 생성중` : '전체 자동 생성'}
+              </button>
+            </>
           }
         >
           <div className="flex flex-col gap-2.5">
@@ -462,6 +471,8 @@ function PlanOverview() {
                           여기서 시작하세요
                         </span>
                       )}
+                      {/* 이 단계에 몇 크레딧이 드는지는 왼쪽에 적혀 있다. 그 값을 정하는 것이 이 버튼이다. */}
+                      <EngineToggle disabled={busy || reason !== null} />
                       <button
                         className={`btn btn-primary btn-sm${pending === key ? ' is-busy' : ''}${
                           nudged ? ' nudge' : ''
