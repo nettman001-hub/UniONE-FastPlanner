@@ -93,7 +93,7 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
         수동 카드는 연결이 없거나 다른 도구를 쓸 때의 길이다.
       */}
       <SectionCard
-        title="자동 — 스티치로 연결하여 바로 만들기"
+        title="자동(UI 먼저 만들기) - 스티치로 연결하여 바로 만들기"
         description="스티치를 한 번 연결해 두면, 고른 화면을 여기서 눌러 저쪽에 바로 만듭니다. 붙여 넣을 것이 없습니다."
       >
         <StitchRun plan={plan} />
@@ -101,7 +101,7 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
 
       {/* 수동 — 요청문을 복사해 도구에 붙여 넣는다. 준비물이 없다. */}
       <SectionCard
-        title="수동 — 요청문 복사해 붙여 넣기"
+        title="수동(UI 먼저 만들기) - 요청문 복사해 붙여 넣기"
         description="화면마다 무엇을 그려야 하는지 적어 둔 요청문을 만듭니다. 연결 없이 어느 도구에나 쓸 수 있습니다."
         action={
           <button

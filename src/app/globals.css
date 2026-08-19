@@ -403,6 +403,34 @@ pre,
     border-top-color: transparent;
     border-bottom-color: var(--warn);
   }
+
+  /*
+   * 알려 주는 말풍선.
+   *
+   * 값이 두 배라고 알리는 주황 말풍선과 **색을 달리한다** — 이쪽은 경고가
+   * 아니라 안내다. 한 줄이 아니라 문장과 링크가 들어가므로 줄바꿈을 열고
+   * 너비를 잡는다(원래 말풍선은 `nowrap` 이다).
+   */
+  .bubble-help {
+    white-space: normal;
+    width: max-content;
+    max-width: min(19rem, 78vw);
+    font-weight: 600;
+    background: var(--primary);
+    color: var(--primary-fg);
+  }
+  .bubble-help::after {
+    border-top-color: var(--primary);
+  }
+  .bubble-help.bubble-below::after {
+    border-top-color: transparent;
+    border-bottom-color: var(--primary);
+  }
+  .bubble-help a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }
 
 @keyframes fp-bubble {
