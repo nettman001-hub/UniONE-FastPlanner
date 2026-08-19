@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Link2,
   Loader2,
+  HelpCircle,
   Sparkles,
   Unlink,
   X,
@@ -51,6 +52,14 @@ const CONFIRM_OVER = 10;
 
 /** 화면 하나에 걸리는 대략 시간. 안내용 어림수다. */
 const SECONDS_EACH = 45;
+
+/**
+ * 키를 받으러 갈 곳.
+ *
+ * **대문까지만 건다.** 설정 화면의 정확한 주소는 저쪽이 바꾸면 그대로 끊기는데,
+ * 끊긴 링크는 아무것도 없는 것보다 나쁘다. 어디를 눌러야 하는지는 글로 적는다.
+ */
+const STITCH_URL = 'https://stitch.withgoogle.com';
 
 interface Model {
   id: string;
@@ -88,6 +97,8 @@ export function StitchRun({ plan }: { plan: Plan }) {
   /** 고른 디자인 스킬 — 서비스 전체의 결을 정한다. */
   const [skill, setSkill] = useState('clean');
   const [skillOpen, setSkillOpen] = useState(false);
+  /** `키 받는 법` 말풍선이 떠 있는가. 눌러서 열고 눌러서 닫는다. */
+  const [keyHelp, setKeyHelp] = useState(false);
 
   /*
    * 진행 상태는 **이 컴포넌트가 갖고 있지 않다.**
@@ -273,6 +284,31 @@ export function StitchRun({ plan }: { plan: Plan }) {
               if (e.key === 'Enter') void handleConnect();
             }}
           />
+          {/*
+            **키를 어디서 받는지 여기서 알려 준다.** 붙여 넣으라고만 하면 저쪽
+            어디를 눌러야 하는지 찾아 헤매다 그냥 나간다.
+
+            눌러서 열고 눌러서 닫는다 — 안에 링크가 있어 저절로 사라지면 누를
+            새가 없다(값이 두 배라고 알리는 말풍선은 잠깐 떴다 사라진다).
+          */}
+          <span className="relative inline-flex shrink-0">
+            {keyHelp && (
+              <span className="bubble bubble-help" role="status">
+                스티치의 프로필에 스티치설정에서 API키를 받아오세요.{' '}
+                <a href={STITCH_URL} target="_blank" rel="noreferrer noopener">
+                  스티치 열기
+                </a>
+              </span>
+            )}
+            <button
+              className="btn btn-sm"
+              aria-expanded={keyHelp}
+              onClick={() => setKeyHelp((v) => !v)}
+            >
+              <HelpCircle size={13} />
+              키 받는 법
+            </button>
+          </span>
           <button
             className={`btn btn-primary btn-sm shrink-0${saving ? ' is-busy' : ''}`}
             disabled={saving || secret.trim().length === 0}
