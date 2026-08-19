@@ -259,8 +259,8 @@ export function StitchRun({ plan }: { plan: Plan }) {
         </p>
         <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
           연결하면 고른 화면들을 <b>사장님 스티치 계정에</b> 한 번에 만들어 드립니다. 만들어진
-          디자인은 스티치에서 계속 편집하실 수 있습니다. 연결하지 않으셔도 아래 요청문을 복사해
-          붙여 넣는 방법은 그대로 쓰실 수 있습니다.
+          디자인은 스티치에서 계속 편집하실 수 있습니다. 연결하지 않으셔도 아래
+          <b> 수동 카드</b>의 요청문을 복사해 붙여 넣는 방법은 그대로 쓰실 수 있습니다.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <input

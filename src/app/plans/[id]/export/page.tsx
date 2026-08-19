@@ -343,22 +343,14 @@ function FormatCard({
   copied,
   onDownload,
   onCopy,
-  onPreview,
-  active,
 }: {
   format: FormatSpec;
   copied: boolean;
   onDownload: () => void;
   onCopy: () => void;
-  onPreview: () => void;
-  active: boolean;
 }) {
   return (
-    <div
-      className={`card flex flex-col gap-2.5 p-3.5 ${
-        active ? 'border-[var(--primary-border)]' : ''
-      } ${format.available ? '' : 'opacity-60'}`}
-    >
+    <div className={`card flex flex-col gap-2.5 p-3.5 ${format.available ? '' : 'opacity-60'}`}>
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 shrink-0 text-[var(--primary)]">{format.icon}</span>
         <div className="min-w-0 flex-1">
@@ -389,9 +381,6 @@ function FormatCard({
           {copied ? <Check size={13} /> : <Copy size={13} />}
           {copied ? '복사됨' : '복사'}
         </button>
-        <button className="btn btn-ghost btn-sm" disabled={!format.available} onClick={onPreview}>
-          미리보기
-        </button>
       </div>
     </div>
   );
@@ -413,7 +402,6 @@ export default function ExportPage() {
     flow: plan ? hasArtifact(plan, 'flow') : false,
     wireframe: plan ? hasArtifact(plan, 'wireframe') : false,
   }));
-  const [tab, setTab] = useState<FormatKey>('md');
   const [copied, setCopied] = useState<string | null>(null);
   const [docOpen, setDocOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
@@ -523,7 +511,6 @@ export default function ExportPage() {
     ];
   }, [plan, selectedKey]);
 
-  const activeFormat = formats.find((f) => f.key === tab) ?? formats[0];
 
   const copyText = async (key: string, text: string) => {
     try {
@@ -532,7 +519,7 @@ export default function ExportPage() {
       window.setTimeout(() => setCopied((prev) => (prev === key ? null : prev)), 1800);
       toast('클립보드에 복사했습니다.', 'ok');
     } catch {
-      toast('복사에 실패했습니다. 미리보기에서 직접 선택해 주세요.', 'warn');
+      toast('복사에 실패했습니다. 다운로드로 받아 주세요.', 'warn');
     }
   };
 
@@ -704,78 +691,15 @@ export default function ExportPage() {
               <FormatCard
                 key={format.key}
                 format={format}
-                active={tab === format.key}
                 copied={copied === format.key}
                 onDownload={() => downloadFormat(format)}
                 onCopy={() => void copyText(format.key, format.content)}
-                onPreview={() => setTab(format.key)}
               />
             ))}
           </div>
         </section>
 
-        {/* 3) 미리보기 */}
-        {activeFormat && (
-          <SectionCard
-            title="미리보기"
-            description="선택한 형식의 실제 결과입니다."
-            action={
-              <>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  disabled={!activeFormat.available}
-                  onClick={() => void copyText(`preview-${activeFormat.key}`, activeFormat.content)}
-                >
-                  {copied === `preview-${activeFormat.key}` ? (
-                    <Check size={13} />
-                  ) : (
-                    <Copy size={13} />
-                  )}
-                  복사
-                </button>
-                <button
-                  className="btn btn-sm"
-                  disabled={!activeFormat.available}
-                  onClick={() => downloadFormat(activeFormat)}
-                >
-                  <Download size={13} />
-                  다운로드
-                </button>
-              </>
-            }
-          >
-            <div className="-mx-1 mb-3 flex gap-1 overflow-x-auto px-1 pb-1">
-              {formats.map((format) => (
-                <button
-                  key={format.key}
-                  className={tab === format.key ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
-                  disabled={!format.available}
-                  onClick={() => setTab(format.key)}
-                >
-                  {format.label}
-                </button>
-              ))}
-            </div>
-
-            {activeFormat.available ? (
-              <>
-                <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                  <span className="chip chip-primary">{activeFormat.filename}</span>
-                  <span className="chip">{activeFormat.content.length.toLocaleString()}자</span>
-                </div>
-                <pre className="max-h-[420px] overflow-auto rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[12px] leading-relaxed text-[var(--fg-muted)]">
-                  {activeFormat.content}
-                </pre>
-              </>
-            ) : (
-              <p className="text-[12.5px] text-[var(--fg-muted)]">
-                {activeFormat.reason ?? '아직 미리볼 내용이 없습니다.'}
-              </p>
-            )}
-          </SectionCard>
-        )}
-
-        {/* 4) 코딩 에이전트 연동 */}
+        {/* 3) 코딩 에이전트 연동 */}
         <SectionCard
           title="코딩 에이전트 연동"
           description="기획서를 그대로 개발 작업으로 넘깁니다."
@@ -846,7 +770,7 @@ export default function ExportPage() {
           </div>
         </SectionCard>
 
-        {/* 4-2) 디자인 도구 연동 */}
+        {/* 4) 디자인 도구 연동 */}
         <DesignHandoff plan={plan} />
 
         {/* 5-1) 이미지 — 디자인 전달용 */}
