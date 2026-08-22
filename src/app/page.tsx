@@ -39,6 +39,7 @@ import { download, slugify, toJson } from '@/lib/export';
 import { asPlatform, parsePlan } from '@/lib/plan-file';
 import { ClientOnly, EmptyState, Field, Modal, Spinner, useConfirm, useToast } from '@/components/ui';
 import { GuestImportBanner, RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
+import { HeaderAiStatus } from '@/components/HeaderAiStatus';
 import { Logo } from '@/components/Logo';
 import { BRAND_NAME, BRAND_SHORT, BRAND_TAGLINE } from '@/lib/brand';
 import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
@@ -801,7 +802,8 @@ function Home() {
               <span className="font-normal text-[var(--fg-subtle)]">(임시)</span>
             </span>
           </ClientOnly>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <HeaderAiStatus />
             <UserMenu />
           </div>
         </div>

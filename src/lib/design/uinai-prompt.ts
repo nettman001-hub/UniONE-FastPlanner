@@ -111,6 +111,7 @@ export function buildUinAiPrompt(
   page: IaPage,
   emphasis: PromptEmphasis,
   skillKey: string,
+  device?: 'mobile' | 'desktop',
 ): string {
   const skill = findSkill(skillKey);
   const set = findTokenSet(skillKey);
@@ -140,7 +141,7 @@ export function buildUinAiPrompt(
     '```',
     '',
     '## 이번에 만들 화면',
-    screenPrompt(plan, page, 'uinai', emphasis),
+    screenPrompt(plan, page, 'uinai', emphasis, false, device),
     '',
     '## 결과물 기준',
     '- 이미지가 아니라 HTML, CSS, JavaScript 프론트엔드 코드로 만드세요.',

@@ -8,7 +8,10 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  Monitor,
   Package,
+  Smartphone,
+  SmartphoneNfc,
   Sparkles,
   X,
 } from 'lucide-react';
@@ -29,7 +32,7 @@ import {
   uinAiScreenHref,
   uinAiSourceSignature,
 } from '@/lib/design/uinai';
-import type { PromptEmphasis } from '@/lib/design-handoff';
+import { TARGET_DEVICE_LABEL, type PromptEmphasis, type TargetDevice } from '@/lib/design-handoff';
 import { download, toAgentBundle } from '@/lib/export';
 import { UINAI_CREDIT_COST, type Plan } from '@/lib/types';
 import { useCredits } from '@/lib/useCredits';
@@ -50,6 +53,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
   const [engine, setEngine] = useState<EngineTier>('basic');
   const [emphasis, setEmphasis] = useState<PromptEmphasis>('strict');
   const [skill, setSkill] = useState('clean');
+  const [device, setDevice] = useState<TargetDevice>('both');
   const [skillOpen, setSkillOpen] = useState(false);
 
   const session = useSyncExternalStore(
@@ -89,6 +93,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
     setEngine(session.options.engine);
     setEmphasis(session.options.emphasis);
     setSkill(session.options.skill);
+    if (session.options.device) setDevice(session.options.device);
   }, [running, session.options]);
 
   const wasRunning = useRef(false);
@@ -116,8 +121,9 @@ export function UinAiRun({ plan }: { plan: Plan }) {
 
   const picks = pages.filter((page) => picked.has(page.id));
   const costEach = costWithEngine(UINAI_CREDIT_COST, engine);
-  const totalCost = picks.length * costEach;
-  const estimateMinutes = Math.round((picks.length * SECONDS_EACH) / 60);
+  const deviceCount = device === 'both' ? 2 : 1;
+  const totalCost = picks.length * costEach * deviceCount;
+  const estimateMinutes = Math.round((picks.length * deviceCount * SECONDS_EACH) / 60);
   const estimate = estimateMinutes < 1 ? '1분 미만' : `${estimateMinutes}분`;
   const chosenSkill = findSkill(skill);
   const latest = useMemo(
@@ -142,20 +148,21 @@ export function UinAiRun({ plan }: { plan: Plan }) {
       toast('만들 화면을 골라 주세요.', 'warn');
       return;
     }
-    const required = pageIds.length * costWithEngine(UINAI_CREDIT_COST, engine);
+    const devMultiplier = device === 'both' ? 2 : 1;
+    const required = pageIds.length * costWithEngine(UINAI_CREDIT_COST, engine) * devMultiplier;
     if (credits < required) {
-      toast(`크레딧이 ${required - credits} 부족합니다. 화면 수를 줄이거나 기본 엔진을 골라 주세요.`, 'warn');
+      toast(`크레딧이 ${required - credits} 부족합니다. 화면 수를 줄이거나 단일 디바이스를 골라 주세요.`, 'warn');
       return;
     }
-    if (pageIds.length > CONFIRM_OVER) {
-      const mins = Math.max(1, Math.round((pageIds.length * SECONDS_EACH) / 60));
+    if (pageIds.length * devMultiplier > CONFIRM_OVER) {
+      const mins = Math.max(1, Math.round((pageIds.length * devMultiplier * SECONDS_EACH) / 60));
       const ok = window.confirm(
-        `화면 ${pageIds.length}개를 만듭니다. 약 ${mins}분, ${required}크레딧이 듭니다.\n\n계속할까요?`,
+        `화면 ${pageIds.length}개 (${TARGET_DEVICE_LABEL[device]})를 만듭니다. 총 ${pageIds.length * devMultiplier}회 생성으로 약 ${mins}분, ${required}크레딧이 듭니다.\n\n계속할까요?`,
       );
       if (!ok) return;
     }
-    void startUinAi(plan.id, { plan, pageIds, engine, emphasis, skill });
-  }, [credits, emphasis, engine, pages, picked, plan, skill, toast]);
+    void startUinAi(plan.id, { plan, pageIds, engine, emphasis, skill, device });
+  }, [credits, device, emphasis, engine, pages, picked, plan, skill, toast]);
 
   const stop = useCallback(() => {
     stopUinAi(plan.id);
@@ -290,6 +297,45 @@ export function UinAiRun({ plan }: { plan: Plan }) {
           {ENGINE_WHAT[engine]}
           {engine === 'advanced' ? ' 만든 뒤 디자인을 한 번 더 다듬습니다.' : ''} 화면당{' '}
           {costEach}크레딧입니다.
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <span className="text-[11.5px] font-semibold text-[var(--fg-muted)]">디바이스</span>
+        <button
+          type="button"
+          className={device === 'mobile' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          aria-pressed={device === 'mobile'}
+          disabled={running}
+          onClick={() => setDevice('mobile')}
+        >
+          <Smartphone size={12} />
+          모바일
+        </button>
+        <button
+          type="button"
+          className={device === 'desktop' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          aria-pressed={device === 'desktop'}
+          disabled={running}
+          onClick={() => setDevice('desktop')}
+        >
+          <Monitor size={12} />
+          데스크톱
+        </button>
+        <button
+          type="button"
+          className={device === 'both' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          aria-pressed={device === 'both'}
+          disabled={running}
+          onClick={() => setDevice('both')}
+        >
+          <SmartphoneNfc size={12} />
+          모바일 + 데스크톱 둘 다
+        </button>
+        <span className="text-[11px] text-[var(--fg-subtle)]">
+          {device === 'both'
+            ? '화면마다 모바일 버전과 데스크톱 버전을 각각 1개씩 생성합니다 (2회 생성).'
+            : `${TARGET_DEVICE_LABEL[device]} 버전 화면을 생성합니다.`}
         </span>
       </div>
 

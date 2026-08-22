@@ -18,6 +18,7 @@ import { creditSnapshot, refreshCredits } from '../useCredits';
 import { ARTIFACT_LABEL, type ArtifactKey, type PlanDocuments } from '../types';
 import { costOfArtifact } from '../credits';
 import { engineSnapshotFor } from '../useEngine';
+import { recordCompletedTask } from '../tasks';
 
 type Toast = (message: string, tone?: 'ok' | 'warn' | 'danger') => void;
 
@@ -237,6 +238,14 @@ export async function runGeneration(
   if (finished) {
     const what = pipeline ? `${done.length}종 산출물` : ARTIFACT_LABEL[artifacts[0]];
     toast(`${what}을(를) 만들었습니다.`, 'ok');
+    const targetSubPath = pipeline ? (done[0] ? `/${done[0]}` : '') : `/${artifacts[0]}`;
+    recordCompletedTask({
+      planId,
+      type: 'generation',
+      title: `${what} 생성 완료`,
+      href: `/plans/${planId}${targetSubPath}`,
+      targetPath: `/plans/${planId}${targetSubPath}`,
+    });
     return true;
   }
 

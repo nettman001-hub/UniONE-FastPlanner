@@ -52,6 +52,7 @@ interface RunBody {
   engine?: unknown;
   emphasis?: unknown;
   skill?: unknown;
+  device?: unknown;
 }
 
 interface UinAiDraft {
@@ -78,7 +79,8 @@ function draftOf(value: unknown): UinAiDraft {
   return draft;
 }
 
-function deviceOf(plan: Plan, page: IaPage): 'mobile' | 'desktop' {
+function deviceOf(plan: Plan, page: IaPage, requested?: unknown): 'mobile' | 'desktop' {
+  if (requested === 'mobile' || requested === 'desktop') return requested;
   const wireframe = plan.wireframes.find((item) => item.pageId === page.id);
   if (wireframe?.device === 'mobile') return 'mobile';
   if (wireframe?.device === 'desktop') return 'desktop';
@@ -410,7 +412,8 @@ export async function POST(request: Request) {
   }
   failureCooldowns.delete(user.id);
 
-  const prompt = buildUinAiPrompt(plan, page, emphasis, skill);
+  const targetDevice = deviceOf(plan, page, body.device);
+  const prompt = buildUinAiPrompt(plan, page, emphasis, skill, targetDevice);
   if (prompt.length > MAX_PROMPT_CHARS) {
     return NextResponse.json({ error: '화면 기획이 너무 길어 UniAI에 보낼 수 없습니다.' }, { status: 413 });
   }
@@ -543,7 +546,7 @@ export async function POST(request: Request) {
       wireframeId: wireframe?.id ?? null,
       name: page.name,
       route: page.path,
-      device: deviceOf(plan, page),
+      device: targetDevice,
       engine,
       emphasis,
       skill,

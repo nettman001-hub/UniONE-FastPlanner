@@ -23,6 +23,7 @@
  */
 
 import type { Plan } from '@/lib/types';
+import { recordCompletedTask } from '@/lib/tasks';
 
 export type ScreenState =
   | { state: 'waiting' }
@@ -300,6 +301,7 @@ export interface RunOptions {
   modelId: string;
   emphasis: string;
   skill: string;
+  device?: 'mobile' | 'desktop' | 'both';
 }
 
 /**
@@ -311,7 +313,7 @@ export interface RunOptions {
  */
 export async function start(planId: string, options: RunOptions): Promise<void> {
   if (get(planId).running) return;
-  const { plan, pageIds, modelId, emphasis, skill } = options;
+  const { plan, pageIds, modelId, emphasis, skill, device = 'both' } = options;
   if (pageIds.length === 0) return;
 
   const controller = new AbortController();
@@ -322,11 +324,6 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
     running: true,
     disconnected: false,
     summary: null,
-    /*
-     * **앞서 만든 것을 지우지 않는다.** 이번에 고른 것만 `대기` 로 놓는다.
-     * 통째로 갈아 끼우면, 열 개 중 세 개만 다시 걸었을 때 나머지 일곱 개의
-     * 완료 표시가 사라진다 — 스티치에는 그대로 있는데 화면에서만 없어진다.
-     */
     progress: {
       ...get(planId).progress,
       ...Object.fromEntries(pageIds.map((id) => [id, { state: 'waiting' } as ScreenState])),
@@ -343,19 +340,27 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
   let made = 0;
   let stopped = false;
 
+  const deviceList: Array<'MOBILE' | 'DESKTOP'> =
+    device === 'both'
+      ? ['MOBILE', 'DESKTOP']
+      : device === 'mobile'
+        ? ['MOBILE']
+        : ['DESKTOP'];
+
+  const taskList: Array<{ pageId: string; device: 'MOBILE' | 'DESKTOP' }> = [];
+  for (const pageId of pageIds) {
+    for (const dev of deviceList) {
+      taskList.push({ pageId, device: dev });
+    }
+  }
+
   try {
-    for (const [index, pageId] of pageIds.entries()) {
+    for (const [index, task] of taskList.entries()) {
+      const { pageId, device: taskDevice } = task;
       if (controller.signal.aborted) {
         stopped = true;
         break;
       }
-      /*
-       * 화면 사이에 잠깐 쉰다.
-       *
-       * 스무 개를 연달아 걸면 두어 개가 거절당했다. 같은 화면을 따로 하나만
-       * 만들면 잘 되니, 내용이 아니라 몰아친 것이 원인이다. 화면 하나에 수십 초
-       * 걸리는 일이라 1초를 더 쉬어도 체감은 거의 없다.
-       */
       if (index > 0) await new Promise((r) => setTimeout(r, 1000));
       mark(pageId, { state: 'running' });
 
@@ -373,6 +378,7 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
             emphasis,
             skill,
             designSystemId,
+            device: taskDevice,
           }),
           signal: controller.signal,
         });
@@ -451,6 +457,15 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
           tone: all ? 'ok' : 'warn',
           at: Date.now(),
         },
+      });
+    }
+    if (made > 0) {
+      recordCompletedTask({
+        planId,
+        type: 'stitch',
+        title: `스티치 화면 ${made}개 생성 완료`,
+        href: `/plans/${planId}/export`,
+        targetPath: `/plans/${planId}/export`,
       });
     }
   } finally {

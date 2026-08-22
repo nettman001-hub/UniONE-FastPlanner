@@ -7,6 +7,7 @@ import { uinAiScreenHref } from '@/lib/design/uinai';
 import { usePlannerStore } from '@/lib/store';
 import type { Plan, UinAiScreen } from '@/lib/types';
 import { refreshCredits } from '@/lib/useCredits';
+import { recordCompletedTask } from '@/lib/tasks';
 
 export type UinAiScreenState =
   | { state: 'waiting' }
@@ -19,7 +20,7 @@ export interface UinAiRunSession {
   stopRequested: boolean;
   progress: Record<string, UinAiScreenState>;
   currentPageIds: string[];
-  options: Pick<StartUinAiOptions, 'engine' | 'emphasis' | 'skill'> | null;
+  options: Pick<StartUinAiOptions, 'engine' | 'emphasis' | 'skill' | 'device'> | null;
   summary: { text: string; tone: 'ok' | 'warn'; at: number } | null;
 }
 
@@ -118,6 +119,7 @@ export interface StartUinAiOptions {
   engine: 'basic' | 'advanced';
   emphasis: 'strict' | 'balanced' | 'free';
   skill: string;
+  device?: 'mobile' | 'desktop' | 'both';
 }
 
 export async function startUinAi(planId: string, options: StartUinAiOptions): Promise<void> {
@@ -126,11 +128,24 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
   const controller = new AbortController();
   controllers.set(planId, controller);
   guardUnload(true);
+
+  const deviceList: Array<'mobile' | 'desktop'> =
+    options.device === 'both'
+      ? ['mobile', 'desktop']
+      : options.device === 'mobile'
+        ? ['mobile']
+        : ['desktop'];
+
   patch(planId, {
     running: true,
     stopRequested: false,
     currentPageIds: options.pageIds,
-    options: { engine: options.engine, emphasis: options.emphasis, skill: options.skill },
+    options: {
+      engine: options.engine,
+      emphasis: options.emphasis,
+      skill: options.skill,
+      device: options.device ?? 'both',
+    },
     summary: null,
     progress: {
       ...get(planId).progress,
@@ -154,8 +169,16 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
   let stopped = false;
   let firstFailure = '';
 
+  const taskList: Array<{ pageId: string; device: 'mobile' | 'desktop' }> = [];
+  for (const pageId of options.pageIds) {
+    for (const dev of deviceList) {
+      taskList.push({ pageId, device: dev });
+    }
+  }
+
   try {
-    for (const [index, pageId] of options.pageIds.entries()) {
+    for (const [index, task] of taskList.entries()) {
+      const { pageId, device } = task;
       if (get(planId).stopRequested || controller.signal.aborted) {
         stopped = true;
         break;
@@ -192,6 +215,7 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
             engine: options.engine,
             emphasis: options.emphasis,
             skill: options.skill,
+            device,
           }),
           signal: controller.signal,
         });
@@ -286,6 +310,15 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
           tone: all ? 'ok' : 'warn',
           at: Date.now(),
         },
+      });
+    }
+    if (made > 0) {
+      recordCompletedTask({
+        planId,
+        type: 'uinai',
+        title: `UniAI 화면 ${made}개 생성 완료`,
+        href: `/plans/${planId}/export?design=uinai`,
+        targetPath: `/plans/${planId}/export`,
       });
     }
   } finally {

@@ -8,24 +8,17 @@
  *
  * ## 자동과 수동을 갈라 둔다
  *
- * 두 길은 준비물도 결과도 다르다. 한 카드에 섞어 두면 무엇을 하면 되는지가
- * 안 보인다 — 연결한 사람은 필요 없는 요청문을 지나쳐야 하고, 연결 안 한
- * 사람은 눌러도 안 되는 단추를 먼저 만난다.
- *
  * | | 준비물 | 결과 |
  * | --- | --- | --- |
  * | **자동 · 스티치** | 스티치 연결 한 번 | 여기서 눌러 스티치에 화면이 생긴다 |
  * | **자동 · UniAI** | 없음 | 여기서 만들고 UniBoard 안에서 연다 |
  * | **수동** | 없음 | 요청문을 복사해 도구에 붙여 넣는다 |
  *
- * 자동은 스티치와 UniAI 두 길이다. 나머지 도구는 붙여 넣는 길뿐이라 수동 쪽에만 나온다.
- *
- * 여기서 만든 요청문은 두 길이 그대로 나눠 쓴다. 스티치 API 에 넘길 때도 결국
- * 필요한 것이 이 문장이라 `screenPrompt()` 는 한 벌이면 된다.
+ * 자동과 수동 모두 모바일 / 데스크톱 / 둘 다 옵션을 제공합니다.
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, Download, ExternalLink, Image as ImageIcon, Info } from 'lucide-react';
+import { Check, Copy, Download, ExternalLink, Image as ImageIcon, Info, Monitor, Smartphone, SmartphoneNfc } from 'lucide-react';
 
 import { SectionCard } from './ui';
 import { StitchRun } from './StitchRun';
@@ -37,18 +30,21 @@ import {
   handoffDocument,
   screenPrompts,
   systemPrompt,
+  TARGET_DEVICE_LABEL,
   type DesignToolKey,
+  type TargetDevice,
 } from '@/lib/design-handoff';
 import type { Plan } from '@/lib/types';
 
 export function DesignHandoff({ plan }: { plan: Plan }) {
   const [automatic, setAutomatic] = useState<'stitch' | 'uinai'>('stitch');
   const [tool, setTool] = useState<DesignToolKey>('stitch');
+  const [deviceTarget, setDeviceTarget] = useState<TargetDevice>('both');
   const [copied, setCopied] = useState<string | null>(null);
 
   const meta = DESIGN_TOOLS.find((t) => t.key === tool)!;
-  const screens = useMemo(() => screenPrompts(plan, tool), [plan, tool]);
-  const intro = useMemo(() => systemPrompt(plan, tool), [plan, tool]);
+  const screens = useMemo(() => screenPrompts(plan, tool, deviceTarget), [plan, tool, deviceTarget]);
+  const intro = useMemo(() => systemPrompt(plan, tool, deviceTarget), [plan, tool, deviceTarget]);
 
   useEffect(() => {
     const syncFromAddress = () => {
@@ -94,7 +90,6 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
   };
 
   if (plan.iaPages.filter((p) => p.type === 'page').length === 0) {
-    /* 화면이 없으면 자동도 수동도 할 것이 없다. 카드 하나로 이유만 밝힌다. */
     return (
       <SectionCard
         title="디자인 도구로 넘기기"
@@ -110,12 +105,11 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
   return (
     <>
       {/*
-        자동 — 스티치와 UniAI. 선택 단추는 연결 상태 바깥에 두어, 스티치를
-        연결하지 않은 사람도 UniAI로 바로 넘어갈 수 있게 한다.
+        자동 — 스티치와 UniAI. 모바일 / 데스크톱 / 둘 다 선택 지원.
       */}
       <SectionCard
         title="자동(UI 먼저 만들기) - 바로 만들기"
-        description="스티치에 직접 만들거나 UniAI가 HTML·CSS·JavaScript 코드로 생성한 화면을 UniBoard 안에서 열 수 있습니다. 화면 선택과 디자인 옵션은 그대로입니다."
+        description="스티치에 직접 만들거나 UniAI가 HTML·CSS·JavaScript 코드로 생성한 화면을 UniBoard 안에서 열 수 있습니다. 모바일과 데스크톱 버전을 각각 선택하거나 둘 다 한 번에 만들 수 있습니다."
       >
         <div className="mb-2.5 flex flex-wrap gap-1.5" role="group" aria-label="자동 UI 만들기 도구">
           <button
@@ -144,45 +138,82 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
         </div>
       </SectionCard>
 
-      {/* 수동 — 요청문을 복사해 도구에 붙여 넣는다. 준비물이 없다. */}
+      {/* 수동 — 요청문을 복사해 도구에 붙여 넣는다. 모바일/데스크톱/둘 다 다운로드 지원 */}
       <SectionCard
         title="수동(UI 먼저 만들기) - 요청문 복사해 붙여 넣기"
-        description="화면마다 무엇을 그려야 하는지 적어 둔 요청문을 만듭니다. 연결 없이 어느 도구에나 쓸 수 있습니다."
+        description="화면마다 무엇을 그려야 하는지 적어 둔 요청문을 만듭니다. 모바일과 데스크톱 버전을 선택하거나 둘 다 한 번에 다운받을 수 있습니다."
         action={
           <button
             className="btn btn-sm"
             onClick={() =>
               download(
-                `${slugify(plan.brief.title)}-design-${tool}.md`,
-                handoffDocument(plan, tool),
+                `${slugify(plan.brief.title)}-design-${tool}-${deviceTarget}.md`,
+                handoffDocument(plan, tool, deviceTarget),
                 'text/markdown;charset=utf-8',
               )
             }
+            title={`전체 화면 요청문을 ${TARGET_DEVICE_LABEL[deviceTarget]} 버전으로 다운로드합니다.`}
           >
             <Download size={13} />
-            전체 받기
+            전체 받기 ({TARGET_DEVICE_LABEL[deviceTarget]})
           </button>
         }
       >
         <div className="flex flex-col gap-3.5">
           {/* 도구 고르기 */}
-          <div className="flex flex-wrap gap-1.5">
-            {DESIGN_TOOLS.map((t) => (
+          <div>
+            <p className="mb-1.5 text-[11.5px] font-bold text-[var(--fg-subtle)]">대상 디자인 도구</p>
+            <div className="flex flex-wrap gap-1.5">
+              {DESIGN_TOOLS.map((t) => (
+                <button
+                  key={t.key}
+                  className={tool === t.key ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                  onClick={() => setTool(t.key)}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 디바이스 선택: 모바일 / 데스크톱 / 둘 다 */}
+          <div>
+            <p className="mb-1.5 text-[11.5px] font-bold text-[var(--fg-subtle)]">대상 디바이스 버전</p>
+            <div className="flex flex-wrap gap-1.5">
               <button
-                key={t.key}
-                className={tool === t.key ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
-                onClick={() => setTool(t.key)}
+                type="button"
+                className={deviceTarget === 'mobile' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                onClick={() => setDeviceTarget('mobile')}
               >
-                {t.name}
+                <Smartphone size={13} />
+                모바일
               </button>
-            ))}
+              <button
+                type="button"
+                className={deviceTarget === 'desktop' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                onClick={() => setDeviceTarget('desktop')}
+              >
+                <Monitor size={13} />
+                데스크톱
+              </button>
+              <button
+                type="button"
+                className={deviceTarget === 'both' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                onClick={() => setDeviceTarget('both')}
+              >
+                <SmartphoneNfc size={13} />
+                모바일 + 데스크톱 둘 다
+              </button>
+            </div>
           </div>
 
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3.5 py-2.5">
-            <p className="text-[12.5px] font-semibold">{meta.name}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[12.5px] font-semibold">{meta.name}</p>
+              <span className="chip chip-primary text-[11px]">{TARGET_DEVICE_LABEL[deviceTarget]}</span>
+            </div>
             <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--fg-muted)]">{meta.what}</p>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--fg-muted)]">{meta.how}</p>
-            {/* 눌러 본 뒤에 "못 쓴다"를 알게 되면 헛걸음이다. 고르는 자리에서 밝힌다. */}
             {meta.note && (
               <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
                 {meta.note}
@@ -201,10 +232,6 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
             )}
           </div>
 
-          {/*
-            스티치를 고른 사람에게는 위 카드가 있다는 것을 알려 준다. 여기까지
-            내려와 요청문을 복사하고 나서야 "그냥 눌러도 됐네" 를 알면 헛걸음이다.
-          */}
           {tool === 'stitch' && (
             <p className="flex items-start gap-2 rounded-lg border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-2 text-[11.5px] leading-relaxed">
               <Info size={13} className="mt-0.5 shrink-0 text-[var(--primary)]" />
@@ -219,7 +246,7 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
           <div>
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <p className="min-w-0 flex-1 text-[12.5px] font-bold">
-                ① 먼저 전체 방향부터 잡으세요
+                ① 먼저 전체 방향부터 잡으세요 ({TARGET_DEVICE_LABEL[deviceTarget]})
               </p>
               {copyButton('intro', intro)}
             </div>
@@ -235,21 +262,17 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
           {/* 화면별 */}
           <div>
             <p className="mb-1.5 text-[12.5px] font-bold">② 화면마다 하나씩 ({screens.length}개)</p>
-            <ul className="flex flex-col gap-1.5">
+            <ul className="flex flex-col gap-2">
               {screens.map((screen) => (
                 <li
                   key={screen.pageId}
-                  className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2"
+                  className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="id-tag shrink-0">{screen.pageId}</span>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">
                       {screen.name}
                     </span>
-                    {/*
-                      그림이 없는 화면도 요청문은 만든다 — 기능만으로도 쓸 만하다.
-                      다만 결과가 얕아지므로 그 사실을 밝힌다.
-                    */}
                     {!screen.hasWireframe && (
                       <span className="chip" title="와이어프레임이 있으면 훨씬 정확해집니다.">
                         와이어프레임 없음
@@ -265,22 +288,27 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
                         SVG
                       </button>
                     )}
-                    {copyButton(screen.pageId, screen.text)}
+
+                    {/* 복사 버튼: 둘 다일 경우 각각 복사 버튼 제공 */}
+                    {deviceTarget === 'both' ? (
+                      <div className="flex items-center gap-1.5">
+                        {copyButton(`${screen.pageId}-mobile`, screen.mobileText, '모바일 복사')}
+                        {copyButton(`${screen.pageId}-desktop`, screen.desktopText, '데스크톱 복사')}
+                      </div>
+                    ) : (
+                      copyButton(screen.pageId, screen.text, `${TARGET_DEVICE_LABEL[deviceTarget]} 복사`)
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
           </div>
 
-          {/*
-            안내문을 flex 항목으로 두면 <b> 가 별도 칸이 되어 문장이 쪼개진다.
-            아이콘과 글 덩어리 둘만 flex 항목이어야 한다.
-          */}
           <div className="flex items-start gap-2 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
             <Info size={13} className="mt-0.5 shrink-0" />
             <p className="min-w-0">
-              이 카드는 <b>요청문을 복사해 붙여 넣는</b> 방식입니다. 눌러서 저쪽에 바로 만들어
-              주지는 않습니다. 와이어프레임의 <b>구성 항목</b>을 채워 두실수록 결과가 정확해집니다.
+              이 카드는 <b>요청문을 복사해 붙여 넣거나 파일로 다운로드</b>하는 방식입니다.
+              디바이스(모바일/데스크톱/둘 다)를 선택하여 원하는 타겟의 요청문을 손쉽게 활용하세요.
             </p>
           </div>
         </div>

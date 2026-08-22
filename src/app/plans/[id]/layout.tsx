@@ -17,6 +17,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AgentPanel } from '@/components/AgentPanel';
+import { HeaderAiStatus } from '@/components/HeaderAiStatus';
 import { Logo } from '@/components/Logo';
 import { ClientOnly, Spinner } from '@/components/ui';
 import { RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
@@ -118,6 +119,10 @@ function PlanShell({ children }: { children: ReactNode }) {
               <span className="font-normal text-[var(--fg-subtle)]">(임시)</span>
             </span>
           </ClientOnly>
+
+          {/* 상단 우측 AI 작업 진행 상태 및 완료 알림 */}
+          <HeaderAiStatus planId={planId} />
+
           <button
             className={agentOpen ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
             onClick={() => setAgentOpen(!agentOpen)}

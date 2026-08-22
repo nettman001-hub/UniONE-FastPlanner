@@ -16,6 +16,7 @@ import { creditSnapshot, refreshCredits } from '../useCredits';
 import { engineSnapshot } from '../useEngine';
 import { costWithEngine } from '../credits';
 import { CHAT_CREDIT_COST, type PlanDocuments } from '../types';
+import { recordCompletedTask } from '../tasks';
 
 interface ChatResponse {
   reply?: string;
@@ -141,6 +142,13 @@ export async function askAgent(
       content: data.reply,
       changes: data.changes,
       credits: cost,
+    });
+    recordCompletedTask({
+      planId,
+      type: 'agent',
+      title: 'AI 에이전트 답변 완료',
+      href: `/plans/${planId}`,
+      targetPath: `/plans/${planId}`,
     });
     return 'ok';
   } catch (error) {

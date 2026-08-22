@@ -15,9 +15,12 @@ import {
   AlertTriangle,
   Check,
   ExternalLink,
+  HelpCircle,
   Link2,
   Loader2,
-  HelpCircle,
+  Monitor,
+  Smartphone,
+  SmartphoneNfc,
   Sparkles,
   Unlink,
   X,
@@ -37,6 +40,7 @@ import {
   serverSnapshot,
 } from '@/lib/design/stitch-runner';
 import { useStitchConnection } from '@/lib/design/useStitchConnection';
+import { TARGET_DEVICE_LABEL, type TargetDevice } from '@/lib/design-handoff';
 import type { Plan } from '@/lib/types';
 
 /**
@@ -96,6 +100,8 @@ export function StitchRun({ plan }: { plan: Plan }) {
   const [emphasis, setEmphasis] = useState<Emphasis>('strict');
   /** 고른 디자인 스킬 — 서비스 전체의 결을 정한다. */
   const [skill, setSkill] = useState('clean');
+  /** 디바이스 모드: 모바일 / 데스크톱 / 둘 다 */
+  const [device, setDevice] = useState<TargetDevice>('both');
   const [skillOpen, setSkillOpen] = useState(false);
   /** `키 받는 법` 말풍선이 떠 있는가. 눌러서 열고 눌러서 닫는다. */
   const [keyHelp, setKeyHelp] = useState(false);
@@ -221,20 +227,23 @@ export function StitchRun({ plan }: { plan: Plan }) {
       return;
     }
 
+    const devMultiplier = device === 'both' ? 2 : 1;
+    const totalCount = pageIds.length * devMultiplier;
+
     /*
      * 많이 고르면 한 번 묻는다. 24개면 20분 가까이 걸리고 사용량도 그만큼 나가는데,
      * 실수로 `전체 선택` 을 누른 것일 수도 있다.
      */
-    if (pageIds.length > CONFIRM_OVER) {
-      const mins = Math.max(1, Math.round((pageIds.length * SECONDS_EACH) / 60));
+    if (totalCount > CONFIRM_OVER) {
+      const mins = Math.max(1, Math.round((totalCount * SECONDS_EACH) / 60));
       const ok = window.confirm(
-        `화면 ${pageIds.length}개를 만듭니다. 약 ${mins}분 걸리고 그만큼 스티치 사용량이 나갑니다.\n\n계속할까요?`,
+        `화면 ${pageIds.length}개 (${TARGET_DEVICE_LABEL[device]})를 만듭니다. 총 ${totalCount}회 생성으로 약 ${mins}분 걸리고 그만큼 스티치 사용량이 나갑니다.\n\n계속할까요?`,
       );
       if (!ok) return;
     }
 
-    void start(plan.id, { plan, pageIds, modelId, emphasis, skill });
-  }, [emphasis, modelId, pages, picked, plan, skill, toast]);
+    void start(plan.id, { plan, pageIds, modelId, emphasis, skill, device });
+  }, [device, emphasis, modelId, pages, picked, plan, skill, toast]);
 
   const stop = useCallback(() => {
     stopRun(plan.id);
@@ -478,6 +487,48 @@ export function StitchRun({ plan }: { plan: Plan }) {
           </span>
         </div>
       )}
+
+      {/*
+        디바이스 버전 선택 (모바일 / 데스크톱 / 둘 다)
+      */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <span className="text-[11.5px] font-semibold text-[var(--fg-muted)]">디바이스</span>
+        <button
+          type="button"
+          className={device === 'mobile' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          aria-pressed={device === 'mobile'}
+          disabled={running}
+          onClick={() => setDevice('mobile')}
+        >
+          <Smartphone size={12} />
+          모바일
+        </button>
+        <button
+          type="button"
+          className={device === 'desktop' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          aria-pressed={device === 'desktop'}
+          disabled={running}
+          onClick={() => setDevice('desktop')}
+        >
+          <Monitor size={12} />
+          데스크톱
+        </button>
+        <button
+          type="button"
+          className={device === 'both' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          aria-pressed={device === 'both'}
+          disabled={running}
+          onClick={() => setDevice('both')}
+        >
+          <SmartphoneNfc size={12} />
+          모바일 + 데스크톱 둘 다
+        </button>
+        <span className="text-[11px] text-[var(--fg-subtle)]">
+          {device === 'both'
+            ? '화면마다 모바일 버전과 데스크톱 버전을 각각 1개씩 스티치에 생성합니다.'
+            : `${TARGET_DEVICE_LABEL[device]} 버전 화면을 스티치에 생성합니다.`}
+        </span>
+      </div>
 
       {/*
         무엇에 무게를 둘지.

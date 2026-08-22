@@ -52,14 +52,6 @@ export const DESIGN_TOOLS: DesignTool[] = [
     url: 'https://stitch.withgoogle.com',
   },
   {
-    /*
-     * 스티치처럼 **여기서 바로 만들지는 못한다.**
-     *
-     * 공개된 창구(`api.anthropic.com/v1/design/mcp`)는 열려 있지만 두 가지가 막는다.
-     *   - 개발자 키를 받지 않는다. 토큰이 **사용자 구독 계정**에서만 나온다.
-     *   - 그 창구로 오가는 것은 **디자인 시스템 파일**이지 "화면 하나 만들어 줘" 가 아니다.
-     * 화면을 만드는 일은 저쪽 웹 화면 안에서만 된다. 그래서 문장을 넘기는 길로 붙인다.
-     */
     key: 'claude',
     name: 'Claude Design',
     what: '설명을 주면 화면 시안을 만들어 줍니다. 우리 디자인을 먼저 읽혀 두면 그 결을 따릅니다.',
@@ -91,11 +83,25 @@ export const DESIGN_TOOLS: DesignTool[] = [
   },
 ];
 
+export type TargetDevice = 'mobile' | 'desktop' | 'both';
+
+export const TARGET_DEVICE_LABEL: Record<TargetDevice, string> = {
+  mobile: '모바일',
+  desktop: '데스크톱',
+  both: '모바일 + 데스크톱 둘 다',
+};
+
 /* ------------------------------------------------------------------ */
 /* 프롬프트 조립                                                         */
 /* ------------------------------------------------------------------ */
 
-function deviceWord(wireframe: Wireframe | undefined, plan: Plan): string {
+function deviceWord(
+  wireframe: Wireframe | undefined,
+  plan: Plan,
+  deviceOverride?: 'mobile' | 'desktop',
+): string {
+  if (deviceOverride === 'desktop') return '데스크톱 웹';
+  if (deviceOverride === 'mobile') return '모바일 앱';
   if (wireframe?.device === 'desktop') return '데스크톱 웹';
   if (wireframe?.device === 'mobile') return '모바일 앱';
   return PLATFORM_LABEL[plan.brief.platform] ?? '웹';
@@ -120,21 +126,16 @@ export interface ScreenPrompt {
   name: string;
   /** 와이어프레임이 있는가. 없으면 블록 없이 기능만으로 만든다. */
   hasWireframe: boolean;
+  /** 기본/선택된 텍스트 */
   text: string;
+  /** 모바일 전용 요청문 */
+  mobileText: string;
+  /** 데스크톱 전용 요청문 */
+  desktopText: string;
 }
 
 /**
- * 화면 하나를 그려 달라는 요청문.
- *
- * 블록의 **구성 항목**을 그대로 넘기는 것이 핵심이다. 거기 적힌 것이 실제 화면에
- * 나올 문구라서, 그것 없이 "리스트 블록" 이라고만 하면 도구가 아무 말이나 채운다.
- */
-/**
  * 와이어프레임을 얼마나 그대로 지킬지.
- *
- * 스티치에는 이런 조절값이 **없다** — 인자가 다섯 개뿐이고 가중치·온도 같은 것은
- * 받지 않는다. 그래서 우리가 조절할 수 있는 유일한 자리인 **요청문 문장**으로
- * 무게를 옮긴다. 도구에게 무엇을 더 중히 여기라고 말로 이르는 것이다.
  */
 export type PromptEmphasis = 'strict' | 'balanced' | 'free';
 
@@ -148,15 +149,11 @@ const EMPHASIS_LINE: Record<PromptEmphasis, string> = {
 
 /**
  * 요청문이 지나치게 길어지지 않게 자른다.
- *
- * 스티치가 긴 요청문을 `invalid argument` 로 거절하는 일이 있었다. 블록이 많고
- * 구성 항목이 긴 화면일수록 길어지는데, 어차피 너무 길면 도구도 앞부분만 본다.
  */
 const MAX_PROMPT_CHARS = 4000;
 
 function clamp(text: string, limit = MAX_PROMPT_CHARS): string {
   if (text.length <= limit) return text;
-  // 문장 도중에 끊기지 않게 마지막 줄바꿈에서 자른다.
   const cut = text.slice(0, limit);
   const at = cut.lastIndexOf('\n');
   return `${at > limit * 0.6 ? cut.slice(0, at) : cut}\n\n(생략)`;
@@ -167,11 +164,8 @@ export function screenPrompt(
   page: IaPage,
   tool: DesignToolKey,
   emphasis: PromptEmphasis = 'strict',
-  /**
-   * 짧게. 스티치가 요청을 거절했을 때 **다시 시도할 때** 쓴다.
-   * 여정·기획 메모처럼 없어도 화면을 그릴 수 있는 것부터 뺀다.
-   */
   compact = false,
+  deviceOverride?: 'mobile' | 'desktop',
 ): string {
   const wireframe = plan.wireframes.find((w) => w.pageId === page.id);
   const features = featuresOf(plan, page);
@@ -180,7 +174,7 @@ export function screenPrompt(
   const lines: string[] = [];
 
   lines.push(
-    `${deviceWord(wireframe, plan)} 화면 하나를 디자인해 주세요.`,
+    `${deviceWord(wireframe, plan, deviceOverride)} 화면 하나를 디자인해 주세요.`,
     '',
     `서비스: ${plan.brief.title}${plan.brief.oneLiner ? ` — ${plan.brief.oneLiner}` : ''}`,
     `화면 이름: ${page.name}`,
@@ -203,7 +197,6 @@ export function screenPrompt(
       const kind = WIREFRAME_BLOCK_LABEL[block.type] ?? block.type;
       lines.push(`${index + 1}. ${kind} — ${block.title || '(제목 없음)'}`);
       if (block.items.length > 0) {
-        // 여기 적힌 것이 실제로 화면에 나올 문구다. 바꾸지 말라고 못 박는다.
         lines.push(`   표시할 내용: ${block.items.join(' / ')}`);
       }
       if (!compact && block.note) lines.push(`   기획 의도: ${block.note}`);
@@ -229,10 +222,6 @@ export function screenPrompt(
     lines.push('', '레이어 이름은 위 블록 이름을 그대로 써 주세요.');
   }
   if (tool === 'claude') {
-    /*
-     * 저쪽은 만든 시안을 **코드로 넘길 수 있다.** 그때 이름이 제각각이면 받아서
-     * 붙일 수가 없다. 만들 때부터 우리 블록 이름을 쓰게 못 박아 둔다.
-     */
     lines.push(
       '',
       '요소 이름은 위 블록 이름을 그대로 써 주세요. 나중에 코드로 넘길 때 그대로 씁니다.',
@@ -243,36 +232,59 @@ export function screenPrompt(
 }
 
 /** 만들 수 있는 화면 목록. 기능이 걸린 화면을 먼저 보여 준다. */
-export function screenPrompts(plan: Plan, tool: DesignToolKey): ScreenPrompt[] {
+export function screenPrompts(
+  plan: Plan,
+  tool: DesignToolKey,
+  deviceTarget: TargetDevice = 'both',
+): ScreenPrompt[] {
   const withWireframe = new Set(plan.wireframes.map((w) => w.pageId));
   return plan.iaPages
     .filter((p) => p.type === 'page')
     .slice()
     .sort((a, b) => {
-      // 그림이 있는 화면이 먼저다 — 결과가 훨씬 정확하다.
       const byWf = Number(withWireframe.has(b.id)) - Number(withWireframe.has(a.id));
       return byWf !== 0 ? byWf : a.order - b.order;
     })
-    .map((page) => ({
-      pageId: page.id,
-      name: page.name,
-      hasWireframe: withWireframe.has(page.id),
-      text: screenPrompt(plan, page, tool),
-    }));
+    .map((page) => {
+      const mobileText = screenPrompt(plan, page, tool, 'strict', false, 'mobile');
+      const desktopText = screenPrompt(plan, page, tool, 'strict', false, 'desktop');
+      const defaultText =
+        deviceTarget === 'mobile'
+          ? mobileText
+          : deviceTarget === 'desktop'
+            ? desktopText
+            : screenPrompt(plan, page, tool);
+      return {
+        pageId: page.id,
+        name: page.name,
+        hasWireframe: withWireframe.has(page.id),
+        text: defaultText,
+        mobileText,
+        desktopText,
+      };
+    });
 }
 
 /**
  * 서비스 전체를 한 번에 설명하는 요청문.
- *
- * 화면을 하나씩 만들면 색·글꼴·간격이 화면마다 달라진다. 먼저 이걸로 톤을 잡고
- * 화면별 요청을 이어 가면 결과가 한 벌로 나온다.
  */
-export function systemPrompt(plan: Plan, tool: DesignToolKey): string {
+export function systemPrompt(
+  plan: Plan,
+  tool: DesignToolKey,
+  deviceTarget: TargetDevice = 'both',
+): string {
   const { brief, prd } = plan;
   const pages = plan.iaPages.filter((p) => p.type === 'page');
 
+  const targetName =
+    deviceTarget === 'mobile'
+      ? '모바일 앱'
+      : deviceTarget === 'desktop'
+        ? '데스크톱 웹'
+        : `${PLATFORM_LABEL[brief.platform] ?? '웹'} (모바일 및 데스크톱)`;
+
   const lines = [
-    `${PLATFORM_LABEL[brief.platform] ?? '웹'} 서비스의 화면들을 디자인하려 합니다. 먼저 전체 방향을 잡아 주세요.`,
+    `${targetName} 서비스의 화면들을 디자인하려 합니다. 먼저 전체 방향을 잡아 주세요.`,
     '',
     `서비스: ${brief.title}${brief.oneLiner ? ` — ${brief.oneLiner}` : ''}`,
   ];
@@ -303,14 +315,20 @@ export function systemPrompt(plan: Plan, tool: DesignToolKey): string {
 }
 
 /** 화면별 요청문을 하나의 문서로. 파일로 받아 두고 하나씩 쓰기 좋게. */
-export function handoffDocument(plan: Plan, tool: DesignToolKey): string {
+export function handoffDocument(
+  plan: Plan,
+  tool: DesignToolKey,
+  deviceTarget: TargetDevice = 'both',
+): string {
   const meta = DESIGN_TOOLS.find((t) => t.key === tool);
-  const screens = screenPrompts(plan, tool);
+  const screens = screenPrompts(plan, tool, deviceTarget);
+  const targetLabel = TARGET_DEVICE_LABEL[deviceTarget];
 
   const out = [
-    `# ${plan.brief.title} — 디자인 요청문`,
+    `# ${plan.brief.title} — 디자인 요청문 (${targetLabel})`,
     '',
     `대상 도구: ${meta?.name ?? '디자인 도구'}`,
+    `대상 디바이스: ${targetLabel}`,
     `화면 ${screens.length}개`,
     '',
     '---',
@@ -318,23 +336,51 @@ export function handoffDocument(plan: Plan, tool: DesignToolKey): string {
     '## 0. 먼저 전체 방향 잡기',
     '',
     '```',
-    systemPrompt(plan, tool),
+    systemPrompt(plan, tool, deviceTarget),
     '```',
     '',
   ];
 
-  screens.forEach((screen, index) => {
-    out.push(
-      '---',
-      '',
-      `## ${index + 1}. ${screen.name}${screen.hasWireframe ? '' : ' (와이어프레임 없음)'}`,
-      '',
-      '```',
-      screen.text,
-      '```',
-      '',
-    );
-  });
+  if (deviceTarget === 'both') {
+    // 1. 모바일 버전 섹션
+    out.push('---', '', '## [모바일 버전 요청문]', '');
+    screens.forEach((screen, index) => {
+      out.push(
+        `### ${index + 1}. ${screen.name} (모바일)${screen.hasWireframe ? '' : ' - 와이어프레임 없음'}`,
+        '',
+        '```',
+        screen.mobileText,
+        '```',
+        '',
+      );
+    });
+
+    // 2. 데스크톱 버전 섹션
+    out.push('---', '', '## [데스크톱 버전 요청문]', '');
+    screens.forEach((screen, index) => {
+      out.push(
+        `### ${index + 1}. ${screen.name} (데스크톱)${screen.hasWireframe ? '' : ' - 와이어프레임 없음'}`,
+        '',
+        '```',
+        screen.desktopText,
+        '```',
+        '',
+      );
+    });
+  } else {
+    screens.forEach((screen, index) => {
+      out.push(
+        '---',
+        '',
+        `## ${index + 1}. ${screen.name}${screen.hasWireframe ? '' : ' (와이어프레임 없음)'}`,
+        '',
+        '```',
+        screen.text,
+        '```',
+        '',
+      );
+    });
+  }
 
   return out.join('\n');
 }

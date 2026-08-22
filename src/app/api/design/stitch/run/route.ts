@@ -66,9 +66,13 @@ interface RunBody {
   skill?: string;
   /** 이미 만들어 둔 디자인 시스템. 없으면 첫 요청에서 만든다. */
   designSystemId?: string;
+  /** 디바이스 (MOBILE | DESKTOP) */
+  device?: string;
 }
 
-function deviceOf(plan: Plan, page: IaPage): StitchDevice {
+function deviceOf(plan: Plan, page: IaPage, requested?: string): StitchDevice {
+  if (requested === 'MOBILE' || requested === 'mobile') return 'MOBILE';
+  if (requested === 'DESKTOP' || requested === 'desktop') return 'DESKTOP';
   const wireframe = plan.wireframes?.find((w) => w.pageId === page.id);
   if (wireframe?.device === 'desktop') return 'DESKTOP';
   if (wireframe?.device === 'mobile') return 'MOBILE';
@@ -178,15 +182,16 @@ export async function POST(request: Request) {
      * 붙이는 톤 문장 자리가 그 자리다.
      */
     const guide = skill && !designSystemId ? `\n\n${skill.designMd}` : '';
+    const device = deviceOf(plan, page, body.device);
+    const devOverride = device === 'MOBILE' ? 'mobile' : 'desktop';
     const build = (compact: boolean) => {
-      const one = screenPrompt(plan, page, 'stitch', emphasis, compact);
+      const one = screenPrompt(plan, page, 'stitch', emphasis, compact, devOverride);
       // 짧게 다시 만들 때는 톤 문장도 뺀다 — 이 화면 이야기를 남기는 것이 먼저다.
       return body.first && !compact
-        ? `${systemPrompt(plan, 'stitch')}${guide}\n\n---\n\n${one}`
+        ? `${systemPrompt(plan, 'stitch', devOverride)}${guide}\n\n---\n\n${one}`
         : one;
     };
 
-    const device = deviceOf(plan, page);
     const make = (compact: boolean) =>
       generateScreen(projectId, build(compact), device, modelId, designSystemId, cred, request.signal);
 
