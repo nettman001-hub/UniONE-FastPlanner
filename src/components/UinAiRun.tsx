@@ -244,11 +244,14 @@ export function UinAiRun({ plan }: { plan: Plan }) {
             aria-pressed={skill === 'none'}
             disabled={running}
             onClick={() => setSkill('none')}
-            title="별도 디자인 지침 없이 UniAI에 맡깁니다."
+            title="중립 기본 디자인(무채색 계열)으로 만듭니다."
           >
             안 고름
           </button>
         </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-[var(--fg-subtle)]">
+          고른 디자인의 색·글꼴·간격·모서리가 토큰으로 화면에 반영됩니다.
+        </p>
         {chosenSkill && (
           <div className="mt-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -284,7 +287,9 @@ export function UinAiRun({ plan }: { plan: Plan }) {
           </button>
         ))}
         <span className="text-[11px] text-[var(--fg-subtle)]">
-          {ENGINE_WHAT[engine]} 화면당 {costEach}크레딧입니다.
+          {ENGINE_WHAT[engine]}
+          {engine === 'advanced' ? ' 만든 뒤 디자인을 한 번 더 다듬습니다.' : ''} 화면당{' '}
+          {costEach}크레딧입니다.
         </span>
       </div>
 
