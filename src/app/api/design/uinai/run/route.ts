@@ -17,10 +17,13 @@ import {
   UINAI_SYSTEM_PROMPT,
 } from '@/lib/design/uinai-prompt';
 import { findSkill } from '@/lib/design/skills';
+import { composeScreenCss } from '@/lib/design/uniai-tokens';
+import { UINAI_HARD_RULES, UINAI_SOFT_RULES } from '@/lib/design/uniai-style';
 import {
   normalizeUinAiJavaScript,
   sanitizeUinAiCss,
   sanitizeUinAiHtml,
+  UINAI_FILE_CHAR_LIMIT,
   uinAiSourceSignature,
 } from '@/lib/design/uinai';
 import {
@@ -115,6 +118,72 @@ function notesOf(value: unknown): string[] {
     .map((item) => item.trim().slice(0, 1_000))
     .filter(Boolean)
     .slice(0, 8);
+}
+
+/**
+ * 고급 엔진 정제 패스 — "비평 → 재작성".
+ *
+ * 비평 없이 "더 예쁘게"만 시키면 거의 달라지지 않는다(무방향 재시도는 효과가
+ * 1.5% 수준). 그래서 디자인 리뷰어 역할로 먼저 비평 기준을 주고, 그 기준으로
+ * 개선한 CSS 전문만 받는다. 실패해도 1차 결과를 쓴다 — 정제는 베스트에포트.
+ */
+const UINAI_REFINE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    css: {
+      type: 'string',
+      description: '비평을 반영해 개선한 CSS 전문. 기존 선택자를 보존한다.',
+    },
+  },
+  required: ['css'],
+} as const;
+
+async function refineCss(options: {
+  html: string;
+  css: string;
+  aiRuntime: Awaited<ReturnType<typeof readAiRuntime>>;
+  engine: EngineTier;
+  signal: AbortSignal;
+}): Promise<string | null> {
+  const provider = resolveProvider(options.engine, options.aiRuntime.config, options.aiRuntime.apiKey);
+  const prompt = [
+    '당신은 시니어 디자인 리뷰어입니다. 아래 HTML과 CSS를 비평하고, 비평을 반영해 개선한 CSS 전문만 반환하세요.',
+    '',
+    UINAI_HARD_RULES,
+    '',
+    UINAI_SOFT_RULES,
+    '',
+    '비평 항목: 색 일관성 · 타입 위계 · 간격 리듬 · hover/focus/disabled/empty 상태 커버리지 · 모바일/데스크톱 반응형.',
+    '기존 CSS의 모든 선택자를 보존하되 문제가 있는 규칙만 고치거나 덧붙입니다. var(--*) 참조는 그대로 유지합니다.',
+    '',
+    '## HTML',
+    options.html,
+    '',
+    '## CSS',
+    options.css,
+    '',
+    '응답: {"css": "개선한 CSS 전문"}',
+  ].join('\n');
+
+  const raw = await generateJson<{ css?: unknown }>({
+    system: '당신은 디자인 토큰 시스템을 정확히 지키는 프론트엔드 디자인 리뷰어입니다.',
+    prompt,
+    schema: UINAI_REFINE_SCHEMA,
+    maxTokens: maxTokensFor('wireframe', provider.maxOutputTokens),
+    engine: options.engine,
+    effort: 'high',
+    config: options.aiRuntime.config,
+    apiKey: options.aiRuntime.apiKey,
+    signal: options.signal,
+    retryFormat: false,
+  });
+  if (typeof raw.css !== 'string' || !raw.css.trim()) return null;
+  try {
+    return normalizedCss(raw.css) || null;
+  } catch {
+    return null;
+  }
 }
 
 function emphasisOf(value: unknown): UinAiScreen['emphasis'] {
@@ -344,13 +413,41 @@ export async function POST(request: Request) {
     }
     if (!draft || !html) throw new AiError('format', 'UniAI 코드가 비어 있음');
 
+    // 고급 엔진은 만든 뒤 디자인 리뷰어가 한 번 더 다듬는다. 실패해도 1차 결과 유지.
+    if (engine === 'advanced') {
+      try {
+        const refined = await refineCss({
+          html,
+          css,
+          aiRuntime,
+          engine,
+          signal: generationSignal,
+        });
+        if (refined) css = refined;
+      } catch (error) {
+        console.warn(
+          '[uinai] 정제 패스를 건너뛰고 1차 결과를 유지합니다:',
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    // 토큰 블록은 서버가 직접 심는다 — 모델 CSS 는 var() 참조만 하면 된다.
+    // 정제를 거친 CSS 도 반드시 이 출구를 지나야 토큰 블록이 유지된다.
+    const composedCss = css ? composeScreenCss(skill, css) : '';
+    if (composedCss.length > UINAI_FILE_CHAR_LIMIT) {
+      throw new AiError('too-long', '토큰을 포함한 CSS가 길이 한도를 넘습니다.');
+    }
+
     const filePart = safeFilePart(page.id);
     const basePath = `screens/${filePart}`;
     const wireframe = plan.wireframes.find((item) => item.pageId === page.id);
     const files: UinAiScreen['files'] = [
       { path: `${basePath}/index.html`, language: 'html', content: html },
     ];
-    if (css) files.push({ path: `${basePath}/styles.css`, language: 'css', content: css });
+    if (composedCss) {
+      files.push({ path: `${basePath}/styles.css`, language: 'css', content: composedCss });
+    }
     if (javascript) files.push({ path: `${basePath}/app.js`, language: 'js', content: javascript });
     const screen: UinAiScreen = {
       id: `uinai-${requestId}`,
