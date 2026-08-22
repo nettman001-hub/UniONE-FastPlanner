@@ -30,9 +30,11 @@ import { Spinner, useToast } from './ui';
 import { DESIGN_SKILLS, findSkill, skillSummary } from '@/lib/design/skills';
 import {
   forgetProject,
+  getStitchOptions,
   projectUrlOf,
   reset as resetRun,
   restore,
+  setStitchOptions,
   snapshot,
   start,
   stop as stopRun,
@@ -92,16 +94,17 @@ export function StitchRun({ plan }: { plan: Plan }) {
   /* 연결은 설정 화면과 같은 것을 쓴다 — 계정에 하나뿐인 상태라 두 벌로 두면 어긋난다. */
   const { status, secret, setSecret, saving, connect, disconnect, error, markDisconnected } =
     useStitchConnection();
+  const initialOpts = useMemo(() => getStitchOptions(plan.id), [plan.id]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** 고를 수 있는 모델. 스티치에서 받아 온다. */
   const [models, setModels] = useState<Model[]>([]);
-  const [modelId, setModelId] = useState('');
+  const [modelId, setModelId] = useState(initialOpts?.modelId ?? '');
   /** 와이어프레임을 얼마나 그대로 지킬지. */
-  const [emphasis, setEmphasis] = useState<Emphasis>('strict');
+  const [emphasis, setEmphasis] = useState<Emphasis>((initialOpts?.emphasis as Emphasis) ?? 'strict');
   /** 고른 디자인 스킬 — 서비스 전체의 결을 정한다. */
-  const [skill, setSkill] = useState('clean');
+  const [skill, setSkill] = useState(initialOpts?.skill ?? 'clean');
   /** 디바이스 모드: 모바일 / 데스크톱 / 둘 다 */
-  const [device, setDevice] = useState<TargetDevice>('both');
+  const [device, setDevice] = useState<TargetDevice>((initialOpts?.device as TargetDevice) ?? 'both');
   const [skillOpen, setSkillOpen] = useState(false);
   /** `키 받는 법` 말풍선이 떠 있는가. 눌러서 열고 눌러서 닫는다. */
   const [keyHelp, setKeyHelp] = useState(false);
@@ -130,25 +133,66 @@ export function StitchRun({ plan }: { plan: Plan }) {
   /** 지난번까지 스티치에 이미 만들어 둔 화면들. */
   const made = useMemo(() => new Set(Object.keys(project?.screens ?? {})), [project]);
 
-  /*
-   * 처음 열 때 미리 골라 둔다 — 그림이 있고 **아직 안 만든** 화면들.
-   *
-   * 이미 만든 것까지 골라 두면, 다시 들어온 사람이 그대로 눌러 같은 화면을 또
-   * 만든다. 사용량이 두 배로 나가고 스티치에는 같은 화면이 두 벌 쌓인다.
-   * 다시 만들고 싶으면 직접 체크하거나 `전체 선택` 을 누르면 된다.
-   *
-   * 저장해 둔 것을 다 읽기 전에는 무엇을 만들었는지 모른다. 그래서 기다린다.
-   */
+  const initializedPicked = useRef(false);
   useEffect(() => {
-    if (!restored) return;
+    if (!restored || initializedPicked.current) return;
+    initializedPicked.current = true;
+    const rememberedPageIds = initialOpts?.pageIds;
+    if (rememberedPageIds && rememberedPageIds.length > 0) {
+      setPicked(new Set(rememberedPageIds));
+      return;
+    }
+    const defaultPicks = pages
+      .filter((p) => withWireframe.has(p.id) && !made.has(p.id))
+      .map((p) => p.id);
+    setPicked(new Set(defaultPicks.length > 0 ? defaultPicks : pages.map((p) => p.id)));
+  }, [initialOpts?.pageIds, made, pages, restored, withWireframe]);
+
+  // 세션의 실행 옵션이 변경되거나 복원되면 화면에 반영
+  useEffect(() => {
+    if (!session.options) return;
+    if (session.options.modelId) setModelId(session.options.modelId);
+    if (session.options.emphasis) setEmphasis(session.options.emphasis as Emphasis);
+    if (session.options.skill) setSkill(session.options.skill);
+    if (session.options.device) setDevice(session.options.device as TargetDevice);
+  }, [session.options]);
+
+  const updateModel = (id: string) => {
+    setModelId(id);
+    setStitchOptions(plan.id, { modelId: id });
+  };
+  const updateEmphasis = (e: Emphasis) => {
+    setEmphasis(e);
+    setStitchOptions(plan.id, { emphasis: e });
+  };
+  const updateSkill = (s: string) => {
+    setSkill(s);
+    setStitchOptions(plan.id, { skill: s });
+  };
+  const updateDevice = (d: TargetDevice) => {
+    setDevice(d);
+    setStitchOptions(plan.id, { device: d });
+  };
+
+  const toggle = (id: string) =>
     setPicked((prev) => {
-      if (prev.size > 0) return prev;
-      const next = new Set(
-        pages.filter((p) => withWireframe.has(p.id) && !made.has(p.id)).map((p) => p.id),
-      );
-      return next.size > 0 ? next : prev;
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      setStitchOptions(plan.id, { pageIds: [...next] });
+      return next;
     });
-  }, [pages, withWireframe, made, restored]);
+
+  const pickAll = () => {
+    const all = new Set(pages.map((p) => p.id));
+    setPicked(all);
+    setStitchOptions(plan.id, { pageIds: [...all] });
+  };
+
+  const unpickAll = () => {
+    setPicked(new Set());
+    setStitchOptions(plan.id, { pageIds: [] });
+  };
 
   /* 고를 수 있는 모델은 스티치에서 받아 온다 — 저쪽이 새 모델을 내면 바로 나온다. */
   useEffect(() => {
@@ -250,14 +294,6 @@ export function StitchRun({ plan }: { plan: Plan }) {
     toast('멈췄습니다. 그때까지 만들어진 화면은 스티치에 남아 있습니다.', 'warn');
   }, [plan.id, toast]);
 
-  const toggle = (id: string) =>
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   if (pages.length === 0) return null;
 
   /* ---------------------------------------------------------------- */
@@ -336,14 +372,13 @@ export function StitchRun({ plan }: { plan: Plan }) {
   }
 
   const picks = pages.filter((p) => picked.has(p.id));
+  const devMultiplier = device === 'both' ? 2 : 1;
 
   /** 대략 얼마나 걸릴지. 정확할 필요는 없고, 20분짜리인지 알면 된다. */
   const estimate = (() => {
-    const mins = Math.round((picks.length * SECONDS_EACH) / 60);
+    const mins = Math.round((picks.length * devMultiplier * SECONDS_EACH) / 60);
     return mins < 1 ? '1분 미만' : `${mins}분`;
   })();
-
-  const pickAll = () => setPicked(new Set(pages.map((p) => p.id)));
 
   const picked_skill = findSkill(skill);
 
@@ -399,17 +434,13 @@ export function StitchRun({ plan }: { plan: Plan }) {
         <button className="btn btn-sm" disabled={running} onClick={pickAll}>
           전체 선택
         </button>
-        <button className="btn btn-sm" disabled={running} onClick={() => setPicked(new Set())}>
+        <button className="btn btn-sm" disabled={running} onClick={unpickAll}>
           선택 해제
         </button>
       </div>
 
       {/*
         디자인 스킬 — 서비스 전체의 결.
-
-        결을 안 정하면 화면마다 색·글꼴·모서리가 제각각으로 나온다. 그렇다고
-        매번 글로 쓰라고 하면 기획자는 무엇을 써야 할지 모른다 — 그건 디자이너의
-        언어다. 그래서 자주 쓰는 결을 미리 만들어 두고 고르기만 하게 한다.
       */}
       <div className="mt-2">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -419,7 +450,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
               key={s.key}
               className={skill === s.key ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
               disabled={running}
-              onClick={() => setSkill(s.key)}
+              onClick={() => updateSkill(s.key)}
               title={s.what}
             >
               <span
@@ -432,7 +463,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
           <button
             className={skill === 'none' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
             disabled={running}
-            onClick={() => setSkill('none')}
+            onClick={() => updateSkill('none')}
             title="결을 정하지 않고 스티치에 맡깁니다."
           >
             안 고름
@@ -464,8 +495,6 @@ export function StitchRun({ plan }: { plan: Plan }) {
 
       {/*
         모델 고르기.
-        목록은 스티치에서 받아 온다 — 저쪽이 새 모델을 내면 코드를 안 고쳐도 나온다.
-        처음에는 가벼운 쪽이다. 화면을 여러 개 만들 때는 무거운 쪽 횟수가 먼저 바닥난다.
       */}
       {models.length > 1 && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -475,7 +504,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
               key={m.id}
               className={modelId === m.id ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
               disabled={running}
-              onClick={() => setModelId(m.id)}
+              onClick={() => updateModel(m.id)}
             >
               {m.label}
             </button>
@@ -498,7 +527,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
           className={device === 'mobile' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
           aria-pressed={device === 'mobile'}
           disabled={running}
-          onClick={() => setDevice('mobile')}
+          onClick={() => updateDevice('mobile')}
         >
           <Smartphone size={12} />
           모바일
@@ -508,7 +537,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
           className={device === 'desktop' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
           aria-pressed={device === 'desktop'}
           disabled={running}
-          onClick={() => setDevice('desktop')}
+          onClick={() => updateDevice('desktop')}
         >
           <Monitor size={12} />
           데스크톱
@@ -518,7 +547,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
           className={device === 'both' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
           aria-pressed={device === 'both'}
           disabled={running}
-          onClick={() => setDevice('both')}
+          onClick={() => updateDevice('both')}
         >
           <SmartphoneNfc size={12} />
           모바일 + 데스크톱 둘 다
@@ -541,7 +570,7 @@ export function StitchRun({ plan }: { plan: Plan }) {
             key={e.key}
             className={emphasis === e.key ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
             disabled={running}
-            onClick={() => setEmphasis(e.key)}
+            onClick={() => updateEmphasis(e.key)}
           >
             {e.name}
           </button>

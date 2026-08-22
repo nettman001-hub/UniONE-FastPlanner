@@ -15,16 +15,24 @@ export type UinAiScreenState =
   | { state: 'done'; url: string }
   | { state: 'failed'; message: string };
 
+export interface UinAiRunOptions {
+  engine: 'basic' | 'advanced';
+  emphasis: 'strict' | 'balanced' | 'free';
+  skill: string;
+  device: 'mobile' | 'desktop' | 'both';
+  pageIds?: string[];
+}
+
 export interface UinAiRunSession {
   running: boolean;
   stopRequested: boolean;
   progress: Record<string, UinAiScreenState>;
   currentPageIds: string[];
-  options: Pick<StartUinAiOptions, 'engine' | 'emphasis' | 'skill' | 'device'> | null;
+  options: UinAiRunOptions | null;
   summary: { text: string; tone: 'ok' | 'warn'; at: number } | null;
 }
 
-const EMPTY_SESSION: UinAiRunSession = {
+export const EMPTY_SESSION: UinAiRunSession = {
   running: false,
   stopRequested: false,
   progress: {},
@@ -37,6 +45,23 @@ const sessions = new Map<string, UinAiRunSession>();
 const controllers = new Map<string, AbortController>();
 const listeners = new Map<string, Set<() => void>>();
 const everyone = new Set<() => void>();
+const rememberedUinAiOptions = new Map<string, UinAiRunOptions>();
+
+export function getUinAiOptions(planId: string): UinAiRunOptions | null {
+  return rememberedUinAiOptions.get(planId) ?? get(planId).options ?? null;
+}
+
+export function setUinAiOptions(planId: string, options: Partial<UinAiRunOptions>): void {
+  const current = getUinAiOptions(planId) ?? {
+    engine: 'basic',
+    emphasis: 'strict',
+    skill: 'clean',
+    device: 'both',
+  };
+  const updated: UinAiRunOptions = { ...current, ...options };
+  rememberedUinAiOptions.set(planId, updated);
+  patch(planId, { options: updated });
+}
 
 function get(planId: string): UinAiRunSession {
   return sessions.get(planId) ?? EMPTY_SESSION;
@@ -136,16 +161,20 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
         ? ['mobile']
         : ['desktop'];
 
+  const opts: UinAiRunOptions = {
+    engine: options.engine,
+    emphasis: options.emphasis,
+    skill: options.skill,
+    device: options.device ?? 'both',
+    pageIds: options.pageIds,
+  };
+  rememberedUinAiOptions.set(planId, opts);
+
   patch(planId, {
     running: true,
     stopRequested: false,
     currentPageIds: options.pageIds,
-    options: {
-      engine: options.engine,
-      emphasis: options.emphasis,
-      skill: options.skill,
-      device: options.device ?? 'both',
-    },
+    options: opts,
     summary: null,
     progress: {
       ...get(planId).progress,

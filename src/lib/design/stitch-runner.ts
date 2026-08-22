@@ -96,10 +96,19 @@ export function projectUrlOf(projectId: string): string {
 /* 상태                                                                 */
 /* ------------------------------------------------------------------ */
 
+export interface RunSessionOptions {
+  modelId: string;
+  emphasis: string;
+  skill: string;
+  device: 'mobile' | 'desktop' | 'both';
+  pageIds?: string[];
+}
+
 export interface RunSession {
   running: boolean;
   progress: Record<string, ScreenState>;
   project: Remembered | null;
+  options: RunSessionOptions | null;
   /**
    * 끝난 뒤 한 줄.
    *
@@ -122,6 +131,7 @@ export const EMPTY_SESSION: RunSession = {
   running: false,
   progress: {},
   project: null,
+  options: null,
   summary: null,
   disconnected: false,
   restored: false,
@@ -130,6 +140,23 @@ export const EMPTY_SESSION: RunSession = {
 const sessions = new Map<string, RunSession>();
 const controllers = new Map<string, AbortController>();
 const listeners = new Map<string, Set<() => void>>();
+const rememberedOptions = new Map<string, RunSessionOptions>();
+
+export function getStitchOptions(planId: string): RunSessionOptions | null {
+  return rememberedOptions.get(planId) ?? get(planId).options ?? null;
+}
+
+export function setStitchOptions(planId: string, options: Partial<RunSessionOptions>): void {
+  const current = getStitchOptions(planId) ?? {
+    modelId: '',
+    emphasis: 'strict',
+    skill: 'clean',
+    device: 'both',
+  };
+  const updated: RunSessionOptions = { ...current, ...options };
+  rememberedOptions.set(planId, updated);
+  patch(planId, { options: updated });
+}
 
 function get(planId: string): RunSession {
   return sessions.get(planId) ?? EMPTY_SESSION;
@@ -320,10 +347,20 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
   controllers.set(planId, controller);
   guardUnload(true);
 
+  const opts: RunSessionOptions = {
+    modelId,
+    emphasis,
+    skill,
+    device,
+    pageIds,
+  };
+  rememberedOptions.set(planId, opts);
+
   patch(planId, {
     running: true,
     disconnected: false,
     summary: null,
+    options: opts,
     progress: {
       ...get(planId).progress,
       ...Object.fromEntries(pageIds.map((id) => [id, { state: 'waiting' } as ScreenState])),

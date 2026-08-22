@@ -21,6 +21,8 @@ import { ENGINE_LABEL, ENGINE_TIERS, ENGINE_WHAT, type EngineTier } from '@/lib/
 import { costWithEngine } from '@/lib/credits';
 import { DESIGN_SKILLS, findSkill, skillSummary } from '@/lib/design/skills';
 import {
+  getUinAiOptions,
+  setUinAiOptions,
   startUinAi,
   stopUinAi,
   subscribeUinAi,
@@ -49,11 +51,12 @@ const EMPHASIS_UI: Array<{ key: PromptEmphasis; name: string; what: string }> = 
 export function UinAiRun({ plan }: { plan: Plan }) {
   const toast = useToast();
   const { remaining: credits } = useCredits();
+  const initialOpts = useMemo(() => getUinAiOptions(plan.id), [plan.id]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [engine, setEngine] = useState<EngineTier>('basic');
-  const [emphasis, setEmphasis] = useState<PromptEmphasis>('strict');
-  const [skill, setSkill] = useState('clean');
-  const [device, setDevice] = useState<TargetDevice>('both');
+  const [engine, setEngine] = useState<EngineTier>(initialOpts?.engine ?? 'basic');
+  const [emphasis, setEmphasis] = useState<PromptEmphasis>(initialOpts?.emphasis ?? 'strict');
+  const [skill, setSkill] = useState(initialOpts?.skill ?? 'clean');
+  const [device, setDevice] = useState<TargetDevice>(initialOpts?.device ?? 'both');
   const [skillOpen, setSkillOpen] = useState(false);
 
   const session = useSyncExternalStore(
@@ -74,38 +77,66 @@ export function UinAiRun({ plan }: { plan: Plan }) {
   );
   const made = useMemo(() => new Set(generated.keys()), [generated]);
 
-  const initializedFor = useRef<string | null>(null);
+  const initializedPicked = useRef(false);
   useEffect(() => {
-    if (initializedFor.current === plan.id) return;
-    initializedFor.current = plan.id;
-    setPicked(
-      new Set(
-        pages
-          .filter((page) => withWireframe.has(page.id) && !made.has(page.id))
-          .map((page) => page.id),
-      ),
-    );
-  }, [made, pages, plan.id, withWireframe]);
-
-  // 내보내기를 떠났다가 돌아와도 실제로 실행 중인 옵션을 그대로 보여 준다.
-  useEffect(() => {
-    if (!running || !session.options) return;
-    setEngine(session.options.engine);
-    setEmphasis(session.options.emphasis);
-    setSkill(session.options.skill);
-    if (session.options.device) setDevice(session.options.device);
-  }, [running, session.options]);
-
-  const wasRunning = useRef(false);
-  useEffect(() => {
-    if (wasRunning.current && !running) {
-      const completed = new Set(
-        session.currentPageIds.filter((pageId) => progress[pageId]?.state === 'done'),
-      );
-      setPicked((previous) => new Set([...previous].filter((pageId) => !completed.has(pageId))));
+    if (initializedPicked.current) return;
+    initializedPicked.current = true;
+    const rememberedPageIds = initialOpts?.pageIds;
+    if (rememberedPageIds && rememberedPageIds.length > 0) {
+      setPicked(new Set(rememberedPageIds));
+      return;
     }
-    wasRunning.current = running;
-  }, [progress, running, session.currentPageIds]);
+    const defaultPicks = pages
+      .filter((page) => withWireframe.has(page.id) && !made.has(page.id))
+      .map((page) => page.id);
+    setPicked(new Set(defaultPicks.length > 0 ? defaultPicks : pages.map((page) => page.id)));
+  }, [initialOpts?.pageIds, made, pages, withWireframe]);
+
+  // 세션의 실행 옵션이 변경되거나 복원되면 화면에 반영
+  useEffect(() => {
+    if (!session.options) return;
+    if (session.options.engine) setEngine(session.options.engine);
+    if (session.options.emphasis) setEmphasis(session.options.emphasis);
+    if (session.options.skill) setSkill(session.options.skill);
+    if (session.options.device) setDevice(session.options.device);
+  }, [session.options]);
+
+  const updateEngine = (nextEngine: EngineTier) => {
+    setEngine(nextEngine);
+    setUinAiOptions(plan.id, { engine: nextEngine });
+  };
+  const updateEmphasis = (nextEmphasis: PromptEmphasis) => {
+    setEmphasis(nextEmphasis);
+    setUinAiOptions(plan.id, { emphasis: nextEmphasis });
+  };
+  const updateSkill = (nextSkill: string) => {
+    setSkill(nextSkill);
+    setUinAiOptions(plan.id, { skill: nextSkill });
+  };
+  const updateDevice = (nextDevice: TargetDevice) => {
+    setDevice(nextDevice);
+    setUinAiOptions(plan.id, { device: nextDevice });
+  };
+
+  const toggle = (pageId: string) =>
+    setPicked((previous) => {
+      const next = new Set(previous);
+      if (next.has(pageId)) next.delete(pageId);
+      else next.add(pageId);
+      setUinAiOptions(plan.id, { pageIds: [...next] });
+      return next;
+    });
+
+  const pickAll = () => {
+    const all = new Set(pages.map((p) => p.id));
+    setPicked(all);
+    setUinAiOptions(plan.id, { pageIds: [...all] });
+  };
+
+  const unpickAll = () => {
+    setPicked(new Set());
+    setUinAiOptions(plan.id, { pageIds: [] });
+  };
 
   const seenSummary = useRef<number | null>(null);
   useEffect(() => {
@@ -134,13 +165,6 @@ export function UinAiRun({ plan }: { plan: Plan }) {
     [plan.uinAiScreens],
   );
 
-  const toggle = (pageId: string) =>
-    setPicked((previous) => {
-      const next = new Set(previous);
-      if (next.has(pageId)) next.delete(pageId);
-      else next.add(pageId);
-      return next;
-    });
 
   const run = useCallback(() => {
     const pageIds = pages.filter((page) => picked.has(page.id)).map((page) => page.id);
@@ -219,10 +243,10 @@ export function UinAiRun({ plan }: { plan: Plan }) {
           만들 화면을 고르세요. {picks.length > 0 && <>고른 {picks.length}개에 약 {estimate}, <b>{totalCost}크레딧</b>이 듭니다.</>}
           {made.size > 0 && <> 이미 만든 화면 <b>{made.size}개</b>는 빼 두었습니다.</>}
         </p>
-        <button className="btn btn-sm" disabled={running} onClick={() => setPicked(new Set(pages.map((page) => page.id)))}>
+        <button className="btn btn-sm" disabled={running} onClick={pickAll}>
           전체 선택
         </button>
-        <button className="btn btn-sm" disabled={running} onClick={() => setPicked(new Set())}>
+        <button className="btn btn-sm" disabled={running} onClick={unpickAll}>
           선택 해제
         </button>
       </div>
@@ -236,7 +260,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
               className={skill === item.key ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
               aria-pressed={skill === item.key}
               disabled={running}
-              onClick={() => setSkill(item.key)}
+              onClick={() => updateSkill(item.key)}
               title={item.what}
             >
               <span
@@ -250,7 +274,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
             className={skill === 'none' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
             aria-pressed={skill === 'none'}
             disabled={running}
-            onClick={() => setSkill('none')}
+            onClick={() => updateSkill('none')}
             title="중립 기본 디자인(무채색 계열)으로 만듭니다."
           >
             안 고름
@@ -288,7 +312,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
             className={engine === tier ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
             aria-pressed={engine === tier}
             disabled={running}
-            onClick={() => setEngine(tier)}
+            onClick={() => updateEngine(tier)}
           >
             {ENGINE_LABEL[tier]}
           </button>
@@ -307,7 +331,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
           className={device === 'mobile' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
           aria-pressed={device === 'mobile'}
           disabled={running}
-          onClick={() => setDevice('mobile')}
+          onClick={() => updateDevice('mobile')}
         >
           <Smartphone size={12} />
           모바일
@@ -317,7 +341,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
           className={device === 'desktop' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
           aria-pressed={device === 'desktop'}
           disabled={running}
-          onClick={() => setDevice('desktop')}
+          onClick={() => updateDevice('desktop')}
         >
           <Monitor size={12} />
           데스크톱
@@ -327,7 +351,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
           className={device === 'both' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
           aria-pressed={device === 'both'}
           disabled={running}
-          onClick={() => setDevice('both')}
+          onClick={() => updateDevice('both')}
         >
           <SmartphoneNfc size={12} />
           모바일 + 데스크톱 둘 다
@@ -347,7 +371,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
             className={emphasis === item.key ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
             aria-pressed={emphasis === item.key}
             disabled={running}
-            onClick={() => setEmphasis(item.key)}
+            onClick={() => updateEmphasis(item.key)}
           >
             {item.name}
           </button>
