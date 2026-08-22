@@ -107,6 +107,7 @@ export interface RunSessionOptions {
 export interface RunSession {
   running: boolean;
   progress: Record<string, ScreenState>;
+  currentPageIds: string[];
   project: Remembered | null;
   options: RunSessionOptions | null;
   /**
@@ -130,6 +131,7 @@ export interface RunSession {
 export const EMPTY_SESSION: RunSession = {
   running: false,
   progress: {},
+  currentPageIds: [],
   project: null,
   options: null,
   summary: null,
@@ -196,12 +198,15 @@ let runningCache: StitchJob[] = [];
 function recount(): void {
   const next: StitchJob[] = [];
   for (const [planId, s] of sessions) {
-    if (!s.running) continue;
-    const states = Object.values(s.progress);
+    if (!s.running || s.currentPageIds.length === 0) continue;
+    const doneCount = s.currentPageIds.filter((id) => {
+      const state = s.progress[id];
+      return state?.state === 'done' || state?.state === 'failed';
+    }).length;
     next.push({
       planId,
-      done: states.filter((v) => v.state === 'done' || v.state === 'failed').length,
-      total: states.length,
+      done: doneCount,
+      total: s.currentPageIds.length,
     });
   }
   runningCache = next;
@@ -359,6 +364,7 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
   patch(planId, {
     running: true,
     disconnected: false,
+    currentPageIds: pageIds,
     summary: null,
     options: opts,
     progress: {
