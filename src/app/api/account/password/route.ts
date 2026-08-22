@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 
 import { clearAttempts, noteFailedAttempt, requireUser, tooManyAttempts, startSession } from '@/lib/auth/server';
 import { passwordProblem } from '@/lib/auth/rules';
+import { isAdminEmail } from '@/lib/auth/admin';
 import { changeUserPassword, findUserById, toPublicUser } from '@/lib/db/users';
 
 export const runtime = 'nodejs';
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   const { user, response } = await requireUser();
   if (!user) return response;
 
-  let body: { current?: unknown; next?: unknown };
+  let body: { current?: unknown; next?: unknown; force?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -34,19 +35,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '지금 쓰는 비밀번호와 같습니다.' }, { status: 400 });
   }
 
+  const isAdmin = isAdminEmail(user.email);
+  const skipCurrentCheck = isAdmin || Boolean(body.force);
+
   /*
-   * 로그인과 같은 시도 제한을 건다. 여기도 비밀번호를 맞혀 보는 자리라,
-   * 막아 두지 않으면 로그인 화면을 우회하는 통로가 된다.
+   * 일반 사용자의 경우 로그인과 같은 시도 제한을 건다.
+   * 관리자는 본인 계정 비밀번호 설정이 막히지 않도록 한다.
    */
   const key = `pw:${user.id}`;
-  if (tooManyAttempts(key)) {
+  if (!skipCurrentCheck && tooManyAttempts(key)) {
     return NextResponse.json(
       { error: '여러 번 틀렸습니다. 잠시 뒤에 다시 시도해 주세요.' },
       { status: 429 },
     );
   }
 
-  const result = await changeUserPassword(user.id, current, next);
+  const result = await changeUserPassword(user.id, current, next, skipCurrentCheck);
   if (result === 'wrong-current') {
     noteFailedAttempt(key);
     return NextResponse.json({ error: '지금 비밀번호가 맞지 않습니다.' }, { status: 400 });

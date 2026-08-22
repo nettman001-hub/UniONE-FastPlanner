@@ -98,20 +98,24 @@ export async function updateUserName(id: string, name: string): Promise<UserRow 
 /**
  * 비밀번호 바꾸기.
  *
- * **기존 비밀번호가 있을 때만 현재 비밀번호를 확인한다.**
- * 비밀번호 없이(소셜/초기화 등) 등록된 계정은 새 비밀번호를 바로 설정할 수 있다.
+ * 기존 비밀번호가 있고 skipCurrentCheck 가 false 일 때만 현재 비밀번호를 확인한다.
+ * 관리자이거나 비밀번호가 없는 계정은 새 비밀번호를 바로 설정할 수 있다.
  */
 export async function changeUserPassword(
   id: string,
   current: string,
   next: string,
+  skipCurrentCheck = false,
 ): Promise<'ok' | 'wrong-current' | 'no-user'> {
   const user = await findUserById(id);
   if (!user) return 'no-user';
 
-  // 기존 비밀번호가 설정되어 있는 경우에만 현재 비밀번호 검증
-  if (user.password_hash) {
+  // 기존 비밀번호가 있고 검증 건너뛰기가 아닐 때만 현재 비밀번호 검증
+  if (user.password_hash && !skipCurrentCheck && current) {
     if (!(await verifyPassword(current, user.password_hash))) return 'wrong-current';
+  } else if (user.password_hash && !skipCurrentCheck && !current) {
+    // current가 비어있고 skipCurrentCheck가 false인 경우
+    return 'wrong-current';
   }
 
   const db = await getDb();

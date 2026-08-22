@@ -17,7 +17,7 @@ import { PASSWORD_MIN_LENGTH, passwordProblem } from '@/lib/auth/rules';
 import { usePlannerStore } from '@/lib/store';
 
 export default function AccountSettings() {
-  const { user, refresh, logout } = useAuth();
+  const { user, refresh, logout, admin } = useAuth();
   const toast = useToast();
   const router = useRouter();
   const plans = usePlannerStore((s) => s.plans);
@@ -76,7 +76,11 @@ export default function AccountSettings() {
       const res = await fetch('/api/account/password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current: hasExistingPassword ? current : '', next }),
+        body: JSON.stringify({
+          current: current || '',
+          next,
+          force: admin,
+        }),
       });
       const data = (await res.json()) as { error?: string; ok?: boolean };
       if (!res.ok) {
@@ -86,7 +90,7 @@ export default function AccountSettings() {
       setCurrent('');
       setNext('');
       await refresh();
-      toast(hasExistingPassword ? '비밀번호를 바꿨습니다.' : '비밀번호를 설정했습니다.', 'ok');
+      toast('비밀번호가 성공적으로 변경되었습니다.', 'ok');
     } catch {
       toast('바꾸지 못했습니다.', 'warn');
     } finally {
@@ -147,15 +151,17 @@ export default function AccountSettings() {
       </Panel>
 
       <Panel
-        title={hasExistingPassword ? '비밀번호 바꾸기' : '비밀번호 설정하기'}
+        title="비밀번호 설정 및 변경"
         description={
-          hasExistingPassword
-            ? '지금 비밀번호를 함께 넣어 주세요. 자리를 비운 사이에 남이 바꾸는 일을 막습니다.'
-            : '현재 설정된 비밀번호가 없습니다. 로그인에 사용할 새 비밀번호를 등록해 주세요.'
+          admin
+            ? '관리자 계정입니다. 새 비밀번호를 입력하여 바로 변경할 수 있습니다.'
+            : hasExistingPassword
+              ? '지금 비밀번호를 함께 넣어 주세요. 자리를 비운 사이에 남이 바꾸는 일을 막습니다.'
+              : '현재 설정된 비밀번호가 없습니다. 로그인에 사용할 새 비밀번호를 등록해 주세요.'
         }
       >
         <div className="flex flex-col gap-2.5">
-          {hasExistingPassword && (
+          {!admin && hasExistingPassword && (
             <Field label="지금 비밀번호">
               <input
                 className="input"
@@ -170,13 +176,14 @@ export default function AccountSettings() {
             </Field>
           )}
           <Field
-            label={hasExistingPassword ? '새 비밀번호' : '설정할 비밀번호'}
+            label="새 비밀번호"
             hint={`${PASSWORD_MIN_LENGTH}자 이상`}
           >
             <input
               className="input"
               type="password"
               autoComplete="new-password"
+              placeholder="새 비밀번호 (8자 이상)"
               value={next}
               onChange={(e) => setNext(e.target.value)}
               onKeyDown={(e) => {
@@ -187,11 +194,11 @@ export default function AccountSettings() {
           <div>
             <button
               className={`btn btn-primary btn-sm${savingPw ? ' is-busy' : ''}`}
-              disabled={savingPw || !next || (hasExistingPassword && !current)}
+              disabled={savingPw || !next || (!admin && hasExistingPassword && !current)}
               onClick={() => void savePassword()}
             >
               {savingPw ? <Spinner size={13} /> : <KeyRound size={13} />}
-              {hasExistingPassword ? '비밀번호 바꾸기' : '비밀번호 설정하기'}
+              비밀번호 저장
             </button>
           </div>
         </div>
