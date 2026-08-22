@@ -39,6 +39,55 @@ export async function canAfford(userId: string, amount: number): Promise<boolean
   return (await creditState(userId)).remaining >= amount;
 }
 
+export type CreditReservationResult =
+  | { ok: true; id: string }
+  | { ok: false; reason: 'missing-user' | 'insufficient' };
+
+/**
+ * 공급자 호출 전에 크레딧을 원자적으로 예약한다.
+ *
+ * 사용자 행 잠금 안에서 존재 확인 → 오늘 사용량 확인 → 원장 기록을 한 번에 한다.
+ * 같은 계정의 UinAI 요청 여러 개가 동시에 와도 모두 같은 잔량을 통과할 수 없고,
+ * 삭제된 계정의 오래된 서명 쿠키도 여기서 막힌다.
+ */
+export async function reserveCredits(
+  userId: string,
+  kind: CreditKind,
+  amount: number,
+): Promise<CreditReservationResult> {
+  if (amount <= 0) return { ok: true, id: '0' };
+  const db = await getDb();
+  return db.transaction(async (tx) => {
+    const { rows: users } = await tx.query<{ id: string }>(
+      'select id from users where id = $1 for update',
+      [userId],
+    );
+    if (!users[0]) return { ok: false, reason: 'missing-user' };
+
+    const { rows: totals } = await tx.query<{ used: string | number | null }>(
+      'select coalesce(sum(amount), 0) as used from credit_usage where user_id = $1 and created_at >= $2',
+      [userId, dayStart(dayKey())],
+    );
+    const used = Number(totals[0]?.used ?? 0);
+    if (Math.max(0, DAILY_CREDIT_LIMIT - used) < amount) {
+      return { ok: false, reason: 'insufficient' };
+    }
+
+    const { rows } = await tx.query<{ id: string | number }>(
+      'insert into credit_usage (user_id, kind, amount) values ($1, $2, $3) returning id',
+      [userId, kind, amount],
+    );
+    return { ok: true, id: String(rows[0].id) };
+  });
+}
+
+/** 공급자 호출이나 결과 저장이 실패했을 때 정확히 그 예약만 되돌린다. */
+export async function releaseCreditReservation(userId: string, id: string): Promise<void> {
+  if (id === '0') return;
+  const db = await getDb();
+  await db.query('delete from credit_usage where id = $1 and user_id = $2', [id, userId]);
+}
+
 /**
  * 쓴 것을 적는다.
  *

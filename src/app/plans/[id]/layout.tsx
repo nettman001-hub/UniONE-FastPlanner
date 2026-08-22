@@ -145,7 +145,10 @@ function PlanShell({ children }: { children: ReactNode }) {
         <nav className="no-print hidden w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)] p-3 md:flex">
           {NAV.map((item) => {
             const href = `${base}${item.href}`;
-            const active = item.href === '' ? pathname === base : pathname === href;
+            const active =
+              item.href === ''
+                ? pathname === base
+                : pathname === href || (item.href === '/export' && pathname.startsWith(`${base}/uinboard/`));
             const done =
               item.artifact && plan ? hasArtifact(plan, item.artifact) : undefined;
             return (
@@ -196,7 +199,10 @@ function PlanShell({ children }: { children: ReactNode }) {
         <div className="no-print fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-[var(--border)] bg-[var(--surface)] md:hidden">
           {NAV.map((item) => {
             const href = `${base}${item.href}`;
-            const active = item.href === '' ? pathname === base : pathname === href;
+            const active =
+              item.href === ''
+                ? pathname === base
+                : pathname === href || (item.href === '/export' && pathname.startsWith(`${base}/uinboard/`));
             return (
               <Link
                 key={item.href}

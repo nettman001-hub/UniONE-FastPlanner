@@ -435,6 +435,41 @@ export interface PlanDocuments {
   wireframes: Wireframe[];
 }
 
+/** UinAI 가 만든 파일. 코딩 에이전트 번들에도 같은 모양으로 들어간다. */
+export interface UinAiFile {
+  /** 저장소 루트 기준으로 제안하는 상대 경로. */
+  path: string;
+  language: 'html' | 'tsx' | 'ts' | 'css' | 'json' | 'text';
+  content: string;
+}
+
+/**
+ * UinAI 로 완성한 화면 하나.
+ *
+ * 진행 중·실패 상태는 브라우저 러너가 잠깐 들고, 성공한 최신 결과만 플랜에
+ * 저장한다. 그래야 다른 기기에서도 열리고 에이전트 번들에도 실을 수 있다.
+ */
+export interface UinAiScreen {
+  id: string;
+  pageId: string;
+  wireframeId: string | null;
+  name: string;
+  route: string;
+  device: 'mobile' | 'desktop';
+  engine: 'basic' | 'advanced';
+  emphasis: 'strict' | 'balanced' | 'free';
+  /** 고른 디자인 스킬의 key. `none` 이면 별도 디자인 지침이 없다. */
+  skill: string;
+  generatedAt: string;
+  /** 이 결과를 코딩 에이전트가 처음 읽을 파일. */
+  entryFile: string;
+  files: UinAiFile[];
+  summary: string;
+  implementationNotes: string[];
+  /** 화면·기능·와이어프레임이 바뀐 뒤 낡은 결과인지 알아보는 표식. */
+  sourceSignature: string;
+}
+
 export interface Plan extends PlanDocuments {
   id: string;
   brief: PlanBrief;
@@ -445,6 +480,8 @@ export interface Plan extends PlanDocuments {
   chat: ChatMessage[];
   comments: Comment[];
   versions: PlanVersion[];
+  /** 예전 플랜에는 없으므로 선택 값이다. 페이지마다 최신 결과 하나를 둔다. */
+  uinAiScreens?: UinAiScreen[];
 }
 
 export type ArtifactKey = 'prd' | 'fs' | 'ia' | 'flow' | 'wireframe';
@@ -475,6 +512,9 @@ export const ARTIFACT_CREDIT_COST: Record<ArtifactKey, number> = {
 };
 
 export const CHAT_CREDIT_COST = 1;
+
+/** UinAI 화면 하나를 생성할 때 드는 기본 크레딧. 고급 엔진은 공통 배수를 따른다. */
+export const UINAI_CREDIT_COST = 5;
 
 /**
  * 새 기능을 화면에 배치할 때 드는 크레딧.

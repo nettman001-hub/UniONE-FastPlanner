@@ -23,7 +23,7 @@ import { WIREFRAME_BLOCK_LABEL } from './types';
 /* 도구                                                                 */
 /* ------------------------------------------------------------------ */
 
-export type DesignToolKey = 'stitch' | 'claude' | 'figma' | 'v0' | 'generic';
+export type DesignToolKey = 'stitch' | 'uinai' | 'claude' | 'figma' | 'v0' | 'generic';
 
 export interface DesignTool {
   key: DesignToolKey;
@@ -218,6 +218,12 @@ export function screenPrompt(
 
   if (tool === 'v0') {
     lines.push('', '반응형으로 만들고, 실제로 눌리는 상태(hover·disabled·빈 목록)까지 포함해 주세요.');
+  }
+  if (tool === 'uinai') {
+    lines.push(
+      '',
+      '반응형 단일 화면으로 만들고, 코딩 에이전트가 옮기기 쉬운 의미 있는 요소 이름을 써 주세요.',
+    );
   }
   if (tool === 'figma') {
     lines.push('', '레이어 이름은 위 블록 이름을 그대로 써 주세요.');

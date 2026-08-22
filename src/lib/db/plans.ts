@@ -2,7 +2,8 @@
 
 import { getDb } from './index';
 import { clearPlanSkills } from './skills';
-import type { Plan } from '../types';
+import { normalizeUinAiScreens } from '../design/uinai';
+import type { Plan, UinAiScreen } from '../types';
 
 /** 목록 화면에서 쓰는 요약. 본문 없이 무엇이 언제 바뀌었는지만 본다. */
 export interface PlanSummary {
@@ -29,7 +30,11 @@ function toIso(value: string | Date): string {
  * 열을 보고 이루어지므로 둘이 어긋나면 안 된다.
  */
 function toPlan(row: PlanRow): Plan {
-  return { ...row.data, id: row.id, updatedAt: toIso(row.updated_at) };
+  const plan = { ...row.data, id: row.id, updatedAt: toIso(row.updated_at) };
+  const pageIds = (Array.isArray(plan.iaPages) ? plan.iaPages : [])
+    .filter((page) => page?.type === 'page' && typeof page.id === 'string')
+    .map((page) => page.id);
+  return { ...plan, uinAiScreens: normalizeUinAiScreens(plan.uinAiScreens, pageIds) };
 }
 
 export async function listPlanSummaries(userId: string): Promise<PlanSummary[]> {
@@ -68,19 +73,111 @@ export async function getPlan(userId: string, planId: string): Promise<Plan | nu
  */
 export async function savePlan(userId: string, plan: Plan): Promise<boolean> {
   const db = await getDb();
-  const updatedAt = plan.updatedAt || new Date().toISOString();
-  const { rows } = await db.query<{ id: string }>(
-    `insert into plans (id, user_id, title, data, updated_at)
-     values ($1, $2, $3, $4, $5)
-     on conflict (user_id, id) do update
-       set title = excluded.title,
-           data = excluded.data,
-           updated_at = excluded.updated_at
-     where plans.updated_at <= excluded.updated_at
-     returning id`,
-    [plan.id, userId, plan.brief?.title ?? '', JSON.stringify(plan), updatedAt],
-  );
-  return rows.length > 0;
+  const parsed = Date.parse(plan.updatedAt);
+  const updatedAt = Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
+  return db.transaction(async (tx) => {
+    // 행이 아직 없는 첫 저장도 다른 요청과 한 줄로 세우기 위한 플랜별 잠금.
+    await tx.query('select pg_advisory_xact_lock(hashtext($1))', [`${userId}:${plan.id}`]);
+    const { rows: current } = await tx.query<PlanRow>(
+      'select id, title, data, updated_at from plans where user_id = $1 and id = $2 for update',
+      [userId, plan.id],
+    );
+    if (current[0] && new Date(current[0].updated_at).getTime() > new Date(updatedAt).getTime()) {
+      return false;
+    }
+
+    const validPageIds = (Array.isArray(plan.iaPages) ? plan.iaPages : [])
+      .filter((page) => page?.type === 'page' && typeof page.id === 'string')
+      .map((page) => page.id);
+    const currentPages = new Map(
+      (Array.isArray(current[0]?.data.iaPages) ? current[0].data.iaPages : []).map((page) => [
+        page.id,
+        page,
+      ]),
+    );
+    const nextPages = new Map(
+      (Array.isArray(plan.iaPages) ? plan.iaPages : []).map((page) => [page.id, page]),
+    );
+    const preservedServerScreens = (
+      Array.isArray(current[0]?.data.uinAiScreens) ? current[0].data.uinAiScreens : []
+    ).filter((screen) => {
+      const before = currentPages.get(screen.pageId);
+      const after = nextPages.get(screen.pageId);
+      return (
+        before?.type === 'page' &&
+        after?.type === 'page' &&
+        before.name === after.name &&
+        before.path === after.path &&
+        before.parentId === after.parentId
+      );
+    });
+    // UinAI 결과는 화면별 생성 시각으로 병합한다. 서로 다른 기기에서 만든 화면이
+    // Plan 전체의 updatedAt 경쟁 때문에 통째로 사라지지 않게 한다.
+    const mergedScreens = normalizeUinAiScreens(
+      [
+        ...preservedServerScreens,
+        ...(Array.isArray(plan.uinAiScreens) ? plan.uinAiScreens : []),
+      ],
+      validPageIds,
+    );
+    const next: Plan = { ...plan, updatedAt, uinAiScreens: mergedScreens };
+    await tx.query(
+      `insert into plans (id, user_id, title, data, updated_at)
+       values ($1, $2, $3, $4, $5)
+       on conflict (user_id, id) do update
+         set title = excluded.title,
+             data = excluded.data,
+             updated_at = excluded.updated_at`,
+      [plan.id, userId, plan.brief?.title ?? '', JSON.stringify(next), updatedAt],
+    );
+    return true;
+  });
+}
+
+export type SaveUinAiScreenResult =
+  | { ok: true; updatedAt: string }
+  | { ok: false; reason: 'missing-plan' | 'missing-page' | 'too-large' };
+
+/**
+ * 생성 결과를 응답보다 먼저 서버 플랜에 화면 단위로 합친다.
+ * 브라우저가 닫혀도 다음 로그인에서 결과를 복구할 수 있고, 동시에 만든 다른 화면도 보존된다.
+ */
+export async function saveUinAiScreen(
+  userId: string,
+  planId: string,
+  screen: UinAiScreen,
+): Promise<SaveUinAiScreenResult> {
+  const db = await getDb();
+  return db.transaction(async (tx) => {
+    await tx.query('select pg_advisory_xact_lock(hashtext($1))', [`${userId}:${planId}`]);
+    const { rows } = await tx.query<PlanRow>(
+      'select id, title, data, updated_at from plans where user_id = $1 and id = $2 for update',
+      [userId, planId],
+    );
+    const row = rows[0];
+    if (!row) return { ok: false, reason: 'missing-plan' };
+
+    const validPageIds = (Array.isArray(row.data.iaPages) ? row.data.iaPages : [])
+      .filter((page) => page?.type === 'page' && typeof page.id === 'string')
+      .map((page) => page.id);
+    if (!validPageIds.includes(screen.pageId)) return { ok: false, reason: 'missing-page' };
+
+    const merged = normalizeUinAiScreens(
+      [...(Array.isArray(row.data.uinAiScreens) ? row.data.uinAiScreens : []), screen],
+      validPageIds,
+    );
+    if (!merged.some((item) => item.id === screen.id)) {
+      return { ok: false, reason: 'too-large' };
+    }
+
+    const updatedAt = new Date().toISOString();
+    const next: Plan = { ...row.data, id: planId, updatedAt, uinAiScreens: merged };
+    await tx.query(
+      'update plans set data = $3, updated_at = $4 where user_id = $1 and id = $2',
+      [userId, planId, JSON.stringify(next), updatedAt],
+    );
+    return { ok: true, updatedAt };
+  });
 }
 
 export async function deletePlan(userId: string, planId: string): Promise<boolean> {

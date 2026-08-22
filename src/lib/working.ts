@@ -12,12 +12,13 @@
  * 놓고 홈으로 나갔는데 아무 표시가 없으면, 돌고 있는 줄을 모른다. 모르면 브라우저를
  * 닫고, 닫으면 십오 분이 날아간다.
  *
- * ## 세 군데를 모은다
+ * ## 네 군데를 모은다
  *
  * | 무슨 일 | 어디에 있나 |
  * | --- | --- |
  * | 산출물 생성 | 스토어 `activeRun` (모듈 수준 러너가 갱신) |
  * | 스티치에 만들기 | `stitch-runner` 모듈 |
+ * | UinAI로 만들기 | `uinai-runner` 모듈 |
  * | 에이전트 답변 | 스토어 `agentBusy` |
  *
  * 셋 다 화면 밖에 있어서, 화면이 사라져도 답이 유지된다.
@@ -28,6 +29,11 @@ import { useSyncExternalStore } from 'react';
 import { usePlannerStore } from './store';
 import { currentOf } from './jobs/progress';
 import { noJobs, runningJobs, subscribeAll } from './design/stitch-runner';
+import {
+  noUinAiJobs,
+  runningUinAiJobs,
+  subscribeAllUinAi,
+} from './design/uinai-runner';
 import { ARTIFACT_LABEL, type ArtifactKey } from './types';
 
 const STEP_PATH: Record<ArtifactKey, string> = {
@@ -58,6 +64,7 @@ export function useWorking(): Working[] {
   const activeRun = usePlannerStore((s) => s.activeRun);
   const agentBusy = usePlannerStore((s) => s.agentBusy);
   const stitch = useSyncExternalStore(subscribeAll, runningJobs, noJobs);
+  const uinai = useSyncExternalStore(subscribeAllUinAi, runningUinAiJobs, noUinAiJobs);
 
   const out: Working[] = [];
 
@@ -82,6 +89,15 @@ export function useWorking(): Working[] {
       planId: job.planId,
       what: `스티치에 만드는 중 (${job.done}/${job.total})`,
       href: `/plans/${job.planId}/export`,
+    });
+  }
+
+  for (const job of uinai) {
+    out.push({
+      key: `uinai:${job.planId}`,
+      planId: job.planId,
+      what: `UinAI로 만드는 중 (${job.done}/${job.total})`,
+      href: `/plans/${job.planId}/export?design=uinai`,
     });
   }
 

@@ -10,6 +10,7 @@
  */
 
 import { createEmptyPlan } from './store';
+import { normalizeUinAiScreens } from './design/uinai';
 import { type ArtifactKey, type Plan, type Platform } from './types';
 
 const ARTIFACT_KEYS: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
@@ -70,6 +71,12 @@ export function planFromValue(raw: unknown): Plan | null {
     chat: asArray(value.chat),
     comments: asArray(value.comments),
     versions: asArray(value.versions),
+    uinAiScreens: normalizeUinAiScreens(
+      value.uinAiScreens,
+      asArray<{ id?: unknown; type?: unknown }>(value.iaPages)
+        .filter((page) => page.type === 'page' && typeof page.id === 'string')
+        .map((page) => page.id as string),
+    ),
   };
 }
 

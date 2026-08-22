@@ -303,6 +303,24 @@ async function push(): Promise<void> {
         body: JSON.stringify({ plan }),
       });
       if (!res.ok) throw new Error(await describe(res));
+      const result = (await res.json().catch(() => ({}))) as { applied?: boolean };
+      if (result.applied === false) {
+        // 다른 탭·기기의 서버본이 더 최신이다. 거절된 로컬 시각을 saved로 적으면
+        // 다음 로그인 때 UinAI 결과까지 조용히 사라지므로 즉시 정본을 다시 받는다.
+        const latest = await fetch(`/api/plans/${encodeURIComponent(plan.id)}`, {
+          cache: 'no-store',
+        });
+        if (!latest.ok) throw new Error(await describe(latest));
+        const { plan: serverPlan } = (await latest.json()) as { plan: Plan };
+        const current = usePlannerStore.getState();
+        current.setPlans(
+          current.plans.map((item) => (item.id === plan.id ? serverPlan : item)),
+          owner,
+        );
+        synced.set(plan.id, serverPlan.updatedAt);
+        storeSynced(owner);
+        continue;
+      }
       synced.set(plan.id, plan.updatedAt);
       storeSynced(owner);
     }

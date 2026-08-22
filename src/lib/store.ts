@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nextId, uid } from './ids';
+import { normalizeUinAiScreens } from './design/uinai';
 import type { ActiveRun, InterruptedRun } from './jobs/progress';
 import {
   approveIn,
@@ -29,6 +30,7 @@ import {
   type Requirement,
   type Specification,
   type UserFlow,
+  type UinAiScreen,
   type Wireframe,
 } from './types';
 
@@ -157,6 +159,9 @@ export interface PlannerState {
   updateWireframe: (planId: string, id: string, patch: Partial<Wireframe>) => void;
   removeWireframe: (planId: string, id: string) => void;
 
+  /* UinAI */
+  upsertUinAiScreen: (planId: string, screen: UinAiScreen) => void;
+
   /* AI 에이전트 */
   appendChat: (planId: string, message: Omit<ChatMessage, 'id' | 'createdAt'>) => void;
   clearChat: (planId: string) => void;
@@ -180,6 +185,13 @@ export interface PlannerState {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+function normalizePlanScreens(plan: Plan): Plan {
+  const pageIds = (Array.isArray(plan.iaPages) ? plan.iaPages : [])
+    .filter((page) => page?.type === 'page')
+    .map((page) => page.id);
+  return { ...plan, uinAiScreens: normalizeUinAiScreens(plan.uinAiScreens, pageIds) };
 }
 
 export function createEmptyPlan(brief: PlanBrief): Plan {
@@ -217,6 +229,7 @@ export const usePlannerStore = create<PlannerState>()(
               chat: [...plan.chat],
               comments: [...plan.comments],
               versions: [...plan.versions],
+              uinAiScreens: [...(plan.uinAiScreens ?? [])],
               generated: { ...plan.generated },
             };
             const result = fn(draft) ?? draft;
@@ -239,7 +252,7 @@ export const usePlannerStore = create<PlannerState>()(
 
         setAgentBusy: (planId) => set({ agentBusy: planId }),
 
-        setPlans: (plans, owner) => set({ plans, owner }),
+        setPlans: (plans, owner) => set({ plans: plans.map(normalizePlanScreens), owner }),
 
         createPlan: (brief) => {
           const plan = createEmptyPlan(brief);
@@ -248,7 +261,7 @@ export const usePlannerStore = create<PlannerState>()(
         },
 
         importPlan: (plan) => {
-          const copy: Plan = { ...plan, id: uid('plan'), updatedAt: now() };
+          const copy: Plan = normalizePlanScreens({ ...plan, id: uid('plan'), updatedAt: now() });
           set((state) => ({ plans: [copy, ...state.plans] }));
           return copy.id;
         },
@@ -270,6 +283,9 @@ export const usePlannerStore = create<PlannerState>()(
         applyDocuments: (planId, patch, generated) =>
           mutate(planId, (plan) => {
             Object.assign(plan, patch);
+            // IA 전체 생성은 PG ID를 처음부터 다시 쓰므로 예전 화면을 같은 ID의
+            // 다른 페이지에 잘못 연결하지 않는다.
+            if (patch.iaPages !== undefined) plan.uinAiScreens = [];
             for (const key of generated ?? []) plan.generated[key] = true;
           }),
 
@@ -459,6 +475,7 @@ export const usePlannerStore = create<PlannerState>()(
                 n.pageId && doomed.has(n.pageId) ? { ...n, pageId: null } : n,
               ),
             }));
+            plan.uinAiScreens = (plan.uinAiScreens ?? []).filter((screen) => !doomed.has(screen.pageId));
           }),
 
         moveIaPage: (planId, id, direction) =>
@@ -536,6 +553,18 @@ export const usePlannerStore = create<PlannerState>()(
             plan.wireframes = plan.wireframes.filter((w) => w.id !== id);
           }),
 
+        upsertUinAiScreen: (planId, screen) =>
+          mutate(planId, (plan) => {
+            const pageIds = plan.iaPages
+              .filter((page) => page.type === 'page')
+              .map((page) => page.id);
+            if (!pageIds.includes(screen.pageId)) return;
+            plan.uinAiScreens = normalizeUinAiScreens(
+              [...(plan.uinAiScreens ?? []), screen],
+              pageIds,
+            );
+          }),
+
         appendChat: (planId, message) =>
           mutate(planId, (plan) => {
             plan.chat.push({ ...message, id: uid('msg'), createdAt: now() });
@@ -588,6 +617,8 @@ export const usePlannerStore = create<PlannerState>()(
             const version = plan.versions.find((v) => v.id === versionId);
             if (!version) return;
             Object.assign(plan, structuredClone(version.snapshot));
+            // 복원된 IA가 같은 PG ID를 다른 화면에 쓸 수 있어 결과도 함께 비운다.
+            plan.uinAiScreens = [];
           }),
 
         removeVersion: (planId, versionId) =>

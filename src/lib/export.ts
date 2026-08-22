@@ -12,6 +12,11 @@ import {
   type Plan,
 } from './types';
 import { hasArtifact } from './artifact-status';
+import {
+  normalizeUinAiScreens,
+  UINAI_AGENT_PROMPT,
+  uinAiSourceSignature,
+} from './design/uinai';
 
 /* ------------------------------------------------------------------ */
 /* 공통                                                                 */
@@ -374,10 +379,13 @@ export function toJson(plan: Plan): string {
 export function toAgentBundle(plan: Plan): string {
   const featureById = new Map(plan.features.map((f) => [f.id, f]));
   const pageById = new Map(plan.iaPages.map((p) => [p.id, p]));
+  const pageIds = plan.iaPages.filter((page) => page.type === 'page').map((page) => page.id);
+  const generatedScreens = normalizeUinAiScreens(plan.uinAiScreens, pageIds);
 
   return JSON.stringify(
     {
-      $schema: 'uniboard/agent-bundle@1',
+      format: 'uniboard/agent-bundle',
+      version: 2,
       generatedAt: new Date().toISOString(),
       product: {
         name: plan.brief.title,
@@ -417,6 +425,31 @@ export function toAgentBundle(plan: Plan): string {
         path: pageById.get(wf.pageId)?.path ?? null,
         blocks: wf.blocks.map((b) => ({ ...b, type: WIREFRAME_BLOCK_LABEL[b.type] })),
       })),
+      generatedUi: {
+        generator: 'UinAI',
+        screens: generatedScreens.map((screen) => {
+          const page = pageById.get(screen.pageId);
+          const currentSourceSignature = uinAiSourceSignature(plan, screen.pageId);
+          const stale = screen.sourceSignature !== currentSourceSignature;
+          return {
+            ...screen,
+            route: page?.path ?? screen.route,
+            status: stale ? 'stale' : 'current',
+            stale,
+            currentSourceSignature,
+            pageDescription: page?.description ?? '',
+            features: (page?.featureIds ?? [])
+              .map((featureId) => featureById.get(featureId))
+              .filter(Boolean)
+              .map((feature) => ({
+                id: feature!.id,
+                name: feature!.name,
+                description: feature!.description,
+              })),
+          };
+        }),
+        instruction: `${UINAI_AGENT_PROMPT} status가 stale인 화면은 구현 기준으로 쓰지 마세요.`,
+      },
       coverage: (Object.keys(ARTIFACT_LABEL) as ArtifactKey[]).map((key) => ({
         artifact: ARTIFACT_LABEL[key],
         generated: hasArtifact(plan, key),

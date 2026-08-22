@@ -14,20 +14,22 @@
  *
  * | | 준비물 | 결과 |
  * | --- | --- | --- |
- * | **자동** | 스티치 연결 한 번 | 여기서 눌러 저쪽에 화면이 생긴다 |
+ * | **자동 · 스티치** | 스티치 연결 한 번 | 여기서 눌러 스티치에 화면이 생긴다 |
+ * | **자동 · UinAI** | 없음 | 여기서 만들고 UniBoard 안에서 연다 |
  * | **수동** | 없음 | 요청문을 복사해 도구에 붙여 넣는다 |
  *
- * 자동은 스티치만 된다. 나머지 도구는 붙여 넣는 길뿐이라 수동 쪽에만 나온다.
+ * 자동은 스티치와 UinAI 두 길이다. 나머지 도구는 붙여 넣는 길뿐이라 수동 쪽에만 나온다.
  *
  * 여기서 만든 요청문은 두 길이 그대로 나눠 쓴다. 스티치 API 에 넘길 때도 결국
  * 필요한 것이 이 문장이라 `screenPrompt()` 는 한 벌이면 된다.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, Copy, Download, ExternalLink, Image as ImageIcon, Info } from 'lucide-react';
 
 import { SectionCard } from './ui';
 import { StitchRun } from './StitchRun';
+import { UinAiRun } from './UinAiRun';
 import { download, slugify } from '@/lib/export';
 import { downloadSvg, wireframeToSvg } from '@/lib/image-export';
 import {
@@ -40,12 +42,31 @@ import {
 import type { Plan } from '@/lib/types';
 
 export function DesignHandoff({ plan }: { plan: Plan }) {
+  const [automatic, setAutomatic] = useState<'stitch' | 'uinai'>('stitch');
   const [tool, setTool] = useState<DesignToolKey>('stitch');
   const [copied, setCopied] = useState<string | null>(null);
 
   const meta = DESIGN_TOOLS.find((t) => t.key === tool)!;
   const screens = useMemo(() => screenPrompts(plan, tool), [plan, tool]);
   const intro = useMemo(() => systemPrompt(plan, tool), [plan, tool]);
+
+  useEffect(() => {
+    const syncFromAddress = () => {
+      const selected = new URLSearchParams(window.location.search).get('design');
+      if (selected === 'uinai' || selected === 'stitch') setAutomatic(selected);
+    };
+    syncFromAddress();
+    window.addEventListener('popstate', syncFromAddress);
+    return () => window.removeEventListener('popstate', syncFromAddress);
+  }, []);
+
+  const chooseAutomatic = (next: 'stitch' | 'uinai') => {
+    setAutomatic(next);
+    const url = new URL(window.location.href);
+    if (next === 'uinai') url.searchParams.set('design', 'uinai');
+    else url.searchParams.delete('design');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  };
 
   const copy = async (key: string, text: string) => {
     try {
@@ -89,14 +110,38 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
   return (
     <>
       {/*
-        자동 — 스티치. **먼저 둔다.** 연결만 하면 이쪽이 훨씬 빠르고, 아래
-        수동 카드는 연결이 없거나 다른 도구를 쓸 때의 길이다.
+        자동 — 스티치와 UinAI. 선택 단추는 연결 상태 바깥에 두어, 스티치를
+        연결하지 않은 사람도 UinAI로 바로 넘어갈 수 있게 한다.
       */}
       <SectionCard
-        title="자동(UI 먼저 만들기) - 스티치로 연결하여 바로 만들기"
-        description="스티치를 한 번 연결해 두면, 고른 화면을 여기서 눌러 저쪽에 바로 만듭니다. 붙여 넣을 것이 없습니다."
+        title="자동(UI 먼저 만들기) - 바로 만들기"
+        description="스티치에 직접 만들거나 UinAI로 만들어 UniBoard 안에서 열 수 있습니다. 화면 선택과 디자인 옵션은 그대로입니다."
       >
-        <StitchRun plan={plan} />
+        <div className="mb-2.5 flex flex-wrap gap-1.5" role="group" aria-label="자동 UI 만들기 도구">
+          <button
+            type="button"
+            aria-pressed={automatic === 'stitch'}
+            className={automatic === 'stitch' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+            onClick={() => chooseAutomatic('stitch')}
+          >
+            스티치에 바로 만들기
+          </button>
+          <button
+            type="button"
+            aria-pressed={automatic === 'uinai'}
+            className={automatic === 'uinai' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+            onClick={() => chooseAutomatic('uinai')}
+          >
+            UinAI로 바로 만들기
+          </button>
+        </div>
+        {/* 둘 다 마운트해 두어 탭을 오가도 선택·엔진·진행 상태가 사라지지 않게 한다. */}
+        <div hidden={automatic !== 'stitch'}>
+          <StitchRun plan={plan} />
+        </div>
+        <div hidden={automatic !== 'uinai'}>
+          <UinAiRun plan={plan} />
+        </div>
       </SectionCard>
 
       {/* 수동 — 요청문을 복사해 도구에 붙여 넣는다. 준비물이 없다. */}

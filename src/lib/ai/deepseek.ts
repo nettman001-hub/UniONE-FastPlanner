@@ -124,6 +124,7 @@ export interface DeepSeekRequest {
   prompt: string;
   schema: unknown;
   maxTokens: number;
+  signal?: AbortSignal;
 }
 
 export async function generateJsonWithDeepSeek<T>({
@@ -132,6 +133,7 @@ export async function generateJsonWithDeepSeek<T>({
   prompt,
   schema,
   maxTokens,
+  signal,
 }: DeepSeekRequest): Promise<T> {
   const openai = client(config);
   // 모델별 출력 상한을 넘기면 400 이 나므로 공급자 설정으로 한 번 더 조인다.
@@ -139,18 +141,21 @@ export async function generateJsonWithDeepSeek<T>({
 
   const call = (jsonMode: boolean, extra?: string) => {
     const effort = currentEffort(config.effort);
-    return openai.chat.completions.create({
-      model: config.model,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: buildUserContent(prompt, schema) },
-        ...(extra ? [{ role: 'user' as const, content: extra }] : []),
-      ],
-      max_tokens: cappedMaxTokens,
-      ...(jsonMode ? { response_format: { type: 'json_object' as const } } : {}),
-      // SDK 타입에 아직 없을 수 있어 따로 얹는다. 값은 위 사다리가 정한다.
-      ...(effort ? { reasoning_effort: effort } : {}),
-    } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
+    return openai.chat.completions.create(
+      {
+        model: config.model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: buildUserContent(prompt, schema) },
+          ...(extra ? [{ role: 'user' as const, content: extra }] : []),
+        ],
+        max_tokens: cappedMaxTokens,
+        ...(jsonMode ? { response_format: { type: 'json_object' as const } } : {}),
+        // SDK 타입에 아직 없을 수 있어 따로 얹는다. 값은 위 사다리가 정한다.
+        ...(effort ? { reasoning_effort: effort } : {}),
+      } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
+      { signal },
+    );
   };
 
   /**
@@ -202,7 +207,7 @@ export async function generateJsonWithDeepSeek<T>({
     try {
       return JSON.parse(extractJson(text)) as T;
     } catch {
-      throw new AiError('format', `JSON 해석 실패 · 앞부분: ${text.slice(0, 400)}`);
+      throw new AiError('format', `JSON 해석 실패 · 응답 길이 ${text.length}자`);
     }
   };
 

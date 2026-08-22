@@ -106,7 +106,9 @@ function splitRow(line: string): string[] {
 const isSeparator = (line: string) => /^\|?[\s:-]*\|[\s|:-]*$/.test(line) && line.includes('-');
 
 export function MarkdownView({ markdown, linkMap }: { markdown: string; linkMap?: LinkMap }) {
-  const lines = markdown.split('\n');
+  // 저장소 문서는 Windows CRLF일 수 있다. `\r`가 남으면 제목을 문단으로도
+  // 소비하지 못해 아래 커서가 멈추므로, 줄 경계를 통째로 없앤다.
+  const lines = markdown.split(/\r?\n/);
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;

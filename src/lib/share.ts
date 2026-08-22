@@ -27,7 +27,8 @@ function fromBase64Url(encoded: string): string {
 
 /** 공유에 불필요한 것(대화 기록, 버전 스냅샷)은 빼서 링크를 짧게 만든다. */
 export function buildShareLink(plan: Plan): string {
-  const payload: Plan = { ...plan, chat: [], versions: [] };
+  // 생성 코드는 길어서 URL 한계를 바로 넘는다. 공유 화면에는 기획 산출물만 보낸다.
+  const payload: Plan = { ...plan, chat: [], versions: [], uinAiScreens: [] };
   const encoded = toBase64Url(JSON.stringify(payload));
   return `${window.location.origin}/share${PREFIX}${encoded}`;
 }
