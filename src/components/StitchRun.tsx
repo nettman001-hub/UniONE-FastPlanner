@@ -431,12 +431,6 @@ export function StitchRun({ plan }: { plan: Plan }) {
           */}
           {made.size > 0 && <> 이미 만든 화면 <b>{made.size}개</b>는 빼 두었습니다.</>}
         </p>
-        <button className="btn btn-sm" disabled={running} onClick={pickAll}>
-          전체 선택
-        </button>
-        <button className="btn btn-sm" disabled={running} onClick={unpickAll}>
-          선택 해제
-        </button>
       </div>
 
       {/*
@@ -578,6 +572,14 @@ export function StitchRun({ plan }: { plan: Plan }) {
         <span className="text-[11px] text-[var(--fg-subtle)]">
           {EMPHASIS_UI.find((e) => e.key === emphasis)?.what}
         </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button className="btn btn-sm" disabled={running} onClick={pickAll}>
+            전체 선택
+          </button>
+          <button className="btn btn-sm" disabled={running} onClick={unpickAll}>
+            선택 해제
+          </button>
+        </div>
       </div>
 
       <ul className="mt-2 flex flex-col gap-1">
