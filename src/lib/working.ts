@@ -18,7 +18,7 @@
  * | --- | --- |
  * | 산출물 생성 | 스토어 `activeRun` (모듈 수준 러너가 갱신) |
  * | 스티치에 만들기 | `stitch-runner` 모듈 |
- * | UinAI로 만들기 | `uinai-runner` 모듈 |
+ * | UniAI로 만들기 | `uinai-runner` 모듈 |
  * | 에이전트 답변 | 스토어 `agentBusy` |
  *
  * 셋 다 화면 밖에 있어서, 화면이 사라져도 답이 유지된다.
@@ -96,7 +96,7 @@ export function useWorking(): Working[] {
     out.push({
       key: `uinai:${job.planId}`,
       planId: job.planId,
-      what: `UinAI로 만드는 중 (${job.done}/${job.total})`,
+      what: `UniAI로 만드는 중 (${job.done}/${job.total})`,
       href: `/plans/${job.planId}/export?design=uinai`,
     });
   }

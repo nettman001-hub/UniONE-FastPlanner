@@ -16,6 +16,7 @@
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
 import { DEFAULT_ENGINE, type EngineTier } from '@/lib/ai/engines';
+import { DEEPSEEK_OUTPUT_TOKENS } from '@/lib/ai/config';
 import type { AiConfig } from '@/lib/ai/config';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
@@ -38,37 +39,11 @@ import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
 const STEP_DELAY_MS = Math.max(0, Number(process.env.GENERATE_STEP_DELAY_MS ?? 0) || 0);
 
 /**
- * 산출물별 출력 분량. 기능명세서와 와이어프레임이 가장 길고 PRD 가 가장 짧다.
- *
- * 이 표는 **공급자 상한이 `BASE_CEILING` 일 때의 기준값**이다. 실제 요청값은
- * `maxTokensFor` 가 공급자 상한에 맞춰 늘려 준다.
+ * 어떤 산출물이든 DeepSeek에는 384K를 요청한다. `ceiling`은 다른 공급자의
+ * 실제 제한만 보존하기 위한 안전장치다.
  */
-const MAX_TOKENS: Record<ArtifactKey, number> = {
-  prd: 16000,
-  fs: 32000,
-  ia: 20000,
-  flow: 20000,
-  wireframe: 32000,
-};
-
-/** 위 표가 기준으로 삼은 공급자 상한. */
-const BASE_CEILING = 32000;
-
-/**
- * 이 산출물에 실제로 요청할 출력 토큰 수.
- *
- * 마지막에 공급자 상한(`DEEPSEEK_MAX_TOKENS` 등)으로 한 번 더 조인다. 그래서
- * **상한만 올리면 위 표의 숫자에서 멈춘다** — 예전에는 상한을 128000 으로 올려도
- * 기능명세서가 32000 에서 더 안 올라갔다. 상한을 올린 사람은 그만큼 더 쓰기를
- * 기대하므로, 상한이 기준보다 크면 표의 값도 같은 비율로 함께 올린다.
- *
- * 기준값 아래로는 내려가지 않는다. 상한을 낮게 잡아 두었을 때 산출물이
- * 예전보다 짧아지면 그게 더 놀랄 일이다. (최종적으로는 공급자 쪽에서 잘린다.)
- */
-export function maxTokensFor(artifact: ArtifactKey, ceiling: number): number {
-  const base = MAX_TOKENS[artifact];
-  const scaled = Math.round(base * (ceiling / BASE_CEILING));
-  return Math.min(ceiling, Math.max(base, scaled));
+export function maxTokensFor(_artifact: ArtifactKey, ceiling: number): number {
+  return Math.min(DEEPSEEK_OUTPUT_TOKENS, ceiling);
 }
 
 export interface GenerateOptions {

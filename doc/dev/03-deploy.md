@@ -74,7 +74,7 @@ Production · Preview · Development 를 모두 체크하세요.
 | `DEEPSEEK_API_KEY` | 발급받은 키 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | `deepseek-v4-pro` |
-| `DEEPSEEK_MAX_TOKENS` | `128000` |
+| 출력 상한 | 앱 전체 고정 `384000` 토큰 |
 
 ### 로그인과 저장소
 

@@ -4,7 +4,7 @@ import type { Plan, UinAiFile, UinAiScreen } from '@/lib/types';
 
 /** 플랜 동기화·브라우저 저장 용량을 지키기 위한 화면 파일 하나의 상한. */
 export const UINAI_FILE_CHAR_LIMIT = 40_000;
-/** 한 플랜에 보관할 UinAI HTML 전체 상한. localStorage의 일반적인 5MB 한도를 넘지 않게 한다. */
+/** 한 플랜에 보관할 UniAI 코드 전체 상한. localStorage의 일반적인 5MB 한도를 넘지 않게 한다. */
 export const UINAI_PLAN_FILE_CHAR_LIMIT = 800_000;
 export const UINAI_MAX_SCREENS_PER_PLAN = 40;
 
@@ -50,6 +50,7 @@ const ALLOWED_TAGS = [
   'br',
   'a',
   'button',
+  'form',
   'input',
   'textarea',
   'select',
@@ -67,6 +68,7 @@ const ALLOWED_TAGS = [
   'caption',
   'details',
   'summary',
+  'dialog',
   'progress',
   'meter',
   'style',
@@ -90,8 +92,21 @@ const ALLOWED_TAGS = [
 ];
 
 const ALLOWED_ATTRIBUTES: sanitizeHtml.IOptions['allowedAttributes'] = {
-  '*': ['class', 'id', 'title', 'role', 'dir', 'lang', 'tabindex', 'hidden', 'style', 'aria-*'],
+  '*': [
+    'class',
+    'id',
+    'title',
+    'role',
+    'dir',
+    'lang',
+    'tabindex',
+    'hidden',
+    'style',
+    'aria-*',
+    'data-*',
+  ],
   button: ['type', 'disabled', 'name', 'value'],
+  form: ['name', 'novalidate', 'autocomplete'],
   input: [
     'type',
     'name',
@@ -130,7 +145,57 @@ const ALLOWED_ATTRIBUTES: sanitizeHtml.IOptions['allowedAttributes'] = {
   stop: ['offset', 'stop-color', 'stop-opacity'],
   clippath: ['id'],
   mask: ['id'],
+  dialog: ['open'],
 };
+
+function withoutFence(value: string, language: 'html' | 'css' | 'javascript'): string {
+  const raw = value.trim();
+  const fenced =
+    language === 'javascript'
+      ? /^```(?:javascript|js)?\s*([\s\S]*?)```$/i.exec(raw)
+      : language === 'css'
+        ? /^```(?:css)?\s*([\s\S]*?)```$/i.exec(raw)
+        : /^```(?:html)?\s*([\s\S]*?)```$/i.exec(raw);
+  return fenced ? fenced[1].trim() : raw;
+}
+
+function unsafeCssSyntax(value: string): boolean {
+  // 인라인 SVG의 gradient/clipPath를 가리키는 로컬 fragment는 네트워크 요청이 아니다.
+  const withoutLocalSvgRefs = value.replace(
+    /url\s*\(\s*(["']?)#[a-zA-Z][\w:.-]*\1\s*\)/gi,
+    '',
+  );
+  return /@import\b|url\s*\(|image-set\s*\(|expression\s*\(|(?:^|[;{])\s*(?:behavior|-moz-binding)\s*:/i.test(
+    withoutLocalSvgRefs,
+  );
+}
+
+/** 외부 네트워크 없이 미리보기에 붙일 수 있는 CSS인지 확인한다. */
+export function sanitizeUinAiCss(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('UniAI CSS가 문자열이 아닙니다.');
+  const css = withoutFence(value, 'css');
+  if (css.length > UINAI_FILE_CHAR_LIMIT) {
+    throw new Error(`UniAI CSS가 ${UINAI_FILE_CHAR_LIMIT.toLocaleString()}자를 넘습니다.`);
+  }
+  if (unsafeCssSyntax(css) || /<\/?(?:style|script)\b/i.test(css)) {
+    throw new Error('UniAI CSS에 외부 자원 또는 실행 문법이 포함돼 있습니다.');
+  }
+  return css;
+}
+
+/**
+ * JavaScript는 코드 파일로만 보관하고 UniBoard 미리보기에서는 실행하지 않는다.
+ * 길이와 코드펜스만 정규화하며, 에이전트 번들에서는 계속 신뢰하지 않는 참고 데이터로 취급한다.
+ */
+export function normalizeUinAiJavaScript(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('UniAI JavaScript가 문자열이 아닙니다.');
+  const javascript = withoutFence(value, 'javascript');
+  if (javascript.length > UINAI_FILE_CHAR_LIMIT) {
+    throw new Error(`UniAI JavaScript가 ${UINAI_FILE_CHAR_LIMIT.toLocaleString()}자를 넘습니다.`);
+  }
+  if (javascript.includes('\u0000')) throw new Error('UniAI JavaScript에 허용되지 않는 문자가 있습니다.');
+  return javascript;
+}
 
 /**
  * 저장·미리보기·다운로드·에이전트 번들이 모두 공유하는 안전화 경계.
@@ -139,10 +204,10 @@ const ALLOWED_ATTRIBUTES: sanitizeHtml.IOptions['allowedAttributes'] = {
  * 주석 속 가짜 head, refresh meta, 외부 링크, 이벤트 속성도 결과에 남지 않는다.
  */
 export function sanitizeUinAiHtml(value: string): string {
-  if (typeof value !== 'string') throw new Error('UinAI HTML이 문자열이 아닙니다.');
-  const raw = value.trim();
+  if (typeof value !== 'string') throw new Error('UniAI HTML이 문자열이 아닙니다.');
+  const raw = withoutFence(value, 'html');
   if (raw.length < 100 || raw.length > UINAI_FILE_CHAR_LIMIT) {
-    throw new Error(`UinAI HTML 길이가 허용 범위를 벗어났습니다 (${raw.length}자).`);
+    throw new Error(`UniAI HTML 길이가 허용 범위를 벗어났습니다 (${raw.length}자).`);
   }
 
   const body = sanitizeHtml(raw, {
@@ -162,20 +227,16 @@ export function sanitizeUinAiHtml(value: string): string {
 
   // sanitize-html은 style 태그의 CSS 본문을 해석하지 않으므로 네트워크·실행 문법은
   // 별도로 fail-closed 한다. URL은 data URI까지 쓰지 않고 인라인 SVG만 허용한다.
-  if (
-    /@import\b|url\s*\(|image-set\s*\(|expression\s*\(|(?:^|[;{])\s*(?:behavior|-moz-binding)\s*:/i.test(
-      body,
-    )
-  ) {
-    throw new Error('UinAI HTML의 CSS에 외부 자원 또는 실행 문법이 포함돼 있습니다.');
+  if (unsafeCssSyntax(body)) {
+    throw new Error('UniAI HTML의 CSS에 외부 자원 또는 실행 문법이 포함돼 있습니다.');
   }
   if (body.replace(/<[^>]+>/g, '').trim().length < 10) {
-    throw new Error('UinAI HTML에 표시할 내용이 없습니다.');
+    throw new Error('UniAI HTML에 표시할 내용이 없습니다.');
   }
 
   const document = `<!doctype html><html lang="ko"><head><meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${body}</body></html>`;
   if (document.length > UINAI_FILE_CHAR_LIMIT) {
-    throw new Error(`안전화한 UinAI HTML이 ${UINAI_FILE_CHAR_LIMIT.toLocaleString()}자를 넘습니다.`);
+    throw new Error(`안전화한 UniAI HTML이 ${UINAI_FILE_CHAR_LIMIT.toLocaleString()}자를 넘습니다.`);
   }
   return document;
 }
@@ -188,8 +249,8 @@ function safeRelativePath(value: unknown): string | null {
 }
 
 /**
- * 브라우저 파일·API·DB에서 들어오는 UinAI 결과를 같은 계약으로 정규화한다.
- * 현재 생성기는 독립 HTML 한 파일만 만들므로, 실행 가능한 다른 코드 파일은 받지 않는다.
+ * 브라우저 파일·API·DB에서 들어오는 UniAI 결과를 같은 계약으로 정규화한다.
+ * HTML과 CSS는 미리보기 안전화 경계를 통과시키고 JavaScript는 실행하지 않는 코드 파일로 보관한다.
  */
 export function normalizeUinAiScreens(
   value: unknown,
@@ -228,6 +289,40 @@ export function normalizeUinAiScreens(
       continue;
     }
 
+    const files: UinAiFile[] = [{ path, language: 'html', content }];
+    const usedPaths = new Set([path.toLowerCase()]);
+    const cssCandidate = rawFiles.find((file) => file.language === 'css');
+    const cssPath = safeRelativePath(cssCandidate?.path);
+    if (
+      cssPath &&
+      !usedPaths.has(cssPath.toLowerCase()) &&
+      typeof cssCandidate?.content === 'string'
+    ) {
+      try {
+        const css = sanitizeUinAiCss(cssCandidate.content);
+        if (css) {
+          files.push({ path: cssPath, language: 'css', content: css });
+          usedPaths.add(cssPath.toLowerCase());
+        }
+      } catch {
+        // 잘못된 CSS 하나 때문에 안전한 HTML까지 잃지 않는다.
+      }
+    }
+    const jsCandidate = rawFiles.find((file) => file.language === 'js');
+    const jsPath = safeRelativePath(jsCandidate?.path);
+    if (
+      jsPath &&
+      !usedPaths.has(jsPath.toLowerCase()) &&
+      typeof jsCandidate?.content === 'string'
+    ) {
+      try {
+        const javascript = normalizeUinAiJavaScript(jsCandidate.content);
+        if (javascript) files.push({ path: jsPath, language: 'js', content: javascript });
+      } catch {
+        // 코드는 참고 파일일 뿐이므로 잘못된 JavaScript는 미리보기와 함께 버리지 않는다.
+      }
+    }
+
     const notes = Array.isArray(item.implementationNotes)
       ? item.implementationNotes
           .filter((note): note is string => typeof note === 'string')
@@ -254,7 +349,7 @@ export function normalizeUinAiScreens(
       skill: typeof item.skill === 'string' ? item.skill.slice(0, 80) : 'none',
       generatedAt: typeof item.generatedAt === 'string' ? item.generatedAt.slice(0, 64) : '',
       entryFile: path,
-      files: [{ path, language: 'html', content }],
+      files,
       summary: typeof item.summary === 'string' ? item.summary.trim().slice(0, 1_000) : '',
       implementationNotes: notes,
       sourceSignature:
@@ -276,7 +371,7 @@ export function normalizeUinAiScreens(
   });
 }
 
-/** UinAI 결과 한 화면을 여는 내부 주소. */
+/** UniAI 결과 한 화면을 여는 내부 주소. */
 export function uinAiScreenHref(planId: string, pageId: string): string {
   return `/plans/${encodeURIComponent(planId)}/uinboard/${encodeURIComponent(pageId)}`;
 }
@@ -349,7 +444,29 @@ export function uinAiPreviewHtml(screen: UinAiScreen): string {
   }
 }
 
-/** AI가 만든 문서를 앱과 격리해 미리보기 위한 srcDoc. */
+/** HTML·CSS·JavaScript 파일을 사람이 읽기 좋은 하나의 코드 블록으로 묶는다. */
+export function uinAiSourceText(screen: UinAiScreen): string {
+  return (Array.isArray(screen.files) ? screen.files : [])
+    .map((file) => `/* ===== ${file.path} ===== */\n${file.content}`)
+    .join('\n\n');
+}
+
+/**
+ * AI가 만든 문서를 앱과 격리해 미리보기 위한 srcDoc.
+ * CSS는 안전화 후 붙이고 JavaScript는 의도적으로 실행하지 않는다. 생성된 JS는 코드 보기와
+ * 코딩 에이전트 번들에서 확인할 수 있다.
+ */
 export function uinAiPreviewDocument(screen: UinAiScreen): string {
-  return uinAiPreviewHtml(screen);
+  const html = uinAiPreviewHtml(screen);
+  if (!html) return '';
+  const rawCss = (Array.isArray(screen.files) ? screen.files : []).find(
+    (file) => file?.language === 'css',
+  )?.content;
+  if (!rawCss) return html;
+  try {
+    const css = sanitizeUinAiCss(rawCss);
+    return css ? html.replace('</head>', `<style>${css}</style></head>`) : html;
+  } catch {
+    return html;
+  }
 }

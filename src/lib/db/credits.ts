@@ -47,7 +47,7 @@ export type CreditReservationResult =
  * 공급자 호출 전에 크레딧을 원자적으로 예약한다.
  *
  * 사용자 행 잠금 안에서 존재 확인 → 오늘 사용량 확인 → 원장 기록을 한 번에 한다.
- * 같은 계정의 UinAI 요청 여러 개가 동시에 와도 모두 같은 잔량을 통과할 수 없고,
+ * 같은 계정의 UniAI 요청 여러 개가 동시에 와도 모두 같은 잔량을 통과할 수 없고,
  * 삭제된 계정의 오래된 서명 쿠키도 여기서 막힌다.
  */
 export async function reserveCredits(

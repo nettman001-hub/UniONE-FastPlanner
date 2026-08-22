@@ -435,16 +435,16 @@ export interface PlanDocuments {
   wireframes: Wireframe[];
 }
 
-/** UinAI 가 만든 파일. 코딩 에이전트 번들에도 같은 모양으로 들어간다. */
+/** UniAI가 만든 파일. 코딩 에이전트 번들에도 같은 모양으로 들어간다. */
 export interface UinAiFile {
   /** 저장소 루트 기준으로 제안하는 상대 경로. */
   path: string;
-  language: 'html' | 'tsx' | 'ts' | 'css' | 'json' | 'text';
+  language: 'html' | 'js' | 'tsx' | 'ts' | 'css' | 'json' | 'text';
   content: string;
 }
 
 /**
- * UinAI 로 완성한 화면 하나.
+ * UniAI로 완성한 화면 하나.
  *
  * 진행 중·실패 상태는 브라우저 러너가 잠깐 들고, 성공한 최신 결과만 플랜에
  * 저장한다. 그래야 다른 기기에서도 열리고 에이전트 번들에도 실을 수 있다.
@@ -513,7 +513,7 @@ export const ARTIFACT_CREDIT_COST: Record<ArtifactKey, number> = {
 
 export const CHAT_CREDIT_COST = 1;
 
-/** UinAI 화면 하나를 생성할 때 드는 기본 크레딧. 고급 엔진은 공통 배수를 따른다. */
+/** UniAI 화면 하나를 생성할 때 드는 기본 크레딧. 고급 엔진은 공통 배수를 따른다. */
 export const UINAI_CREDIT_COST = 5;
 
 /**

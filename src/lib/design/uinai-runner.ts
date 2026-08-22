@@ -1,5 +1,5 @@
 /**
- * UinAI 화면 생성을 컴포넌트 밖에서 순차 실행한다.
+ * UniAI 화면 생성을 컴포넌트 밖에서 순차 실행한다.
  * 화면을 옮겨도 계속되며, 성공 결과는 즉시 플랜에 저장한다.
  */
 
@@ -142,7 +142,7 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
 
   const mark = (pageId: string, state: UinAiScreenState) =>
     patch(planId, { progress: { ...get(planId).progress, [pageId]: state } });
-  // 이전 UinAI 결과는 서버 프롬프트에 필요 없고 요청 크기만 키운다.
+  // 이전 UniAI 결과는 서버 프롬프트에 필요 없고 요청 크기만 키운다.
   const requestPlan: Plan = {
     ...options.plan,
     chat: [],
@@ -152,6 +152,7 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
   };
   let made = 0;
   let stopped = false;
+  let firstFailure = '';
 
   try {
     for (const [index, pageId] of options.pageIds.entries()) {
@@ -229,12 +230,19 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
       const data = (await response.json().catch(() => ({}))) as {
         screen?: UinAiScreen;
         error?: string;
+        code?: string;
       };
       if (!response.ok || !data.screen) {
         const message = data.error ?? '화면을 만들지 못했습니다.';
+        if (!firstFailure) firstFailure = message;
         mark(pageId, { state: 'failed', message });
         // 뒤 화면도 같은 이유로 막히는 상태라면 여기서 멈춘다.
-        if ([401, 402, 403, 409, 413, 503].includes(response.status)) {
+        if (
+          [401, 402, 403, 409, 413, 429, 502, 503].includes(response.status) ||
+          data.code === 'too-long' ||
+          data.code === 'format' ||
+          data.code === 'config'
+        ) {
           patch(planId, { summary: { text: message, tone: 'warn', at: Date.now() } });
           stopped = true;
           break;
@@ -273,8 +281,8 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
       patch(planId, {
         summary: {
           text: all
-            ? `화면 ${made}개를 UinAI로 만들었습니다.`
-            : `${options.pageIds.length}개 중 ${made}개만 만들었습니다. 실패한 화면만 다시 고르면 됩니다.`,
+            ? `화면 ${made}개를 UniAI로 만들었습니다.`
+            : `${options.pageIds.length}개 중 ${made}개만 만들었습니다. ${firstFailure || '실패한 화면만 다시 골라 주세요.'}`,
           tone: all ? 'ok' : 'warn',
           at: Date.now(),
         },

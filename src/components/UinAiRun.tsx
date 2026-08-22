@@ -164,7 +164,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
 
   const downloadAgentBundle = () => {
     download('plan-bundle.json', toAgentBundle(plan), 'application/json;charset=utf-8');
-    toast(`UinAI 화면 ${made.size}개가 포함된 에이전트 번들을 받았습니다.`, 'ok');
+    toast(`UniAI 화면 ${made.size}개가 포함된 에이전트 번들을 받았습니다.`, 'ok');
   };
 
   const copyAgentPrompt = async () => {
@@ -182,9 +182,9 @@ export function UinAiRun({ plan }: { plan: Plan }) {
     <div className="rounded-lg border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3.5 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <p className="min-w-0 flex-1 text-[12.5px] font-bold">
-          UinAI로 바로 만들기
+          UniAI로 바로 만들기
           <span className="ml-1.5 font-normal text-[11.5px] text-[var(--fg-muted)]">
-            UniBoard 안에서 생성·보관
+            이미지가 아닌 HTML·CSS·JavaScript 코드로 생성·보관
           </span>
         </p>
         {latest && (
@@ -244,7 +244,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
             aria-pressed={skill === 'none'}
             disabled={running}
             onClick={() => setSkill('none')}
-            title="별도 디자인 지침 없이 UinAI에 맡깁니다."
+            title="별도 디자인 지침 없이 UniAI에 맡깁니다."
           >
             안 고름
           </button>
@@ -334,8 +334,9 @@ export function UinAiRun({ plan }: { plan: Plan }) {
                 </span>
               )}
               {state?.state === 'failed' && (
-                <span className="flex items-center gap-1 text-[11px] font-semibold text-[var(--warn)]" title={state.message}>
-                  <AlertTriangle size={11} /> 실패
+                <span className="flex max-w-full items-start gap-1 text-[11px] font-semibold text-[var(--warn)] sm:max-w-[440px]" title={state.message}>
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  <span className="break-words">실패 · {state.message}</span>
                 </span>
               )}
               {(state?.state === 'done' || saved) && state?.state !== 'running' && (
@@ -355,7 +356,7 @@ export function UinAiRun({ plan }: { plan: Plan }) {
           onClick={run}
         >
           {running ? <Spinner size={13} /> : <Sparkles size={13} />}
-          {running ? '만드는 중' : `UinAI로 ${picks.length}개 만들기`}
+          {running ? '만드는 중' : `UniAI로 ${picks.length}개 만들기`}
         </button>
         {running && (
           <button className="btn btn-sm" disabled={stopRequested} onClick={stop}>

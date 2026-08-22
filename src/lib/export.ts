@@ -426,7 +426,7 @@ export function toAgentBundle(plan: Plan): string {
         blocks: wf.blocks.map((b) => ({ ...b, type: WIREFRAME_BLOCK_LABEL[b.type] })),
       })),
       generatedUi: {
-        generator: 'UinAI',
+        generator: 'UniAI',
         screens: generatedScreens.map((screen) => {
           const page = pageById.get(screen.pageId);
           const currentSourceSignature = uinAiSourceSignature(plan, screen.pageId);

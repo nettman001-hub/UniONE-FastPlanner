@@ -124,7 +124,9 @@ export interface DeepSeekRequest {
   prompt: string;
   schema: unknown;
   maxTokens: number;
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   signal?: AbortSignal;
+  retryFormat?: boolean;
 }
 
 export async function generateJsonWithDeepSeek<T>({
@@ -133,14 +135,18 @@ export async function generateJsonWithDeepSeek<T>({
   prompt,
   schema,
   maxTokens,
+  effort,
   signal,
+  retryFormat = true,
 }: DeepSeekRequest): Promise<T> {
   const openai = client(config);
   // 모델별 출력 상한을 넘기면 400 이 나므로 공급자 설정으로 한 번 더 조인다.
   const cappedMaxTokens = Math.min(maxTokens, config.maxOutputTokens);
+  // 관리자가 값을 못 박았으면 그것을 우선하고, 작업별 요청은 빈 설정일 때만 쓴다.
+  const effortSetting = config.effort || effort || '';
 
   const call = (jsonMode: boolean, extra?: string) => {
-    const effort = currentEffort(config.effort);
+    const current = currentEffort(effortSetting);
     return openai.chat.completions.create(
       {
         model: config.model,
@@ -152,7 +158,7 @@ export async function generateJsonWithDeepSeek<T>({
         max_tokens: cappedMaxTokens,
         ...(jsonMode ? { response_format: { type: 'json_object' as const } } : {}),
         // SDK 타입에 아직 없을 수 있어 따로 얹는다. 값은 위 사다리가 정한다.
-        ...(effort ? { reasoning_effort: effort } : {}),
+        ...(current ? { reasoning_effort: current } : {}),
       } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
       { signal },
     );
@@ -169,8 +175,8 @@ export async function generateJsonWithDeepSeek<T>({
       try {
         return await call(jsonMode, extra);
       } catch (error) {
-        if (isEffortRejection(error) && currentEffort(config.effort) !== null) {
-          stepDownEffort(config.effort);
+        if (isEffortRejection(error) && currentEffort(effortSetting) !== null) {
+          stepDownEffort(effortSetting);
           continue;
         }
         throw error;
@@ -220,7 +226,7 @@ export async function generateJsonWithDeepSeek<T>({
      * 여기서 한 번 조용히 다시 시도한다. 설정 문제(키·잔액)나 길이 초과는 다시 해도
      * 같은 결과라 재시도하지 않는다.
      */
-    if (error instanceof AiError && error.kind === 'format') {
+    if (retryFormat && error instanceof AiError && error.kind === 'format') {
       return once(
         '앞선 응답이 형식을 벗어났습니다. 이번에는 설명 문장·코드펜스 없이 JSON 객체 하나만 출력하세요.',
       );

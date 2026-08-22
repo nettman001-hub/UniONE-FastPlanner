@@ -5,6 +5,7 @@ import { generateJson } from '@/lib/ai/client';
 import { isEngineTier, type EngineTier } from '@/lib/ai/engines';
 import { AiError, aiErrorMessage } from '@/lib/ai/errors';
 import { resolveProvider } from '@/lib/ai/provider';
+import { maxTokensFor } from '@/lib/jobs/queue';
 import { costWithEngine } from '@/lib/credits';
 import { releaseCreditReservation, reserveCredits } from '@/lib/db/credits';
 import { readAiRuntime } from '@/lib/db/ai-config';
@@ -16,7 +17,12 @@ import {
   UINAI_SYSTEM_PROMPT,
 } from '@/lib/design/uinai-prompt';
 import { findSkill } from '@/lib/design/skills';
-import { sanitizeUinAiHtml, uinAiSourceSignature } from '@/lib/design/uinai';
+import {
+  normalizeUinAiJavaScript,
+  sanitizeUinAiCss,
+  sanitizeUinAiHtml,
+  uinAiSourceSignature,
+} from '@/lib/design/uinai';
 import {
   UINAI_CREDIT_COST,
   type IaPage,
@@ -29,6 +35,8 @@ export const maxDuration = 300;
 
 const MAX_BODY_CHARS = 750_000;
 const MAX_PROMPT_CHARS = 220_000;
+const FAILURE_COOLDOWN_MS = 30_000;
+const failureCooldowns = new Map<string, number>();
 
 interface RunBody {
   plan?: Plan;
@@ -41,8 +49,26 @@ interface RunBody {
 
 interface UinAiDraft {
   html?: unknown;
+  css?: unknown;
+  javascript?: unknown;
   summary?: unknown;
   implementationNotes?: unknown;
+}
+
+function draftOf(value: unknown): UinAiDraft {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AiError('format', 'UniAI 응답이 JSON 객체가 아님');
+  }
+  const draft = value as UinAiDraft;
+  if (
+    typeof draft.html !== 'string' ||
+    typeof draft.css !== 'string' ||
+    !draft.css.trim() ||
+    typeof draft.javascript !== 'string'
+  ) {
+    throw new AiError('format', 'UniAI HTML·CSS·JavaScript 필드가 올바르지 않음');
+  }
+  return draft;
 }
 
 function deviceOf(plan: Plan, page: IaPage): 'mobile' | 'desktop' {
@@ -53,7 +79,7 @@ function deviceOf(plan: Plan, page: IaPage): 'mobile' | 'desktop' {
 }
 
 function normalizedHtml(value: unknown): string {
-  if (typeof value !== 'string') throw new AiError('format', 'UinAI HTML이 문자열이 아님');
+  if (typeof value !== 'string') throw new AiError('format', 'UniAI HTML이 문자열이 아님');
   let html = value.trim();
   const fenced = /^```(?:html)?\s*([\s\S]*?)```$/i.exec(html);
   if (fenced) html = fenced[1].trim();
@@ -61,6 +87,24 @@ function normalizedHtml(value: unknown): string {
     return sanitizeUinAiHtml(html);
   } catch (error) {
     throw new AiError('format', error instanceof Error ? error.message : 'HTML 안전화 실패');
+  }
+}
+
+function normalizedCss(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  try {
+    return sanitizeUinAiCss(value);
+  } catch (error) {
+    throw new AiError('format', error instanceof Error ? error.message : 'CSS 안전화 실패');
+  }
+}
+
+function normalizedJavaScript(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  try {
+    return normalizeUinAiJavaScript(value);
+  } catch (error) {
+    throw new AiError('format', error instanceof Error ? error.message : 'JavaScript 정규화 실패');
   }
 }
 
@@ -224,14 +268,23 @@ export async function POST(request: Request) {
   const provider = resolveProvider(engine, aiRuntime.config, aiRuntime.apiKey);
   if (provider.id === 'local') {
     return NextResponse.json(
-      { error: '지금은 UinAI를 쓸 수 없습니다. AI 설정을 확인해 주세요.' },
+      { error: '지금은 UniAI를 쓸 수 없습니다. AI 설정을 확인해 주세요.' },
       { status: 503 },
     );
   }
 
+  const retryAt = failureCooldowns.get(user.id) ?? 0;
+  if (retryAt > Date.now()) {
+    return NextResponse.json(
+      { error: '방금 생성 실패를 확인했습니다. 잠시 후 다시 시도해 주세요.', code: 'cooldown' },
+      { status: 429 },
+    );
+  }
+  failureCooldowns.delete(user.id);
+
   const prompt = buildUinAiPrompt(plan, page, emphasis, skill);
   if (prompt.length > MAX_PROMPT_CHARS) {
-    return NextResponse.json({ error: '화면 기획이 너무 길어 UinAI에 보낼 수 없습니다.' }, { status: 413 });
+    return NextResponse.json({ error: '화면 기획이 너무 길어 UniAI에 보낼 수 없습니다.' }, { status: 413 });
   }
 
   let reservation;
@@ -252,20 +305,53 @@ export async function POST(request: Request) {
   }
 
   try {
-    const draft = await generateJson<UinAiDraft>({
-      system: UINAI_SYSTEM_PROMPT,
-      prompt,
-      schema: UINAI_SCREEN_SCHEMA,
-      maxTokens: Math.min(10_000, provider.maxOutputTokens),
-      engine,
-      config: aiRuntime.config,
-      apiKey: aiRuntime.apiKey,
-      signal: request.signal,
-    });
+    // Vercel 함수가 강제로 끝나기 전에 오류 응답과 크레딧 반환을 마칠 시간을 남긴다.
+    const generationSignal = AbortSignal.any([request.signal, AbortSignal.timeout(235_000)]);
+    let draft: UinAiDraft | null = null;
+    let html = '';
+    let css = '';
+    let javascript = '';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        draft = draftOf(
+          await generateJson<unknown>({
+            system: UINAI_SYSTEM_PROMPT,
+            prompt:
+              attempt === 0
+                ? prompt
+                : `${prompt}\n\n## 형식 수정 재시도\n앞선 결과의 형식이나 안전 규칙이 맞지 않았습니다. html, css, javascript 키를 정확히 쓰고 외부 자원 없이 더 간결하게 다시 작성하세요.`,
+            schema: UINAI_SCREEN_SCHEMA,
+            // UniAI도 다른 생성 경로와 같이 DeepSeek 384K를 요청한다. 코드 프롬프트의
+            // 분량 지침은 결과 품질을 위한 것이며, 출력 상한을 낮추는 용도가 아니다.
+            maxTokens: maxTokensFor('wireframe', provider.maxOutputTokens),
+            engine,
+            effort: engine === 'advanced' ? 'high' : 'medium',
+            config: aiRuntime.config,
+            apiKey: aiRuntime.apiKey,
+            signal: generationSignal,
+            // 이 라우트가 스키마·안전화까지 포함해 총 두 번만 시도한다.
+            retryFormat: false,
+          }),
+        );
+        html = normalizedHtml(draft.html);
+        css = normalizedCss(draft.css);
+        javascript = normalizedJavaScript(draft.javascript);
+        break;
+      } catch (error) {
+        if (attempt === 0 && error instanceof AiError && error.kind === 'format') continue;
+        throw error;
+      }
+    }
+    if (!draft || !html) throw new AiError('format', 'UniAI 코드가 비어 있음');
 
-    const html = normalizedHtml(draft.html);
     const filePart = safeFilePart(page.id);
+    const basePath = `screens/${filePart}`;
     const wireframe = plan.wireframes.find((item) => item.pageId === page.id);
+    const files: UinAiScreen['files'] = [
+      { path: `${basePath}/index.html`, language: 'html', content: html },
+    ];
+    if (css) files.push({ path: `${basePath}/styles.css`, language: 'css', content: css });
+    if (javascript) files.push({ path: `${basePath}/app.js`, language: 'js', content: javascript });
     const screen: UinAiScreen = {
       id: `uinai-${requestId}`,
       pageId: page.id,
@@ -277,8 +363,8 @@ export async function POST(request: Request) {
       emphasis,
       skill,
       generatedAt: new Date().toISOString(),
-      entryFile: `screens/${filePart}.html`,
-      files: [{ path: `screens/${filePart}.html`, language: 'html', content: html }],
+      entryFile: `${basePath}/index.html`,
+      files,
       summary: typeof draft.summary === 'string' ? draft.summary.trim().slice(0, 1_000) : '',
       implementationNotes: notesOf(draft.implementationNotes),
       sourceSignature: uinAiSourceSignature(plan, page.id),
@@ -291,16 +377,34 @@ export async function POST(request: Request) {
         saved.reason === 'missing-page'
           ? '만드는 동안 화면이 삭제되었습니다. 다시 선택해 주세요.'
           : saved.reason === 'too-large'
-            ? '이 플랜에 저장된 UinAI 화면 용량이 가득 찼습니다.'
+            ? '이 플랜에 저장된 UniAI 화면 용량이 가득 찼습니다.'
             : '만드는 동안 플랜이 삭제되었습니다.';
       return NextResponse.json({ error: message }, { status: 409 });
     }
 
+    failureCooldowns.delete(user.id);
     return NextResponse.json({ screen, cost, savedAt: saved.updatedAt });
   } catch (error) {
     await releaseCreditReservation(user.id, reservation.id).catch((releaseError) => {
       console.error('[uinai] 실패한 요청의 크레딧 예약을 되돌리지 못했습니다:', releaseError);
     });
-    return NextResponse.json({ error: aiErrorMessage(error) }, { status: 502 });
+    const code = error instanceof AiError ? error.kind : 'unknown';
+    if (code === 'format' || code === 'too-long' || code === 'unknown') {
+      failureCooldowns.set(user.id, Date.now() + FAILURE_COOLDOWN_MS);
+    }
+    const message =
+      code === 'too-long'
+        ? '화면 코드가 길어 완성되지 않았습니다. 코드 길이를 줄여 다시 시도해 주세요.'
+        : aiErrorMessage(error);
+    const status =
+      code === 'config'
+        ? 503
+        : code === 'busy'
+          ? 429
+          : code === 'too-long' || code === 'format' || code === 'refused'
+            ? 422
+            : 502;
+    console.error('[uinai] 화면 생성 실패', { requestId, pageId: page.id, engine, code });
+    return NextResponse.json({ error: message, code, requestId }, { status });
   }
 }

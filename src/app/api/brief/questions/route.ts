@@ -24,7 +24,8 @@ import { requireUser } from '@/lib/auth/server';
 import { generateJson } from '@/lib/ai/client';
 import { userAgentEngine } from '@/lib/db/user-settings';
 import { readAiRuntime } from '@/lib/db/ai-config';
-import { isAiEnabled } from '@/lib/ai/provider';
+import { isAiEnabled, resolveProvider } from '@/lib/ai/provider';
+import { maxTokensFor } from '@/lib/jobs/queue';
 import { answersBlock } from '@/lib/brief-questions';
 import { PLATFORM_LABEL, type PlanBrief } from '@/lib/types';
 
@@ -74,6 +75,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ questions: [], reason: '지금은 되묻기를 쓸 수 없습니다.' });
   }
 
+  const engine = await userAgentEngine(user.id);
+  const aiRuntime = await readAiRuntime();
+
   const prompt = [
     '아래 서비스 아이디어를 읽고, **기획을 시작하기 전에 반드시 확인해야 하는 질문**을 3~5개 만드세요.',
     '',
@@ -107,14 +111,15 @@ export async function POST(request: Request) {
      * 처음에는 2000 이었다. 질문 몇 줄이면 충분하다고 봤는데, 생각을 길게 하는
      * 모델은 그 길이를 답이 아니라 **생각하는 데** 다 쓰고 잘린다. 잘리면
      * `too-long` 으로 던져지고, 아래 catch 가 삼켜서 "질문 없음" 으로 보였다.
-     * 다른 산출물 생성이 16000~32000 을 쓰는 것에 비하면 2000 은 유별나게 작았다.
+     * 지금은 앱 전체 DeepSeek 요청과 같이 384K 상한을 쓴다. 질문 수는 스키마와
+     * 프롬프트가 제한하므로, 상한이 커도 질문이 불필요하게 길어지지는 않는다.
      */
     const result = await generateJson<Generated>({
       prompt,
       schema: SCHEMA,
-      maxTokens: 8000,
-      engine: await userAgentEngine(user.id),
-      ...(await readAiRuntime()),
+      maxTokens: maxTokensFor('prd', resolveProvider(engine, aiRuntime.config, aiRuntime.apiKey).maxOutputTokens),
+      engine,
+      ...aiRuntime,
     });
     const questions = (result.questions ?? [])
       .filter((q) => q.question?.trim())

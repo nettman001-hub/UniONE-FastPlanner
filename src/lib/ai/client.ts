@@ -36,6 +36,8 @@ export interface GenerateOptions {
   apiKey?: string;
   /** 브라우저 연결이 끊기거나 작업을 멈추면 공급자 요청도 취소한다. */
   signal?: AbortSignal;
+  /** 형식 오류를 공급자 어댑터 안에서 한 번 더 시도할지. 호출부가 재시도하면 끌 수 있다. */
+  retryFormat?: boolean;
 }
 
 /**
@@ -55,7 +57,9 @@ export async function generateJson<T>(options: GenerateOptions): Promise<T> {
       prompt: options.prompt,
       schema: options.schema,
       maxTokens: options.maxTokens ?? config.maxOutputTokens,
+      effort: options.effort,
       signal: options.signal,
+      retryFormat: options.retryFormat,
     });
   }
 
@@ -117,8 +121,8 @@ async function generateJsonWithClaude<T>(
     .map((block) => block.text)
     .join('');
 
+  if (message.stop_reason === 'max_tokens') throw new AiError('too-long', 'max_tokens');
   if (!text.trim()) {
-    if (message.stop_reason === 'max_tokens') throw new AiError('too-long', 'max_tokens');
     throw new AiError('format', '빈 응답');
   }
 

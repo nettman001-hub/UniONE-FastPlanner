@@ -74,7 +74,7 @@ const BUNDLE_KEYS: { key: string; description: string }[] = [
   { key: 'informationArchitecture', description: '페이지 계층·경로·연결 기능' },
   { key: 'userFlows', description: '플로우 노드·엣지 + mermaid 원문' },
   { key: 'wireframes', description: '화면별 블록 구성과 기획 메모' },
-  { key: 'generatedUi', description: 'UinAI로 만든 화면 파일·경로·구현 메모' },
+  { key: 'generatedUi', description: 'UniAI로 만든 화면 파일·경로·구현 메모' },
   { key: 'coverage', description: '산출물 5종의 생성 여부' },
 ];
 
@@ -503,7 +503,7 @@ export default function ExportPage() {
         ext: '.json',
         icon: <Package size={17} />,
         description:
-          `Cursor·Claude Code 같은 코딩 에이전트에 물리는 형식입니다. UinAI 화면 ${(plan.uinAiScreens ?? []).length}개를 포함합니다.`,
+          `Cursor·Claude Code 같은 코딩 에이전트에 물리는 형식입니다. UniAI 화면 ${(plan.uinAiScreens ?? []).length}개를 포함합니다.`,
         filename: 'plan-bundle.json',
         mime: 'application/json;charset=utf-8',
         available: true,
@@ -886,7 +886,7 @@ export default function ExportPage() {
           ) : (
             <p className="text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
               대화 기록과 버전 스냅샷은 빼고 문서만 담습니다. 링크의 <code>#</code> 뒷부분은 서버로
-              전송되지 않습니다. UinAI 미리보기·코드는 링크 용량과 안전을 위해 포함하지 않습니다.
+              전송되지 않습니다. UniAI 미리보기·코드는 링크 용량과 안전을 위해 포함하지 않습니다.
             </p>
           )}
         </SectionCard>

@@ -18,8 +18,8 @@ import { EmptyState, Spinner, useToast } from '@/components/ui';
 import {
   UINAI_AGENT_PROMPT,
   uinAiPreviewDocument,
-  uinAiPreviewHtml,
   uinAiScreenHref,
+  uinAiSourceText,
   uinAiSourceSignature,
 } from '@/lib/design/uinai';
 import { download, slugify, toAgentBundle } from '@/lib/export';
@@ -36,7 +36,7 @@ export default function UinBoardPage() {
   const plan = usePlannerStore((state) => state.plans.find((item) => item.id === params.id));
   const screen = plan?.uinAiScreens?.find((item) => item.pageId === params.pageId);
   const preview = useMemo(() => (screen ? uinAiPreviewDocument(screen) : ''), [screen]);
-  const source = screen ? uinAiPreviewHtml(screen) : '';
+  const source = screen ? uinAiSourceText(screen) : '';
   const screenId = screen?.id;
   const screenDevice = screen?.device;
 
@@ -63,8 +63,8 @@ export default function UinBoardPage() {
       <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
         <EmptyState
           icon={<Monitor size={22} />}
-          title="UinAI 화면을 찾을 수 없습니다"
-          description="내보내기에서 화면을 골라 UinAI로 먼저 만들어 주세요."
+          title="UniAI 화면을 찾을 수 없습니다"
+          description="내보내기에서 화면을 골라 UniAI로 먼저 만들어 주세요."
           action={
             <Link className="btn btn-primary btn-sm" href={`/plans/${params.id}/export?design=uinai`}>
               내보내기로 돌아가기
@@ -101,7 +101,7 @@ export default function UinBoardPage() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="id-tag">{screen.pageId}</span>
             <h1 className="truncate text-[18px] font-extrabold">{screen.name}</h1>
-            <span className="chip">UinAI · {screen.engine === 'advanced' ? '고급 엔진' : '기본 엔진'}</span>
+            <span className="chip">UniAI · {screen.engine === 'advanced' ? '고급 엔진' : '기본 엔진'}</span>
             {stale && <span className="chip chip-warn">원본 변경됨 · 다시 만들기 권장</span>}
           </div>
           <p className="mt-1 text-[12px] leading-relaxed text-[var(--fg-muted)]">
@@ -111,19 +111,19 @@ export default function UinBoardPage() {
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             className="btn btn-sm"
-            disabled={!source}
+            disabled={!preview}
             onClick={() => {
-              download(`${slugify(screen.name)}.html`, source, 'text/html;charset=utf-8');
-              toast('HTML 파일을 내려받았습니다.', 'ok');
+              download(`${slugify(screen.name)}.html`, preview, 'text/html;charset=utf-8');
+              toast('안전한 미리보기 HTML을 내려받았습니다.', 'ok');
             }}
           >
-            <Download size={12} /> HTML 받기
+            <Download size={12} /> 미리보기 HTML
           </button>
           <button
             className="btn btn-sm"
             onClick={() => {
               download('plan-bundle.json', toAgentBundle(plan), 'application/json;charset=utf-8');
-              toast('UinAI 결과가 포함된 에이전트 번들을 받았습니다.', 'ok');
+              toast('UniAI 결과가 포함된 에이전트 번들을 받았습니다.', 'ok');
             }}
           >
             <Package size={12} /> 코딩 에이전트에 넘기기
@@ -136,7 +136,7 @@ export default function UinBoardPage() {
       </header>
 
       {resultPages.length > 1 && (
-        <nav className="flex flex-wrap gap-1.5" aria-label="UinAI로 만든 화면">
+        <nav className="flex flex-wrap gap-1.5" aria-label="UniAI로 만든 화면">
           {resultPages.map((page) => (
             <Link
               key={page.id}
@@ -172,7 +172,7 @@ export default function UinBoardPage() {
             aria-pressed={showCode}
             onClick={() => setShowCode((open) => !open)}
           >
-            <Code2 size={12} /> {showCode ? '미리보기만' : 'HTML 보기'}
+            <Code2 size={12} /> {showCode ? '미리보기만' : '코드 보기'}
           </button>
         </div>
 
@@ -183,7 +183,7 @@ export default function UinBoardPage() {
               style={{ width: device === 'mobile' ? 390 : '100%', maxWidth: '100%' }}
             >
               <iframe
-                title={`${screen.name} UinAI 미리보기`}
+                title={`${screen.name} UniAI 미리보기`}
                 className="block h-[680px] w-full border-0 bg-white"
                 sandbox=""
                 referrerPolicy="no-referrer"

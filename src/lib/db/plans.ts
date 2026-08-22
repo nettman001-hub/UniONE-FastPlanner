@@ -111,7 +111,7 @@ export async function savePlan(userId: string, plan: Plan): Promise<boolean> {
         before.parentId === after.parentId
       );
     });
-    // UinAI 결과는 화면별 생성 시각으로 병합한다. 서로 다른 기기에서 만든 화면이
+    // UniAI 결과는 화면별 생성 시각으로 병합한다. 서로 다른 기기에서 만든 화면이
     // Plan 전체의 updatedAt 경쟁 때문에 통째로 사라지지 않게 한다.
     const mergedScreens = normalizeUinAiScreens(
       [

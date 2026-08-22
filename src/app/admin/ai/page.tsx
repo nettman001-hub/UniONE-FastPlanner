@@ -29,9 +29,8 @@ import { ENGINE_LABEL, ENGINE_TIERS } from '@/lib/ai/engines';
 import {
   EFFORT_CHOICES,
   EFFORT_LABEL,
+  DEEPSEEK_OUTPUT_TOKENS,
   EMPTY_AI_CONFIG,
-  MAX_OUTPUT_TOKENS,
-  MIN_OUTPUT_TOKENS,
   type AiConfig,
 } from '@/lib/ai/config';
 
@@ -349,16 +348,10 @@ export default function AdminAi() {
         </Field>
 
         <Field
-          label="출력 상한 (토큰)"
-          hint={`비우면 환경변수를 따릅니다. ${MIN_OUTPUT_TOKENS.toLocaleString()} ~ ${MAX_OUTPUT_TOKENS.toLocaleString()} · 모델이 받아 주는 값보다 크면 매 호출이 실패합니다.`}
+          label="DeepSeek 출력 상한 (토큰)"
+          hint="앱 전체 AI 생성에 고정 적용됩니다. 변경할 수 없습니다."
         >
-          <input
-            className="input"
-            type="number"
-            value={draft.maxOutputTokens || ''}
-            placeholder="(환경변수를 따름)"
-            onChange={(e) => edit({ maxOutputTokens: Number(e.target.value) || 0 })}
-          />
+          <input className="input" type="number" value={DEEPSEEK_OUTPUT_TOKENS} disabled readOnly />
         </Field>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">

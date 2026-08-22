@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
+import { resolveProvider } from '@/lib/ai/provider';
+import { maxTokensFor } from '@/lib/jobs/queue';
 import { userAgentEngine } from '@/lib/db/user-settings';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
@@ -89,7 +91,7 @@ export async function POST(request: Request) {
         targets.map((f) => ({ id: f.id, name: f.name, description: f.description })),
       ),
       schema: PLACEMENT_SCHEMA,
-      maxTokens: 16000,
+      maxTokens: maxTokensFor('fs', resolveProvider(engine, runtime.config, runtime.apiKey).maxOutputTokens),
     });
 
     const wanted = new Set(targets.map((f) => f.id));

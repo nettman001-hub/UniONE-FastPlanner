@@ -167,7 +167,7 @@ npm run check:ai
 | `DEEPSEEK_MODEL_ADVANCED` | `deepseek-v4-pro` | **고급 엔진**이 쓸 모델 |
 | `DEEPSEEK_MODEL` | — | 등급이 생기기 전 이름. 넣으면 고급 쪽 기본값 |
 | `DEEPSEEK_REASONING_EFFORT` | (자동) | 추론 강도를 못 박을 때. `off` 면 안 보냄 |
-| `DEEPSEEK_MAX_TOKENS` | `128000` | 요청당 출력 토큰 상한. DeepSeek 의 실제 상한은 386,000 |
+| 출력 상한 | `384000` (고정) | 앱의 모든 DeepSeek 요청에 적용하는 출력 토큰 상한 |
 
 ### Anthropic
 
@@ -217,7 +217,7 @@ npm run check:ai
 | 계정의 잔액이 부족합니다 | 공급자 콘솔에서 충전하세요 |
 | 모델 '…' 을(를) 찾을 수 없습니다 | `npm run check:ai` 로 사용 가능한 모델 목록을 확인해 `DEEPSEEK_MODEL_BASIC` · `DEEPSEEK_MODEL_ADVANCED` 를 바꾸세요 |
 | 요청이 한도를 초과했습니다 | 잠시 후 다시 시도하세요 |
-| 응답이 출력 한도에서 잘렸습니다 | `DEEPSEEK_MAX_TOKENS` 를 올리거나 생성 범위를 좁히세요 |
+| 응답이 출력 한도에서 잘렸습니다 | 생성 범위를 좁혀 다시 시도하세요. DeepSeek 출력 상한은 384000으로 고정입니다 |
 | 응답을 JSON 으로 해석하지 못했습니다 | 모델이 형식을 벗어난 경우입니다. 다시 시도하면 대개 해결됩니다 |
 | Host not in allowlist | 사내 프록시·방화벽이 API 도메인을 막고 있습니다 |
 

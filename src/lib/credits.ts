@@ -30,14 +30,14 @@ import { DEFAULT_ENGINE, type EngineTier } from './ai/engines';
  */
 export const DAILY_CREDIT_LIMIT = 200;
 
-/** 무엇에 썼는지. 산출물 다섯 가지 + 에이전트 + 기능 배치 + UinAI. */
+/** 무엇에 썼는지. 산출물 다섯 가지 + 에이전트 + 기능 배치 + UniAI. */
 export type CreditKind = ArtifactKey | 'chat' | 'place' | 'uinai';
 
 export const CREDIT_KIND_LABEL: Record<CreditKind, string> = {
   ...ARTIFACT_LABEL,
   chat: 'AI 에이전트',
   place: '기능 배치',
-  uinai: 'UinAI 화면',
+  uinai: 'UniAI 화면',
 };
 
 export function creditKindLabel(kind: string): string {

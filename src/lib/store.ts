@@ -159,7 +159,7 @@ export interface PlannerState {
   updateWireframe: (planId: string, id: string, patch: Partial<Wireframe>) => void;
   removeWireframe: (planId: string, id: string) => void;
 
-  /* UinAI */
+  /* UniAI */
   upsertUinAiScreen: (planId: string, screen: UinAiScreen) => void;
 
   /* AI 에이전트 */

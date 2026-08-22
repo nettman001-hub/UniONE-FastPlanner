@@ -306,7 +306,7 @@ async function push(): Promise<void> {
       const result = (await res.json().catch(() => ({}))) as { applied?: boolean };
       if (result.applied === false) {
         // 다른 탭·기기의 서버본이 더 최신이다. 거절된 로컬 시각을 saved로 적으면
-        // 다음 로그인 때 UinAI 결과까지 조용히 사라지므로 즉시 정본을 다시 받는다.
+        // 다음 로그인 때 UniAI 결과까지 조용히 사라지므로 즉시 정본을 다시 받는다.
         const latest = await fetch(`/api/plans/${encodeURIComponent(plan.id)}`, {
           cache: 'no-store',
         });

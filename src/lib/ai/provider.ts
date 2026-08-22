@@ -6,7 +6,7 @@
  */
 
 import { DEFAULT_ENGINE, type EngineTier } from './engines';
-import { EMPTY_AI_CONFIG, type AiConfig } from './config';
+import { DEEPSEEK_OUTPUT_TOKENS, EMPTY_AI_CONFIG, type AiConfig } from './config';
 
 export type ProviderId = 'deepseek' | 'anthropic' | 'local';
 
@@ -47,13 +47,10 @@ const DEEPSEEK_DEFAULT_MODEL: Record<EngineTier, string> = {
 /**
  * DeepSeek 요청 하나가 뽑을 수 있는 출력 토큰 수.
  *
- * 이 값은 **상한이자 기준**이다. `lib/jobs/queue.ts` 의 `maxTokensFor` 가 이 값에
- * 비례해 산출물별 요청량을 늘리므로, 올리면 결과물이 실제로 길어진다.
- *
- * 모델이 받는 것보다 크게 잡으면 400 이 떨어진다. 필요하면 관리자 화면이나
- * `DEEPSEEK_MAX_TOKENS` 로 내린다.
+ * 현재 운영 모델의 지원 상한인 **384K로 고정**한다. 모든 생성 경로가 이 값을
+ * 요청하며, 관리자 설정과 환경변수의 과거 값으로 낮출 수 없다.
  */
-const DEEPSEEK_DEFAULT_MAX_TOKENS = 128000;
+const DEEPSEEK_DEFAULT_MAX_TOKENS = DEEPSEEK_OUTPUT_TOKENS;
 
 const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5';
 const ANTHROPIC_DEFAULT_MAX_TOKENS = 32000;
@@ -110,9 +107,9 @@ export function resolveProvider(
     model: deepseekModel(tier, over),
     baseUrl: over.baseUrl || env('DEEPSEEK_BASE_URL') || DEEPSEEK_DEFAULT_BASE_URL,
     apiKey: deepseekKey,
-    maxOutputTokens:
-      over.maxOutputTokens ||
-      positiveInt(env('DEEPSEEK_MAX_TOKENS'), DEEPSEEK_DEFAULT_MAX_TOKENS),
+    // DeepSeek는 앱 전체에서 384K를 쓴다. DB/환경의 이전 200K·128K 값도
+    // 의도치 않게 한도를 낮추지 않도록 여기서 무시한다.
+    maxOutputTokens: DEEPSEEK_DEFAULT_MAX_TOKENS,
     tier,
     effort: over.effort || env('DEEPSEEK_REASONING_EFFORT'),
   });

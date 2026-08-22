@@ -15,10 +15,10 @@
  * | | 준비물 | 결과 |
  * | --- | --- | --- |
  * | **자동 · 스티치** | 스티치 연결 한 번 | 여기서 눌러 스티치에 화면이 생긴다 |
- * | **자동 · UinAI** | 없음 | 여기서 만들고 UniBoard 안에서 연다 |
+ * | **자동 · UniAI** | 없음 | 여기서 만들고 UniBoard 안에서 연다 |
  * | **수동** | 없음 | 요청문을 복사해 도구에 붙여 넣는다 |
  *
- * 자동은 스티치와 UinAI 두 길이다. 나머지 도구는 붙여 넣는 길뿐이라 수동 쪽에만 나온다.
+ * 자동은 스티치와 UniAI 두 길이다. 나머지 도구는 붙여 넣는 길뿐이라 수동 쪽에만 나온다.
  *
  * 여기서 만든 요청문은 두 길이 그대로 나눠 쓴다. 스티치 API 에 넘길 때도 결국
  * 필요한 것이 이 문장이라 `screenPrompt()` 는 한 벌이면 된다.
@@ -110,12 +110,12 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
   return (
     <>
       {/*
-        자동 — 스티치와 UinAI. 선택 단추는 연결 상태 바깥에 두어, 스티치를
-        연결하지 않은 사람도 UinAI로 바로 넘어갈 수 있게 한다.
+        자동 — 스티치와 UniAI. 선택 단추는 연결 상태 바깥에 두어, 스티치를
+        연결하지 않은 사람도 UniAI로 바로 넘어갈 수 있게 한다.
       */}
       <SectionCard
         title="자동(UI 먼저 만들기) - 바로 만들기"
-        description="스티치에 직접 만들거나 UinAI로 만들어 UniBoard 안에서 열 수 있습니다. 화면 선택과 디자인 옵션은 그대로입니다."
+        description="스티치에 직접 만들거나 UniAI가 HTML·CSS·JavaScript 코드로 생성한 화면을 UniBoard 안에서 열 수 있습니다. 화면 선택과 디자인 옵션은 그대로입니다."
       >
         <div className="mb-2.5 flex flex-wrap gap-1.5" role="group" aria-label="자동 UI 만들기 도구">
           <button
@@ -132,7 +132,7 @@ export function DesignHandoff({ plan }: { plan: Plan }) {
             className={automatic === 'uinai' ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
             onClick={() => chooseAutomatic('uinai')}
           >
-            UinAI로 바로 만들기
+            UniAI로 바로 만들기
           </button>
         </div>
         {/* 둘 다 마운트해 두어 탭을 오가도 선택·엔진·진행 상태가 사라지지 않게 한다. */}

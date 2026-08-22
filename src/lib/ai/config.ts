@@ -91,6 +91,14 @@ const MAX_TEXT = 200;
 export const MIN_OUTPUT_TOKENS = 256;
 export const MAX_OUTPUT_TOKENS = 1_000_000;
 
+/**
+ * 현재 서비스의 DeepSeek 출력 상한.
+ *
+ * 운영 모델이 지원하는 384K를 모든 AI 생성 경로에서 동일하게 요청한다. 관리자
+ * 설정·환경변수의 과거 값은 DeepSeek 실행 시 이 값을 낮출 수 없다.
+ */
+export const DEEPSEEK_OUTPUT_TOKENS = 384_000;
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim().slice(0, MAX_TEXT) : '';
 }
