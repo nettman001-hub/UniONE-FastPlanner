@@ -90,7 +90,7 @@ table td { border-bottom: 1px solid var(--c-border); font-size: var(--fs-body); 
 
 export const UINAI_HARD_RULES = `## 하드 제약 (반드시 지킵니다)
 - 색·간격·모서리·글자 크기·그림자는 하드코딩하지 않고, 위 "디자인 토큰"의 var(--*) 참조만 사용합니다. 색 코드(#...), rgb(), px 단위 값을 스타일에 직접 쓰지 않습니다.
-- :root에 토큰을 선언할 때는 주어진 값 그대로 적습니다(값을 임의로 바꾸지 않습니다).
+- 토큰은 이미 화면 CSS 앞에 선언되어 있습니다. **:root를 다시 선언하지 마세요.**
 - 외부 자원(@import, url(...), webfont, CDN 링크)을 사용하지 않습니다. 아이콘은 인라인 SVG나 글자로 만듭니다.
 - 이미지를 생성하거나 불러오지 않습니다.
 - html/css/javascript 필드 구분과 JSON 스키마를 정확히 지킵니다.`;

@@ -8,6 +8,8 @@ import {
   TOKEN_SETS,
   composeScreenCss,
   findTokenSet,
+  stripRootBlocks,
+  stripStyleTags,
   tokensToCssBlock,
   tokensToPromptBlock,
 } from '@/lib/design/uniai-tokens';
@@ -62,6 +64,7 @@ for (const set of allSets) {
     prompt.length <= 1500,
   );
   ok(`[${set.key}] 프롬프트 블록이 변수명을 담음`, prompt.includes('--c-primary:'));
+  ok(`[${set.key}] 프롬프트 블록이 :root 재선언 금지를 명시`, prompt.includes(':root를 다시 선언하지'));
   ok(`[${set.key}] :root 블록 형식`, css.startsWith(':root {') && css.includes('--c-primary:'));
 }
 
@@ -83,6 +86,20 @@ ok('모르는 키도 compose 안전(중립)', composeScreenCss('bogus', modelCss
 const bigCss = `.a{color:var(--c-fg)}`.repeat(1540); // 22자 × 1540 ≈ 33.9K
 const bigComposed = composeScreenCss('clean', bigCss);
 ok(`34K 입력 compose 출력 ≤ 40K (실제 ${bigComposed.length})`, bigComposed.length <= 40000);
+
+// :root 이중 선언 방어
+const withRoot = ':root{--c-primary:#ff0000;}.a{color:var(--c-primary)}';
+const stripped = stripRootBlocks(withRoot);
+ok(':root 블록 제거', !stripped.includes(':root') && stripped.includes('.a{'));
+const composedRoot = composeScreenCss('clean', withRoot);
+ok('compose 후 :root 는 서버 블록 하나', (composedRoot.match(/:root\s*\{/g) ?? []).length === 1);
+ok('모델 :root 가 서버 값을 덮지 않음(순서)', composedRoot.indexOf('--c-primary:#3B5BDB') < composedRoot.indexOf('.a{'));
+
+// HTML <style> 침투 방어
+const htmlWithStyle =
+  '<main><style>.x{color:#ff0000}</style><h1>제목</h1></main>';
+const noStyle = stripStyleTags(htmlWithStyle);
+ok('HTML <style> 제거', !noStyle.includes('<style') && noStyle.includes('<h1>제목</h1>'));
 
 console.log(failures === 0 ? '\n모두 통과했습니다.' : `\n${failures}건 실패.`);
 process.exitCode = failures === 0 ? 0 : 1;

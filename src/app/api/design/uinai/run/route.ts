@@ -17,7 +17,11 @@ import {
   UINAI_SYSTEM_PROMPT,
 } from '@/lib/design/uinai-prompt';
 import { findSkill } from '@/lib/design/skills';
-import { composeScreenCss } from '@/lib/design/uniai-tokens';
+import {
+  composeScreenCss,
+  stripRootBlocks,
+  stripStyleTags,
+} from '@/lib/design/uniai-tokens';
 import { UINAI_HARD_RULES, UINAI_SOFT_RULES } from '@/lib/design/uniai-style';
 import {
   normalizeUinAiJavaScript,
@@ -86,6 +90,9 @@ function normalizedHtml(value: unknown): string {
   let html = value.trim();
   const fenced = /^```(?:html)?\s*([\s\S]*?)```$/i.exec(html);
   if (fenced) html = fenced[1].trim();
+  // 스타일은 css 필드의 몫이다. body 안의 <style> 이 남으면 미리보기에서
+  // 토큰 CSS 보다 뒤에 읽혀 값을 덮어 쓰므로, 여기서 구조만 남긴다.
+  html = stripStyleTags(html);
   try {
     return sanitizeUinAiHtml(html);
   } catch (error) {
@@ -96,7 +103,9 @@ function normalizedHtml(value: unknown): string {
 function normalizedCss(value: unknown): string {
   if (value === undefined || value === null) return '';
   try {
-    return sanitizeUinAiCss(value);
+    // 토큰 블록은 서버가 CSS 앞에 심는다. 모델이 :root 를 다시 선언하면
+    // 뒤에 와서 서버 값을 덮어 쓰므로, 모델 산출물의 :root 는 무조건 제거.
+    return stripRootBlocks(sanitizeUinAiCss(value));
   } catch (error) {
     throw new AiError('format', error instanceof Error ? error.message : 'CSS 안전화 실패');
   }
@@ -118,6 +127,56 @@ function notesOf(value: unknown): string[] {
     .map((item) => item.trim().slice(0, 1_000))
     .filter(Boolean)
     .slice(0, 8);
+}
+
+/** 토큰 사용 품질 측정 — var() 참조 수와 하드코딩 색 수. */
+function tokenUsageQuality(css: string): { varUses: number; hardcoded: number } {
+  return {
+    varUses: (css.match(/var\(--/g) ?? []).length,
+    hardcoded: (css.match(/#[0-9a-fA-F]{3,6}\b|rgb\(/g) ?? []).length,
+  };
+}
+
+/**
+ * 토큰을 거의 쓰지 않은 결과를 **한 번만** 고쳐 본다.
+ *
+ * 형식은 맞는데 디자인 토큰이 안 지켜진 경우다. 구조(HTML)는 유지하고
+ * 스타일만 var(--*) 로 다시 쓰게 한다. 실패하면 원본을 쓴다 — 토큰 블록은
+ * 어차피 서버가 심으므로 하한선은 보장된다.
+ */
+async function correctWithTokens(options: {
+  prompt: string;
+  aiRuntime: Awaited<ReturnType<typeof readAiRuntime>>;
+  engine: EngineTier;
+  signal: AbortSignal;
+}): Promise<string | null> {
+  const provider = resolveProvider(options.engine, options.aiRuntime.config, options.aiRuntime.apiKey);
+  const correctivePrompt = [
+    options.prompt,
+    '',
+    '## 토큰 사용 수정 재시도',
+    '앞선 결과의 CSS가 디자인 토큰(var(--*))을 거의 사용하지 않았습니다.',
+    'HTML 구조는 그대로 두고, css의 모든 색·간격·모서리·글자 크기·그림자를 var(--*) 참조로 다시 작성하세요. :root는 선언하지 마세요.',
+  ].join('\n');
+  const draft = draftOf(
+    await generateJson<unknown>({
+      system: UINAI_SYSTEM_PROMPT,
+      prompt: correctivePrompt,
+      schema: UINAI_SCREEN_SCHEMA,
+      maxTokens: maxTokensFor('wireframe', provider.maxOutputTokens),
+      engine: options.engine,
+      effort: options.engine === 'advanced' ? 'high' : 'medium',
+      config: options.aiRuntime.config,
+      apiKey: options.aiRuntime.apiKey,
+      signal: options.signal,
+      retryFormat: false,
+    }),
+  );
+  try {
+    return normalizedCss(draft.css) || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -429,6 +488,35 @@ export async function POST(request: Request) {
           '[uinai] 정제 패스를 건너뛰고 1차 결과를 유지합니다:',
           error instanceof Error ? error.message : error,
         );
+      }
+    }
+
+    // 토큰 사용 품질 게이트 — var() 를 거의 안 쓴 결과는 한 번만 고쳐 본다.
+    {
+      const quality = tokenUsageQuality(css);
+      if (quality.varUses < 8 || quality.hardcoded > quality.varUses) {
+        try {
+          const corrected = await correctWithTokens({
+            prompt,
+            aiRuntime,
+            engine,
+            signal: generationSignal,
+          });
+          if (corrected) {
+            const after = tokenUsageQuality(corrected);
+            if (after.varUses > quality.varUses) {
+              console.warn(
+                `[uinai] 토큰 사용이 낮아 교정했습니다 (var ${quality.varUses}→${after.varUses}).`,
+              );
+              css = corrected;
+            }
+          }
+        } catch (error) {
+          console.warn(
+            '[uinai] 토큰 교정 재시도를 건너뜁니다:',
+            error instanceof Error ? error.message : error,
+          );
+        }
       }
     }
 

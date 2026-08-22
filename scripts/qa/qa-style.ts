@@ -27,6 +27,7 @@ const varUses = (UINAI_STYLE_EXEMPLAR.match(/var\(--/g) ?? []).length;
 ok(`퓨샷 var(--) 사용 8회 이상 (실제 ${varUses})`, varUses >= 8);
 ok('하드 규칙에 하드코딩 금지 명시', UINAI_HARD_RULES.includes('하드코딩'));
 ok('하드 규칙에 토큰 참조만 사용 명시', UINAI_HARD_RULES.includes('var(--*)'));
+ok('하드 규칙에 :root 재선언 금지 명시', UINAI_HARD_RULES.includes(':root를 다시 선언하지 마세요'));
 const slopTerms = ['기본 파랑', '흰 카드', '중앙 정렬', '그라데이션', '이모지'];
 const present = slopTerms.filter((term) => UINAI_SOFT_RULES.includes(term));
 ok(

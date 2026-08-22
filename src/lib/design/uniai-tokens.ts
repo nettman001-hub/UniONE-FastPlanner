@@ -355,7 +355,7 @@ export function tokensToPromptBlock(set: DesignTokenSet): string {
   const t = set.typeScale;
   const r = set.radius;
   const lines = [
-    '## 디자인 토큰 (아래 변수를 :root에 그대로 선언하세요)',
+    '## 디자인 토큰 (이 값들은 화면 CSS 앞에 이미 선언되어 있습니다)',
     `--c-primary:${c.primary}; --c-primary-hover:${c.primaryHover}; --c-primary-soft:${c.primarySoft}; --c-primary-border:${c.primaryBorder};`,
     `--c-surface:${c.surface}; --c-surface-2:${c.surface2}; --c-border:${c.border}; --c-border-strong:${c.borderStrong};`,
     `--c-fg:${c.fg}; --c-fg-muted:${c.fgMuted}; --c-danger:${c.danger}; --c-danger-soft:${c.dangerSoft}; --c-warn:${c.warn}; --c-warn-soft:${c.warnSoft}; --c-ok:${c.ok}; --c-ok-soft:${c.okSoft};`,
@@ -363,7 +363,7 @@ export function tokensToPromptBlock(set: DesignTokenSet): string {
     set.spacing.map((value, index) => `--sp-${index + 1}:${value}px`).join('; ') + ';',
     `--r-card:${r.card}px; --r-button:${r.button}px; --r-input:${r.input}px;`,
     `--font-sans:${set.fontStack};`,
-    '사용 규칙 — 위 변수를 그대로 선언하고, 모든 색·간격·모서리·글자 크기·그림자는 var(--*) 참조만 사용합니다. 색 코드·px 값을 스타일에 직접 쓰지 마세요.',
+    '사용 규칙 — 위 변수는 **이미 선언되어 있으므로 :root를 다시 선언하지 마세요.** 모든 색·간격·모서리·글자 크기·그림자는 var(--*) 참조만 사용하고, 색 코드·px 값을 스타일에 직접 쓰지 마세요.',
   ];
   return lines.join('\n');
 }
@@ -404,5 +404,28 @@ const MINI_RESET = [
  */
 export function composeScreenCss(skillKey: string | undefined, modelCss: string): string {
   const set = findTokenSet(skillKey);
-  return `${MINI_RESET}\n${tokensToCssBlock(set)}\n${modelCss.trim()}`;
+  // 모델의 :root 는 이 출구에서 무조건 제거한다 — 서버 토큰 블록이 유일한 선언.
+  return `${MINI_RESET}\n${tokensToCssBlock(set)}\n${stripRootBlocks(modelCss)}`;
+}
+
+/**
+ * 모델 CSS에서 :root 블록을 지운다.
+ *
+ * 토큰 블록은 서버가 CSS 앞에 이미 심는다. 모델이 프롬프트 지시대로 :root 를
+ * 다시 선언하면 그것이 **뒤에 와서** 서버가 심은 값을 덮어 쓴다. 그래서
+ * 모델 산출물의 :root 는 값이 무엇이든 무조건 제거한다(결정적 방어).
+ */
+export function stripRootBlocks(css: string): string {
+  return css.replace(/:root\s*\{[^}]*\}/g, '').trim();
+}
+
+/**
+ * 모델이 만든 HTML 에서 <style> 블록을 지운다.
+ *
+ * 스타일은 css 필드의 몫이다. body 안에 <style> 이 남아 있으면 미리보기에서
+ * 토큰 CSS 보다 뒤에 읽혀 같은 우선순위에서 값을 덮어 쓴다. HTML 은 구조만
+ * 남기고, 스타일 출구를 하나로 강제한다.
+ */
+export function stripStyleTags(html: string): string {
+  return html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').trim();
 }
