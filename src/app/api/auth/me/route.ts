@@ -3,6 +3,7 @@ import { currentUser } from '@/lib/auth/server';
 import { isAdminEmail } from '@/lib/auth/admin';
 import { signupMode } from '@/lib/auth/policy';
 import { hasDatabase } from '@/lib/db';
+import { findUserById, toPublicUser } from '@/lib/db/users';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,20 @@ export const dynamic = 'force-dynamic';
  * 구분할 수 있어야 깜빡임 없이 그려진다.
  */
 export async function GET() {
-  const user = await currentUser();
+  const sessionUser = await currentUser();
+  let user = sessionUser;
+
+  if (sessionUser) {
+    try {
+      const dbUser = await findUserById(sessionUser.id);
+      if (dbUser) {
+        user = toPublicUser(dbUser);
+      }
+    } catch {
+      // DB 조회 실패 시 세션 정보 유지
+    }
+  }
+
   return NextResponse.json({
     user,
     // 관리자 차림표를 보여 줄지. 본인이 관리자라는 사실은 감출 이유가 없다.

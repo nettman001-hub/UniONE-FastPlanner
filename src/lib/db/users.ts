@@ -16,10 +16,16 @@ export interface PublicUser {
   id: string;
   email: string;
   name: string;
+  hasPassword?: boolean;
 }
 
 export function toPublicUser(row: UserRow): PublicUser {
-  return { id: row.id, email: row.email, name: row.name };
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    hasPassword: Boolean(row.password_hash),
+  };
 }
 
 /** 대소문자·앞뒤 공백 차이로 계정이 갈리지 않게 한 곳에서 정규화한다. */
@@ -92,8 +98,8 @@ export async function updateUserName(id: string, name: string): Promise<UserRow 
 /**
  * 비밀번호 바꾸기.
  *
- * **지금 비밀번호를 반드시 확인한다.** 로그인한 채로 자리를 비운 컴퓨터를 남이
- * 만졌을 때, 확인 없이 바꿀 수 있으면 그 자리에서 계정을 통째로 빼앗긴다.
+ * **기존 비밀번호가 있을 때만 현재 비밀번호를 확인한다.**
+ * 비밀번호 없이(소셜/초기화 등) 등록된 계정은 새 비밀번호를 바로 설정할 수 있다.
  */
 export async function changeUserPassword(
   id: string,
@@ -102,7 +108,29 @@ export async function changeUserPassword(
 ): Promise<'ok' | 'wrong-current' | 'no-user'> {
   const user = await findUserById(id);
   if (!user) return 'no-user';
-  if (!(await verifyPassword(current, user.password_hash))) return 'wrong-current';
+
+  // 기존 비밀번호가 설정되어 있는 경우에만 현재 비밀번호 검증
+  if (user.password_hash) {
+    if (!(await verifyPassword(current, user.password_hash))) return 'wrong-current';
+  }
+
+  const db = await getDb();
+  await db.query('update users set password_hash = $2 where id = $1', [
+    id,
+    await hashPassword(next),
+  ]);
+  return 'ok';
+}
+
+/**
+ * 관리자가 특정 사용자의 비밀번호를 강제 재설정한다.
+ */
+export async function adminSetUserPassword(
+  id: string,
+  next: string,
+): Promise<'ok' | 'no-user'> {
+  const user = await findUserById(id);
+  if (!user) return 'no-user';
 
   const db = await getDb();
   await db.query('update users set password_hash = $2 where id = $1', [

@@ -206,6 +206,39 @@ export default function AdminUsers() {
     }
   };
 
+  const [resettingPw, setResettingPw] = useState<string | null>(null);
+
+  const resetPassword = async (user: AdminUser) => {
+    const raw = window.prompt(
+      `[${user.email}] 계정의 새 비밀번호를 입력해 주세요 (8자 이상):`,
+      '',
+    );
+    if (raw === null) return;
+    const newPassword = raw.trim();
+    if (newPassword.length < 8) {
+      toast('비밀번호는 8자 이상이어야 합니다.', 'warn');
+      return;
+    }
+    setResettingPw(user.id);
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset_password', userId: user.id, newPassword }),
+      });
+      const data = (await res.json()) as { error?: string; ok?: boolean };
+      if (!res.ok) {
+        toast(data.error ?? '재설정하지 못했습니다.', 'warn');
+        return;
+      }
+      toast(`${user.email} 의 비밀번호를 성공적으로 재설정했습니다.`, 'ok');
+    } catch {
+      toast('재설정하지 못했습니다.', 'warn');
+    } finally {
+      setResettingPw(null);
+    }
+  };
+
   return (
     <Panel title="사용자" description="플랜 숫자를 누르면 목록이, 제목을 누르면 본문이 열립니다.">
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
@@ -280,15 +313,23 @@ export default function AdminUsers() {
                   <td className="py-2 pr-3 whitespace-nowrap text-[var(--fg-muted)]">
                     {day(user.lastUsedAt)}
                   </td>
-                  <td className="py-2 whitespace-nowrap">
+                  <td className="py-2 whitespace-nowrap flex items-center gap-1">
                     <button
                       className={`btn btn-sm${granting === user.id ? ' is-busy' : ''}`}
-                      disabled={granting !== null}
+                      disabled={granting !== null || resettingPw !== null}
                       onClick={() => void grant(user)}
                       title="쓴 기록은 그대로 두고 되돌려 주는 줄을 하나 더 적습니다."
                     >
                       {granting === user.id ? <Spinner size={12} /> : <Coins size={12} />}
                       크레딧
+                    </button>
+                    <button
+                      className={`btn btn-sm${resettingPw === user.id ? ' is-busy' : ''}`}
+                      disabled={granting !== null || resettingPw !== null}
+                      onClick={() => void resetPassword(user)}
+                      title="이 사용자의 비밀번호를 새 값으로 재설정합니다."
+                    >
+                      비밀번호 재설정
                     </button>
                   </td>
                 </tr>

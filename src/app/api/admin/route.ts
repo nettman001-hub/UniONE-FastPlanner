@@ -14,6 +14,7 @@ import { isAiEnabled, resolveProvider } from '@/lib/ai/client';
 import { readAiConfigRecord, readAiKey, writeAiConfig } from '@/lib/db/ai-config';
 import { aiConfigProblem, parseAiConfig } from '@/lib/ai/config';
 import { signupMode } from '@/lib/auth/policy';
+import { passwordProblem } from '@/lib/auth/rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -134,11 +135,27 @@ export async function POST(request: Request) {
     action?: unknown;
     config?: unknown;
     apiKey?: unknown;
+    newPassword?: unknown;
   };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: '요청을 읽지 못했습니다.' }, { status: 400 });
+  }
+
+  if (body.action === 'reset_password') {
+    const targetUserId = typeof body.userId === 'string' ? body.userId.trim() : '';
+    const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
+    if (!targetUserId) return NextResponse.json({ error: '사용자 ID가 없습니다.' }, { status: 400 });
+    const problem = passwordProblem(newPassword);
+    if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+
+    const { adminSetUserPassword } = await import('@/lib/db/users');
+    const res = await adminSetUserPassword(targetUserId, newPassword);
+    if (res === 'no-user') return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
+
+    console.warn(`[admin] ${admin.email} 이(가) ${targetUserId} 의 비밀번호를 재설정했습니다.`);
+    return NextResponse.json({ ok: true });
   }
 
   if (body.action === 'ai') {

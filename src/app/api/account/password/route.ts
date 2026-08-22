@@ -7,9 +7,9 @@
 
 import { NextResponse } from 'next/server';
 
-import { noteFailedAttempt, requireUser, tooManyAttempts } from '@/lib/auth/server';
+import { clearAttempts, noteFailedAttempt, requireUser, tooManyAttempts, startSession } from '@/lib/auth/server';
 import { passwordProblem } from '@/lib/auth/rules';
-import { changeUserPassword } from '@/lib/db/users';
+import { changeUserPassword, findUserById, toPublicUser } from '@/lib/db/users';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
   const problem = passwordProblem(next);
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
-  if (current === next) {
+  if (current && current === next) {
     return NextResponse.json({ error: '지금 쓰는 비밀번호와 같습니다.' }, { status: 400 });
   }
 
@@ -55,5 +55,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '계정을 찾지 못했습니다.' }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true });
+  clearAttempts(key);
+
+  // 세션 사용자 정보 갱신
+  const updated = await findUserById(user.id);
+  if (updated) {
+    await startSession(toPublicUser(updated));
+  }
+
+  return NextResponse.json({ ok: true, hasPassword: true });
 }
