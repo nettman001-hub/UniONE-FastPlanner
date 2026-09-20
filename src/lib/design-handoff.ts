@@ -281,7 +281,9 @@ export function systemPrompt(
       ? '모바일 앱'
       : deviceTarget === 'desktop'
         ? '데스크톱 웹'
-        : `${PLATFORM_LABEL[brief.platform] ?? '웹'} (모바일 및 데스크톱)`;
+        : brief.platform === 'windows'
+          ? '윈도우 앱 (데스크톱)'
+          : `${PLATFORM_LABEL[brief.platform] ?? '웹'} (모바일 및 데스크톱)`;
 
   const lines = [
     `${targetName} 서비스의 화면들을 디자인하려 합니다. 먼저 전체 방향을 잡아 주세요.`,

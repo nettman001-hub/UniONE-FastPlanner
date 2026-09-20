@@ -14,7 +14,7 @@ import { normalizeUinAiScreens } from './design/uinai';
 import { type ArtifactKey, type Plan, type Platform } from './types';
 
 const ARTIFACT_KEYS: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
-const PLATFORM_KEYS: Platform[] = ['web', 'app', 'both', 'admin'];
+const PLATFORM_KEYS: Platform[] = ['web', 'app', 'both', 'admin', 'windows'];
 
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;

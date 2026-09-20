@@ -659,12 +659,17 @@ function buildPrd(brief: PlanBrief): PrdDraft {
             ? ['반응형 웹', 'iOS 앱', 'Android 앱']
             : brief.platform === 'admin'
               ? ['데스크톱 웹 (어드민)']
-              : ['반응형 웹'],
+              : brief.platform === 'windows'
+                ? ['Windows 데스크톱 앱 (x64/ARM64)']
+                : ['반응형 웹'],
       devices:
-        brief.platform === 'admin'
-          ? ['데스크톱 1440px 이상']
+        brief.platform === 'admin' || brief.platform === 'windows'
+          ? ['데스크톱 1280px 이상']
           : ['모바일 375px 이상', '태블릿', '데스크톱 1280px 이상'],
-      browsers: ['Chrome 최신 2개 버전', 'Safari 최신 2개 버전', 'Edge 최신 버전'],
+      browsers:
+        brief.platform === 'windows'
+          ? ['Windows 10/11 네이티브 및 WebView2']
+          : ['Chrome 최신 2개 버전', 'Safari 최신 2개 버전', 'Edge 최신 버전'],
     },
     coreValues: kit.values,
     successMetrics: [

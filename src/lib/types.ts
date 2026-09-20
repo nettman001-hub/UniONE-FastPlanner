@@ -15,7 +15,7 @@
  *   와이어프레임 WF-001
  */
 
-export type Platform = 'web' | 'app' | 'both' | 'admin';
+export type Platform = 'web' | 'app' | 'both' | 'admin' | 'windows';
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3';
 export type WorkStatus = '작성전' | '작성중' | '검토중' | '확정';
 
@@ -31,6 +31,7 @@ export const PLATFORM_LABEL: Record<Platform, string> = {
   app: '모바일 앱',
   both: '웹 + 앱',
   admin: '어드민',
+  windows: '윈도우 앱',
 };
 
 export const WORK_STATUS_ORDER: WorkStatus[] = ['작성전', '작성중', '검토중', '확정'];

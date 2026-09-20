@@ -51,7 +51,7 @@ import { setEnginesLocally, useEngines, type EngineMap } from '@/lib/useEngine';
 /* ------------------------------------------------------------------ */
 
 const ARTIFACT_KEYS: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
-const PLATFORM_KEYS: Platform[] = ['web', 'app', 'both', 'admin'];
+const PLATFORM_KEYS: Platform[] = ['web', 'app', 'both', 'admin', 'windows'];
 
 const IDEA_SAMPLES = [
   '동네 반려견 산책 메이트 매칭 앱',
@@ -272,6 +272,23 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   /** 질문이 없을 때 왜 없는지. 빈 화면만 보여 주면 고장인지 아닌지 알 수 없다. */
   const [askReason, setAskReason] = useState('');
   const askedFor = useRef('');
+  const lastStepTimeRef = useRef(0);
+  const wizardBodyRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 단계가 바뀔 때마다:
+   * 1) 포커스를 해제하여 스페이스바나 엔터 키로 버튼이 예기치 않게 재클릭되는 것 방지
+   * 2) 모달 스크롤 컨테이너를 맨 위로 올려 다음 단계 질문을 처음부터 보도록 처리
+   */
+  useEffect(() => {
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    const scrollContainer = wizardBodyRef.current?.closest('.overflow-y-auto');
+    if (scrollContainer) {
+      scrollContainer.scrollTop = 0;
+    }
+  }, [step]);
 
   /**
    * 이전에 다섯 단계에 같은 엔진을 골라 두었다면 다음 기획의 기본 선택으로
@@ -395,6 +412,37 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
     router.push(`/plans/${id}?start=prd`);
   };
 
+  const goToNextStep = () => {
+    const now = Date.now();
+    // 더블클릭이나 빠른 연타로 인한 단계 스킵 방지 (400ms 쿨다운)
+    if (now - lastStepTimeRef.current < 400) return;
+    lastStepTimeRef.current = now;
+
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
+    /*
+     * 4단계로 갈 때 미리 물어 두고, 4단계를 떠날 때 한 번 더 본다.
+     * 미리 부르는 것은 5단계에서 기다리지 않기 위해서고, 두 번째는
+     * **4단계에서 고른 답을 반영**하기 위해서다. 답이 그대로면
+     * 씨앗이 같아 다시 부르지 않는다.
+     */
+    if (step === 3 || step === 4) void askFollowups();
+    setStep((s) => Math.min(s + 1, LAST_STEP));
+  };
+
+  const goToPrevStep = () => {
+    const now = Date.now();
+    if (now - lastStepTimeRef.current < 400) return;
+    lastStepTimeRef.current = now;
+
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setStep((s) => Math.max(s - 1, 1));
+  };
+
   return (
     <Modal
       open={open}
@@ -405,7 +453,16 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       footer={
         <>
           {step > 1 && (
-            <button type="button" className="btn" onClick={() => setStep((s) => s - 1)}>
+            <button
+              type="button"
+              className="btn"
+              onClick={goToPrevStep}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Spacebar') {
+                  e.preventDefault();
+                }
+              }}
+            >
               <ArrowLeft size={14} />
               이전
             </button>
@@ -424,15 +481,12 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               type="button"
               className="btn btn-primary"
               disabled={step1Blocked || submitting}
-              onClick={() => {
-                /*
-                 * 4단계로 갈 때 미리 물어 두고, 4단계를 떠날 때 한 번 더 본다.
-                 * 미리 부르는 것은 5단계에서 기다리지 않기 위해서고, 두 번째는
-                 * **4단계에서 고른 답을 반영**하기 위해서다. 답이 그대로면
-                 * 씨앗이 같아 다시 부르지 않는다.
-                 */
-                if (step === 3 || step === 4) void askFollowups();
-                setStep((s) => s + 1);
+              onClick={goToNextStep}
+              onKeyDown={(e) => {
+                // 버튼 포커스 상태에서 스페이스바로 스크롤 시 버튼이 눌려 넘어가는 것 방지
+                if (e.key === ' ' || e.key === 'Spacebar') {
+                  e.preventDefault();
+                }
               }}
             >
               다음
@@ -447,7 +501,8 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
         </>
       }
     >
-      <ol className="mb-5 flex items-center gap-1.5">
+      <div ref={wizardBodyRef}>
+        <ol className="mb-5 flex items-center gap-1.5">
         {WIZARD_STEPS.map((label, index) => {
           const n = index + 1;
           const active = step === n;
@@ -727,6 +782,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
           ))}
         </div>
       )}
+      </div>
     </Modal>
   );
 }
