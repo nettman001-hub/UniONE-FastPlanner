@@ -21,12 +21,12 @@ import type { AiConfig } from '@/lib/ai/config';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { generateLocally } from '@/lib/ai/local-generator';
-import { ARTIFACT_SCHEMA } from '@/lib/ai/schemas';
-import { buildPrompt } from '@/lib/ai/prompts';
-import { draftToPatch } from '@/lib/ai/apply';
+import { ARTIFACT_SCHEMA, FS_SKELETON_SCHEMA, SPEC_SCHEMA, type FsDraft } from '@/lib/ai/schemas';
+import { FS_SKELETON_NOTE, buildPrompt, buildSpecPrompt } from '@/lib/ai/prompts';
+import { appendSpecs, draftToPatch } from '@/lib/ai/apply';
 import { canAfford, spendCredits } from '@/lib/db/credits';
 import type { SkillMap } from '@/lib/skills';
-import { costOfArtifact } from '@/lib/credits';
+import { SPEC_FILL_COST, costOfArtifact, costWithEngine } from '@/lib/credits';
 import { ARTIFACT_LABEL } from '@/lib/types';
 import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
 
@@ -78,6 +78,11 @@ export interface GenerateOptions {
    */
   engines?: Partial<Record<ArtifactKey, EngineTier>>;
   /**
+   * 기능명세서를 다시 만들지 않고 **이 기능들의 상세명세만** 채운다. 정합성 검사의
+   * `AI로 채우기` 가 보낸다. 값은 기능명세서 전체보다 싸게 받는다(`SPEC_FILL_COST`).
+   */
+  specFeatureIds?: string[];
+  /**
    * 관리자가 화면에서 고친 AI 설정. 파이프라인이 시작할 때 **한 번만** 읽어
    * 단계마다 돌려 쓴다 — 5단계면 같은 질의를 다섯 번 할 이유가 없다.
    */
@@ -94,6 +99,10 @@ export interface GenerateOptions {
  */
 export function engineFor(artifact: ArtifactKey, options: GenerateOptions): EngineTier {
   return options.engines?.[artifact] ?? options.engine ?? DEFAULT_ENGINE;
+}
+
+export function isSpecFill(artifact: ArtifactKey, options: GenerateOptions): boolean {
+  return artifact === 'fs' && (options.specFeatureIds?.length ?? 0) > 0;
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -170,6 +179,149 @@ export function moreFlowsBlock(plan: Plan): string {
   return lines.join('\n');
 }
 
+type Call = <T>(prompt: string, schema: object, signal?: AbortSignal) => Promise<T>;
+
+/**
+ * 상세명세 호출을 동시에 몇 개까지 돌릴지. 요구사항 수(5~10)만큼 한꺼번에 불러, 걸리는 시간이
+ * "골격 + 가장 느린 요구사항 하나" 가 되게 한다. 차례로 부르면 라우트 제한(300초)을 넘는다.
+ */
+const SPEC_CONCURRENCY = 10;
+
+/**
+ * 기능명세서 한 단계에 쓸 시간. 라우트 제한(300초)보다 넉넉히 짧게 잡는다. 이 시간이 지나면
+ * 아직 오지 않은 상세명세 호출을 끊고 **받은 것까지만** 낸다. 빠진 기능은 정합성 검사가
+ * 짚고 `AI로 채우기` 로 메운다 — 다 버리고 실패하는 것보다 낫다.
+ */
+const FS_TIME_BUDGET_MS = 230_000;
+
+async function forEachLimit<T>(items: T[], limit: number, work: (item: T) => Promise<void>) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      await work(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
+type SpecDraft = Omit<FsDraft['specifications'][number], 'featureIndex'> & { featureIndex: number };
+
+/**
+ * 기능명세서를 **두 번에 나눠** 만든다.
+ *
+ * ① 요구사항·기능 골격을 한 번에 만들고 ② 요구사항마다 따로 불러 상세명세를 채운다.
+ * 한 번에 다 담으면 상세명세가 "핵심 기능 1~2개" 에 그치고 하나하나가 얕아졌다.
+ * 와이어프레임을 화면마다 나눠 만드는 것과 같은 이유다.
+ *
+ * 어느 요구사항의 상세명세 호출이 실패해도 나머지는 남긴다. 빠진 곳은 정합성 검사가
+ * 짚고 `AI로 채우기` 로 메운다. 골격이 실패하면 바깥에서 내장 생성기로 대체한다.
+ */
+async function generateFsInTwoPasses(plan: Plan, options: GenerateOptions, call: Call): Promise<FsDraft> {
+  const skill = options.skills?.fs;
+  const started = Date.now();
+  const skeleton = await call<Pick<FsDraft, 'requirements' | 'features'>>(
+    `${buildPrompt(plan, 'fs', options.extra, skill)}\n\n${FS_SKELETON_NOTE}`,
+    FS_SKELETON_SCHEMA,
+  );
+  const requirements = skeleton.requirements ?? [];
+  const features = skeleton.features ?? [];
+  const parentOf = (index: number) => (Number.isInteger(index) && requirements[index] ? index : 0);
+
+  const groups = requirements
+    .map((requirement, ri) => ({
+      requirement,
+      items: features.map((feature, fi) => ({ feature, fi })).filter((x) => parentOf(x.feature.requirementIndex) === ri),
+    }))
+    .filter((g) => g.items.length > 0);
+
+  console.info(`[generate] 기능명세서 골격 ${requirements.length}개 요구사항 · ${Date.now() - started}ms`);
+
+  // 남은 시간이 다 되면 아직 오지 않은 호출을 끊는다.
+  const budget = new AbortController();
+  const timer = setTimeout(() => budget.abort(), Math.max(10_000, FS_TIME_BUDGET_MS - (Date.now() - started)));
+  const specifications: SpecDraft[] = [];
+  let missed = 0;
+  await forEachLimit(groups, SPEC_CONCURRENCY, async (group) => {
+    try {
+      const out = await call<{ specifications: SpecDraft[] }>(
+        buildSpecPrompt(
+          plan,
+          { requirement: group.requirement, features: group.items.map((x) => x.feature) },
+          requirements.filter((r) => r !== group.requirement).map((r) => r.title),
+          options.extra,
+          skill,
+        ),
+        SPEC_SCHEMA,
+        budget.signal,
+      );
+      for (const spec of out.specifications ?? []) {
+        const local = Number.isInteger(spec.featureIndex) ? spec.featureIndex : 0;
+        const item = group.items[local] ?? group.items[0];
+        specifications.push({ ...spec, featureIndex: item.fi });
+      }
+    } catch (error) {
+      missed += 1;
+      console.warn(`[generate] 상세명세 생성 실패 — ${group.requirement.title}:`, aiErrorMessage(error));
+    }
+  });
+  clearTimeout(timer);
+  console.info(
+    `[generate] 기능명세서 상세명세 ${specifications.length}개 · 빠진 요구사항 ${missed}개 · 전체 ${Date.now() - started}ms`,
+  );
+
+  // 동시에 받아서 순서가 섞였다. 기능 순서대로 다시 세운다.
+  specifications.sort((a, b) => a.featureIndex - b.featureIndex);
+  return { requirements, features, specifications };
+}
+
+/** 이미 있는 기능명세서에서 상세명세가 없는 기능만 골라 채운다. 요구사항 단위로 묶어 부른다. */
+async function fillSpecs(
+  plan: Plan,
+  featureIds: string[],
+  options: GenerateOptions,
+  call: Call,
+): Promise<Partial<PlanDocuments>> {
+  const targets = plan.features.filter((f) => featureIds.includes(f.id));
+  const byRequirement = new Map<string, typeof targets>();
+  for (const feature of targets) {
+    byRequirement.set(feature.requirementId, [...(byRequirement.get(feature.requirementId) ?? []), feature]);
+  }
+
+  const drafts: Parameters<typeof appendSpecs>[1] = [];
+  await forEachLimit([...byRequirement.entries()], SPEC_CONCURRENCY, async ([requirementId, group]) => {
+    const requirement = plan.requirements.find((r) => r.id === requirementId);
+    if (!requirement) return;
+    try {
+      const out = await call<{ specifications: SpecDraft[] }>(
+        buildSpecPrompt(
+          plan,
+          { requirement, features: group },
+          plan.requirements.filter((r) => r.id !== requirementId).map((r) => r.title),
+          options.extra,
+          options.skills?.fs,
+        ),
+        SPEC_SCHEMA,
+      );
+      for (const spec of out.specifications ?? []) {
+        const local = Number.isInteger(spec.featureIndex) ? spec.featureIndex : 0;
+        const feature = group[local] ?? group[0];
+        const { featureIndex: _index, ...rest } = spec;
+        void _index;
+        drafts.push({ ...rest, featureId: feature.id });
+      }
+    } catch (error) {
+      console.warn(`[generate] 상세명세 채우기 실패 — ${requirement.title}:`, aiErrorMessage(error));
+    }
+  });
+
+  if (drafts.length === 0) throw new Error('상세명세를 만들지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+  // 기능 순서대로 붙인다.
+  const order = new Map(plan.features.map((f, i) => [f.id, i]));
+  drafts.sort((a, b) => (order.get(a.featureId) ?? 0) - (order.get(b.featureId) ?? 0));
+  return { specifications: appendSpecs(plan.specifications, drafts) };
+}
+
 /** 한 단계 생성. AI 가 실패하면 내장 생성기로 대체하고 사유를 함께 돌려준다. */
 async function runStep(
   plan: Plan,
@@ -189,11 +341,34 @@ async function runStep(
       mergeFlows: artifact === 'flow' && options.merge === true,
     });
 
+  const call = <T,>(prompt: string, schema: object, signal?: AbortSignal) =>
+    generateJson<T>({
+      prompt,
+      schema,
+      signal,
+      maxTokens: maxTokensFor(artifact, resolveProvider(tier, over, key).maxOutputTokens),
+      engine: tier,
+      config: over,
+      apiKey: key,
+    });
+
+  /*
+   * 빠진 상세명세만 채우기. **내장 생성기로 대신하지 않는다** — 대신하면 기능명세서 전체를
+   * 갈아엎게 된다. 실패하면 그대로 오류로 알린다.
+   */
+  if (artifact === 'fs' && options.specFeatureIds && options.specFeatureIds.length > 0) {
+    if (!useAi) throw new Error('지금은 AI 를 쓸 수 없어 상세명세를 채우지 못했습니다.');
+    return { patch: await fillSpecs(plan, options.specFeatureIds, options, call), source: 'ai' };
+  }
+
   if (!useAi) {
     return { patch: toPatch(generateLocally(artifact, plan.brief, plan, options)), source: 'local' };
   }
 
   try {
+    if (artifact === 'fs') {
+      return { patch: toPatch(await generateFsInTwoPasses(plan, options, call)), source: 'ai' };
+    }
     let prompt = buildPrompt(plan, artifact, options.extra, options.skills?.[artifact]);
     if (artifact === 'wireframe') {
       const targets =
@@ -259,7 +434,9 @@ export async function* runPipeline(
      * **고급 엔진은 두 배다.** 화면이 값을 보여 줄 때도 같은 함수를 쓰므로,
      * "3 크레딧이라더니 6 이 나갔다" 가 생기지 않는다.
      */
-    const cost = costOfArtifact(artifact, engineFor(artifact, options));
+    const cost = isSpecFill(artifact, options)
+      ? costWithEngine(SPEC_FILL_COST, engineFor(artifact, options))
+      : costOfArtifact(artifact, engineFor(artifact, options));
     if (options.userId && !(await canAfford(options.userId, cost))) {
       yield {
         type: 'error',

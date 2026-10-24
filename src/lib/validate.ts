@@ -7,6 +7,7 @@
 
 import { ARTIFACT_LABEL, type ArchetypeKey, type ArtifactKey, type Plan } from './types';
 import { ARCHETYPES } from './archetypes';
+import { prdSourceId } from './ai/prompts';
 import { stalePages } from './ia/wireframe-sync';
 import { hasArtifact } from './artifact-status';
 
@@ -30,6 +31,8 @@ export interface Issue {
    * 해야 할 일이 다르다. 화면에서 `재생성 필요` 로 구분해 보여 준다.
    */
   regenerate?: boolean;
+  /** 상세명세를 AI 로 채울 수 있는 기능 ID. 있으면 화면에 `AI로 채우기` 가 붙는다. */
+  fillSpecs?: string[];
 }
 
 /** 구조마다 화면 이름에 있어야 할 말. 묶음 안의 말 중 하나만 있으면 된다. 첫 말이 표시 이름. */
@@ -120,19 +123,53 @@ export function validatePlan(plan: Plan): Issue[] {
     href: '/fs',
   });
 
-  const p0WithoutSpec = plan.features
-    .filter(
-      (f) => f.priority === 'P0' && !plan.specifications.some((s) => s.featureId === f.id),
-    )
-    .map((f) => `${f.id} ${f.name}`);
+  /*
+   * PRD → 기능명세서 추적. 요구사항에 출처(sources)가 하나라도 적혀 있을 때만 본다 —
+   * 예전 플랜이나 직접 쓴 기능명세서에는 출처가 없어서, 보면 전부 빠진 것으로 나온다.
+   */
+  const traced = plan.requirements.some((r) => (r.sources ?? []).length > 0);
+  if (traced && hasArtifact(plan, 'prd')) {
+    const covered = new Set(plan.requirements.flatMap((r) => r.sources ?? []));
+    const scenarios = plan.prd.userScenarios ?? [];
+    add({
+      id: 'fs-scenario-uncovered',
+      level: 'warn',
+      artifact: 'fs',
+      title: '요구사항으로 이어지지 않은 시나리오',
+      detail: 'PRD 의 핵심 시나리오인데 어느 요구사항의 출처에도 없습니다. 이 시나리오를 처리할 기능이 빠졌을 수 있습니다.',
+      targets: scenarios
+        .map((s, i) => ({ id: prdSourceId('scenario', i), title: s.title }))
+        .filter((s) => !covered.has(s.id))
+        .map((s) => `${s.id} ${s.title}`),
+      href: '/fs',
+    });
+    add({
+      id: 'fs-scope-uncovered',
+      level: 'info',
+      artifact: 'fs',
+      title: '요구사항으로 이어지지 않은 범위 포함 항목',
+      detail: 'PRD 의 범위 포함 항목인데 어느 요구사항의 출처에도 없습니다.',
+      targets: plan.prd.inScope
+        .map((item, i) => ({ id: prdSourceId('inScope', i), item }))
+        .filter((s) => !covered.has(s.id))
+        .map((s) => `${s.id} ${s.item}`),
+      href: '/fs',
+    });
+  }
+
+  const p0WithoutSpec = plan.features.filter(
+    (f) => f.priority === 'P0' && !plan.specifications.some((s) => s.featureId === f.id),
+  );
   add({
     id: 'fs-p0-no-spec',
     level: 'warn',
     artifact: 'fs',
     title: '상세 명세가 없는 필수 기능',
     detail: '필수(P0) 기능은 개발 착수 전에 상세 명세가 있어야 합니다.',
-    targets: p0WithoutSpec,
+    targets: p0WithoutSpec.map((f) => `${f.id} ${f.name}`),
     href: '/fs',
+    // 빠진 것만 AI 로 채운다 — 기능명세서를 통째로 다시 만들지 않는다.
+    fillSpecs: p0WithoutSpec.map((f) => f.id),
   });
 
   const specWithoutCriteria = plan.specifications

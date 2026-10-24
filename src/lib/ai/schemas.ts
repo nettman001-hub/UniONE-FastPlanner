@@ -112,45 +112,80 @@ export const PRD_SCHEMA = object({
   constraints: strArray('제약사항 3~5개'),
 });
 
+const FS_REQUIREMENTS = {
+  type: 'array',
+  description: '요구사항 5~10개. 기능의 상위 묶음이다.',
+  items: object({
+    title: str('요구사항명'),
+    description: str('요구사항 설명 2~3문장. 누가 무엇을 왜 해야 하는지와 지켜야 할 규칙(숫자)을 적는다.'),
+    category: str('분류 (예: 회원, 콘텐츠, 결제, 관리자, 비기능)'),
+    priority: PRIORITY,
+    sources: strArray(
+      '이 요구사항이 나온 PRD 항목 ID 1~3개 (예: SC-2, G-1, IN-3, NFR-1). 위 PRD 에 적힌 ID 만 쓴다.',
+    ),
+  }),
+};
+
+const FS_FEATURES = {
+  type: 'array',
+  description: '기능. 요구사항마다 2~4개씩 만든다.',
+  items: object({
+    requirementIndex: {
+      type: 'integer',
+      description: 'requirements 배열에서 상위 요구사항의 0-based 인덱스',
+    },
+    name: str('기능명'),
+    description: str('기능 설명 2~3문장. 화면에서 무엇을 하고 어떤 규칙을 따르는지 적는다.'),
+    priority: PRIORITY,
+  }),
+};
+
+const SPEC_ITEM = {
+  featureIndex: {
+    type: 'integer',
+    description: 'features 배열에서 상위 기능의 0-based 인덱스',
+  },
+  title: str('상세 명세명'),
+  actor: str('수행 주체 (예: 일반 회원)'),
+  precondition: str('사전 조건'),
+  mainFlow: strArray('기본 흐름 4~8단계. 사용자 행동과 시스템 반응을 번갈아 한 단계씩.'),
+  exceptions: strArray(
+    '예외 처리 3~5개. 권한 없음·네트워크 실패·결과 없음은 해당하면 반드시 넣고, 이 기능만의 예외(취소·중복·한도 초과 등)를 더한다.',
+  ),
+  acceptanceCriteria: strArray('인수 조건 3~5개. QA 가 그대로 테스트할 수 있게 숫자와 조건을 넣는다.'),
+  priority: PRIORITY,
+};
+
 export const FS_SCHEMA = object({
-  requirements: {
-    type: 'array',
-    description: '요구사항 5~8개. 기능의 상위 묶음이다.',
-    items: object({
-      title: str('요구사항명'),
-      description: str('요구사항 설명 1~2문장'),
-      category: str('분류 (예: 회원, 콘텐츠, 결제, 관리자)'),
-      priority: PRIORITY,
-    }),
-  },
-  features: {
-    type: 'array',
-    description: '기능. 요구사항마다 2~4개씩 만든다.',
-    items: object({
-      requirementIndex: {
-        type: 'integer',
-        description: 'requirements 배열에서 상위 요구사항의 0-based 인덱스',
-      },
-      name: str('기능명'),
-      description: str('기능 설명 1~2문장'),
-      priority: PRIORITY,
-    }),
-  },
+  requirements: FS_REQUIREMENTS,
+  features: FS_FEATURES,
   specifications: {
     type: 'array',
-    description: '상세 명세. 핵심 기능마다 1~2개씩 만든다.',
+    description: '상세 명세. P0·P1 기능마다 최소 1개씩 만든다. P2·P3 는 핵심인 것만.',
+    items: object(SPEC_ITEM),
+  },
+});
+
+/**
+ * 기능명세서 1차 — 요구사항과 기능의 **골격만**. 상세명세는 요구사항마다 따로 부른다.
+ * 한 번에 다 담으면 개수가 늘수록 하나하나가 얕아진다.
+ */
+export const FS_SKELETON_SCHEMA = object({
+  requirements: FS_REQUIREMENTS,
+  features: FS_FEATURES,
+});
+
+/** 기능명세서 2차 — 요구사항 하나에 딸린 기능들의 상세명세. featureIndex 는 그 목록 안의 번호. */
+export const SPEC_SCHEMA = object({
+  specifications: {
+    type: 'array',
+    description: '상세 명세. 위 기능 중 P0·P1 은 하나도 빠짐없이 최소 1개씩, 복잡한 기능은 2~3개.',
     items: object({
+      ...SPEC_ITEM,
       featureIndex: {
         type: 'integer',
-        description: 'features 배열에서 상위 기능의 0-based 인덱스',
+        description: '위 "이 요구사항의 기능" 목록에서의 0-based 번호',
       },
-      title: str('상세 명세명'),
-      actor: str('수행 주체 (예: 일반 회원)'),
-      precondition: str('사전 조건'),
-      mainFlow: strArray('기본 흐름 3~6단계. 각 항목은 한 단계.'),
-      exceptions: strArray('예외 처리 2~4개'),
-      acceptanceCriteria: strArray('인수 조건 2~4개'),
-      priority: PRIORITY,
     }),
   },
 });
@@ -317,7 +352,7 @@ export interface PrdDraft {
 }
 
 export interface FsDraft {
-  requirements: { title: string; description: string; category: string; priority: string }[];
+  requirements: { title: string; description: string; category: string; priority: string; sources?: string[] }[];
   features: {
     requirementIndex: number;
     name: string;

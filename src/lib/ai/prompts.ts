@@ -84,13 +84,65 @@ export function briefBlock(brief: PlanBrief): string {
   return lines.join('\n');
 }
 
+/**
+ * PRD 항목의 ID. 요구사항의 출처로 쓰고, 정합성 검사도 같은 함수로 세어 둘이 어긋나지 않는다.
+ * 저장된 ID 가 아니라 **순서로** 붙인다 — 사람이 읽기 쉽고 PRD 를 고쳐도 다시 매겨진다.
+ */
+export const PRD_SOURCE_PREFIX = {
+  goal: 'G',
+  scenario: 'SC',
+  inScope: 'IN',
+  nonFunctional: 'NFR',
+} as const;
+
+export function prdSourceId(kind: keyof typeof PRD_SOURCE_PREFIX, index: number): string {
+  return `${PRD_SOURCE_PREFIX[kind]}-${index + 1}`;
+}
+
+export function prdFullBlock(prd: Plan['prd']): string {
+  const list = <T,>(title: string, items: T[], line: (item: T, index: number) => string) =>
+    items.length > 0 ? [`### ${title}`, ...items.map(line)].join('\n') : '';
+  return [
+    '## 이미 확정된 PRD (전체 — 아래 ID 를 요구사항의 sources 에 적는다)',
+    `제품 개요: ${prd.overview}`,
+    prd.background ? `배경 및 문제: ${prd.background}` : '',
+    list('핵심 목표', prd.goals, (g, i) => `- ${prdSourceId('goal', i)} ${g.text}${g.metric ? ` (지표: ${g.metric})` : ''}`),
+    list(
+      '페르소나',
+      prd.personas,
+      (p) => `- ${p.name}: ${p.summary} / 니즈: ${p.needs.join(', ')} / 불편: ${p.painPoints.join(', ')}`,
+    ),
+    list('사용자 역할', prd.roles, (r) => `- ${r.name}: ${r.description} (권한: ${r.permissions.join(', ')})`),
+    list(
+      '핵심 사용자 시나리오',
+      prd.userScenarios ?? [],
+      (s, i) => `- ${prdSourceId('scenario', i)} ${s.title} [${s.actor}] — ${s.scenario}`,
+    ),
+    list('범위 포함', prd.inScope, (item, i) => `- ${prdSourceId('inScope', i)} ${item}`),
+    list('범위 제외 (기능으로 만들지 않는다)', prd.outOfScope, (item) => `- ${item}`),
+    list('보안·기술·비기능 요구사항', prd.technicalNotes ?? [], (item, i) => `- ${prdSourceId('nonFunctional', i)} ${item}`),
+    list('성공 지표 (측정에 필요한 기록·통계 기능을 빠뜨리지 않는다)', prd.successMetrics, (m) => `- ${m.name}: ${m.target}`),
+    list('리스크 (대응에 필요한 기능을 넣는다)', prd.risks ?? [], (r) => `- ${r.risk} → ${r.mitigation}`),
+    list('제약사항', prd.constraints, (item) => `- ${item}`),
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 /** 이전 단계 산출물을 압축해 컨텍스트로 넘긴다. */
 export function contextBlock(plan: Plan, artifact: ArtifactKey): string {
   const parts: string[] = [];
 
   // 나머지 단계와 같이 **내용이 있는지**로 판단한다. 생성 기록만 보고 넣으면
   // 내용이 비어 있을 때 "이미 확정된 PRD" 아래에 빈 줄만 넘어가 모델을 헷갈리게 한다.
-  if (artifact !== 'prd' && hasArtifact(plan, 'prd')) {
+  /*
+   * 기능명세서는 PRD 를 **통째로** 받는다. 예전에는 개요·목표·역할·범위만 넘겨서, PRD 에
+   * 시나리오·비기능·제약을 촘촘히 써도 기능명세서가 그것을 보지 못했다. 항목마다 ID 를
+   * 붙여 요구사항의 출처(sources)로 적게 하고, 정합성 검사가 빠진 시나리오를 찾는다.
+   */
+  if (artifact === 'fs' && hasArtifact(plan, 'prd')) {
+    parts.push(prdFullBlock(plan.prd));
+  } else if (artifact !== 'prd' && hasArtifact(plan, 'prd')) {
     const { prd } = plan;
     parts.push(
       [
@@ -165,7 +217,14 @@ PRD에는 반드시 다음 15가지 핵심 전략 내용을 포함한다.
 구조는 요구사항 → 기능 → 상세명세 3단계입니다.
 요구사항은 "무엇이 필요한가", 기능은 "그걸 어떤 기능으로 푸는가", 상세명세는 "그 기능이 화면에서 어떻게 동작하는가" 입니다.
 기본 흐름은 사용자와 시스템의 행동을 번갈아 적어 실제 시나리오처럼 읽히게 합니다.
-인수 조건은 QA 가 그대로 테스트할 수 있도록 검증 가능한 문장으로 씁니다.`,
+인수 조건은 QA 가 그대로 테스트할 수 있도록 검증 가능한 문장으로 씁니다.
+
+빠짐없이 쓰기 위한 규칙:
+- PRD 의 **모든 핵심 사용자 시나리오(SC-)와 범위 포함 항목(IN-)이 최소 하나의 요구사항으로 이어지게** 합니다.
+- 보안·기술·비기능 요구사항(NFR-)은 "비기능" 분류의 요구사항으로 따로 묶습니다.
+- 요구사항마다 sources 에 그 요구사항이 나온 PRD ID 를 1~3개 적습니다. PRD 에 없는 ID 를 지어내지 않습니다.
+- 범위 제외 항목은 기능으로 만들지 않습니다.
+- 정책은 숫자로 씁니다 (예: "취소는 이용 24시간 전까지 무료", "사진은 최대 5장·10MB").`,
 
   ia: `아래 서비스의 정보구조도(IA)를 작성하세요.
 서비스 전체 화면을 계층 구조로 빠짐없이 정리합니다. 로그인/회원가입, 마이페이지, 설정, 오류 화면처럼 놓치기 쉬운 화면도 포함합니다.
@@ -219,6 +278,61 @@ export function buildPrompt(
   if (extra) {
     sections.push('', '## 추가 지시', extra);
   }
+  return sections.join('\n');
+}
+
+/** 기능명세서 1차(골격)에 덧붙이는 지시. 상세명세는 다음 호출이 요구사항마다 만든다. */
+export const FS_SKELETON_NOTE = [
+  '## 이번 호출에서 만들 것',
+  '요구사항과 기능의 **골격만** 만드세요. 상세명세는 다음 단계에서 요구사항마다 따로, 깊게 만듭니다.',
+  '그러니 기능을 빠뜨리지 않는 데 집중하세요. 기능 설명에는 그 기능이 따르는 규칙(숫자)을 적습니다.',
+].join('\n');
+
+export interface SpecTarget {
+  requirement: { title: string; description: string; category: string };
+  features: { name: string; description: string; priority: string }[];
+}
+
+/**
+ * 기능명세서 2차 — **요구사항 하나**에 딸린 기능들의 상세명세.
+ *
+ * 한 번에 기능명세서 전체를 만들면 상세명세가 "핵심 기능 1~2개" 에 그치고 얕아졌다.
+ * 요구사항마다 따로 부르면 그 요구사항의 기능에만 집중해 예외·인수 조건까지 촘촘해진다.
+ * 이미 있는 기능명세서에 빠진 상세명세만 채울 때도 같은 것을 쓴다.
+ */
+export function buildSpecPrompt(plan: Plan, target: SpecTarget, others: string[], extra?: string, skill?: string): string {
+  const sections = [
+    '아래 서비스 기능명세서에서 **요구사항 하나**에 딸린 기능들의 상세명세를 작성하세요.',
+    '상세명세는 "그 기능이 화면에서 어떻게 동작하는가" 입니다. 개발자와 QA 가 되묻지 않고 그대로 일할 수 있게 씁니다.',
+    '',
+    '규칙:',
+    '- 아래 기능 중 P0·P1 은 **하나도 빠짐없이** 상세명세를 최소 1개씩 만듭니다. 흐름이 둘 이상인 기능(예: 신청과 취소)은 나눠 2~3개로 만듭니다.',
+    '- 사전 조건은 구체적인 상태로 씁니다 (예: "로그인했고, 대여 중인 장비가 1개 이상").',
+    '- 기본 흐름은 사용자 행동과 시스템 반응을 번갈아 4~8단계로 씁니다. 화면·버튼 이름을 실제처럼 씁니다.',
+    '- 예외는 3~5개. 권한 없음·네트워크 실패·결과 없음은 해당하면 반드시 넣고, 이 기능만의 예외(취소·중복·한도 초과·시간 초과)를 더합니다.',
+    '- 인수 조건은 3~5개. 숫자와 조건이 들어간 검증 가능한 문장으로 씁니다.',
+    '- 다른 요구사항이 다루는 내용은 여기서 만들지 않습니다.',
+    '',
+    '## 서비스 정보',
+    briefBlock(plan.brief),
+  ];
+  const shape = structureBlock(plan.brief, 'fs');
+  if (shape) sections.push('', shape);
+  if (hasArtifact(plan, 'prd')) sections.push('', prdFullBlock(plan.prd));
+  sections.push(
+    '',
+    '## 이 요구사항',
+    `${target.requirement.title} [${target.requirement.category || '공통'}] — ${target.requirement.description}`,
+    '',
+    '## 이 요구사항의 기능 (featureIndex 는 이 목록의 번호)',
+    ...target.features.map((f, i) => `${i}. ${f.name} [${f.priority}] — ${f.description}`),
+  );
+  if (others.length > 0) {
+    sections.push('', '## 다른 요구사항 (여기서 다루지 않는다)', ...others.map((o) => `- ${o}`));
+  }
+  const guide = skillBlock(skill ?? '');
+  if (guide) sections.push('', guide);
+  if (extra) sections.push('', '## 추가 지시', extra);
   return sections.join('\n');
 }
 

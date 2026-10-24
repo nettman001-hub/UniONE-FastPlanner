@@ -176,6 +176,12 @@ export interface Requirement extends Reviewable {
   category: string;
   priority: Priority;
   order: number;
+  /**
+   * 이 요구사항이 PRD 의 어디에서 나왔나 — `SC-2`(시나리오), `G-1`(목표), `IN-3`(포함 범위),
+   * `NFR-1`(비기능). 정합성 검사가 "요구사항으로 이어지지 않은 시나리오" 를 찾는 근거다.
+   * 예전 플랜과 직접 만든 요구사항에는 없다.
+   */
+  sources?: string[];
 }
 
 export interface Feature extends Reviewable {

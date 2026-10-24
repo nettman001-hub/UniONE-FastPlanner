@@ -52,7 +52,7 @@ import { ARCHETYPES, CAUTIONS } from '@/lib/archetypes';
 import { issueFixPrompt } from '@/lib/ai/fix-prompt';
 import { useGenerate } from '@/lib/useGenerate';
 import { useEngines } from '@/lib/useEngine';
-import { costOfArtifact } from '@/lib/credits';
+import { SPEC_FILL_COST, costOfArtifact, costWithEngine } from '@/lib/credits';
 import { issueSummary, validatePlan, LEVEL_LABEL, type Issue, type IssueLevel } from '@/lib/validate';
 import {
   ARTIFACT_LABEL,
@@ -180,6 +180,9 @@ function PlanOverview() {
   const [versionOpen, setVersionOpen] = useState(false);
   const [versionLabel, setVersionLabel] = useState('');
   const [commentBody, setCommentBody] = useState('');
+  /** 단계마다 이번에만 줄 추가 지시 */
+  const [extras, setExtras] = useState<Partial<Record<ArtifactKey, string>>>({});
+  const [extraOpen, setExtraOpen] = useState<Partial<Record<ArtifactKey, boolean>>>({});
 
   /*
    * `?start=prd` — 어디를 눌러야 하는지 표시만 한다.
@@ -226,8 +229,12 @@ function PlanOverview() {
       });
       if (!ok) return;
     }
-    await generate(key);
+    const extra = extras[key]?.trim();
+    await generate(key, extra ? { extra } : {});
   };
+
+  /** 정합성 검사의 `AI로 채우기` — 빠진 상세명세만 채운다. 기능명세서는 그대로 둔다. */
+  const handleFillSpecs = (featureIds: string[]) => void generate('fs', { specFeatureIds: featureIds });
 
   /*
    * 전체 자동 생성.
@@ -486,6 +493,27 @@ function PlanOverview() {
                             {reason}
                           </p>
                         )}
+                        {/*
+                          이번 한 번만 주는 지시. 기획 스킬(설정)은 늘 적용되는 바탕이고,
+                          이것은 "결제·환불 쪽을 더 자세히" 처럼 이번 생성에만 쓰인다.
+                        */}
+                        {extraOpen[key] || extras[key] ? (
+                          <input
+                            className="input mt-1.5 text-[12px]"
+                            value={extras[key] ?? ''}
+                            placeholder="이번에만 적용할 지시 — 예: 결제·환불 쪽을 더 자세히"
+                            maxLength={500}
+                            onChange={(e) => setExtras((prev) => ({ ...prev, [key]: e.target.value }))}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="mt-1 text-[11.5px] font-semibold text-[var(--primary)]"
+                            onClick={() => setExtraOpen((prev) => ({ ...prev, [key]: true }))}
+                          >
+                            + 이번에만 추가 지시
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -582,7 +610,14 @@ function PlanOverview() {
           ) : (
             <ul className="flex flex-col gap-2">
               {issues.map((issue) => (
-                <IssueRow key={issue.id} issue={issue} planId={planId} />
+                <IssueRow
+                  key={issue.id}
+                  issue={issue}
+                  planId={planId}
+                  busy={busy}
+                  fillCost={costWithEngine(SPEC_FILL_COST, engines.fs)}
+                  onFillSpecs={handleFillSpecs}
+                />
               ))}
             </ul>
           )}
@@ -850,7 +885,19 @@ function BriefCard({ title, body, full }: { title: string; body?: string; full?:
   );
 }
 
-function IssueRow({ issue, planId }: { issue: Issue; planId: string }) {
+function IssueRow({
+  issue,
+  planId,
+  busy,
+  fillCost,
+  onFillSpecs,
+}: {
+  issue: Issue;
+  planId: string;
+  busy: boolean;
+  fillCost: number;
+  onFillSpecs: (featureIds: string[]) => void;
+}) {
   const shown = issue.targets.slice(0, 5);
   const rest = issue.targets.length - shown.length;
 
@@ -887,6 +934,19 @@ function IssueRow({ issue, planId }: { issue: Issue; planId: string }) {
           그대로 에이전트에게 넘긴다.
         */}
         <div className="flex shrink-0 gap-1.5">
+          {/* 빠진 상세명세만 채운다 — 기능명세서를 통째로 다시 만들지 않는다. */}
+          {issue.fillSpecs && issue.fillSpecs.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm shrink-0"
+              disabled={busy}
+              title={`이 기능들의 상세명세만 만들어 붙입니다 · ${fillCost} 크레딧`}
+              onClick={() => onFillSpecs(issue.fillSpecs ?? [])}
+            >
+              <Sparkles size={13} />
+              AI로 채우기
+            </button>
+          )}
           <FixWithAi planId={planId} prompt={issueFixPrompt(issue)} />
           {issue.href && (
             <Link className="btn btn-sm shrink-0" href={`/plans/${planId}${issue.href}`}>

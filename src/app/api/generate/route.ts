@@ -23,6 +23,8 @@ interface GenerateBody {
   pageIds?: string[];
   /** 기존 와이어프레임을 유지하고 병합할지 */
   merge?: boolean;
+  /** 기능명세서를 다시 만들지 않고 이 기능들의 상세명세만 채운다 */
+  specFeatureIds?: string[];
 }
 
 /**
@@ -91,6 +93,11 @@ export async function POST(request: Request) {
             extra: body.extra,
             pageIds: body.pageIds,
             merge: body.merge,
+            // 한 단계(기능명세서)만 만들 때만 받는다. 전체 자동 생성에 섞이면 안 된다.
+            specFeatureIds:
+              artifacts.length === 1 && artifacts[0] === 'fs' && Array.isArray(body.specFeatureIds)
+                ? body.specFeatureIds.filter((id) => typeof id === 'string').slice(0, 60)
+                : undefined,
             skills,
             userId: user.id,
             engines,

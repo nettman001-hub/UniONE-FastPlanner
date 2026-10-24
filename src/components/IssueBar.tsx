@@ -11,10 +11,14 @@
  * 어떻게" 가 남는다. 지적에는 대상 ID 가 이미 다 있으므로 그대로 넘기면 된다.
  */
 
-import { AlertTriangle, Info } from 'lucide-react';
+import { AlertTriangle, Info, Sparkles } from 'lucide-react';
 
 import { FixWithAi } from './FixWithAi';
-import { RegenerateTag } from './ui';
+import { RegenerateTag, Spinner } from './ui';
+import { usePlannerStore } from '@/lib/store';
+import { useGenerate } from '@/lib/useGenerate';
+import { useEngines } from '@/lib/useEngine';
+import { SPEC_FILL_COST, costWithEngine } from '@/lib/credits';
 import { issueFixPrompt, issuesFixPrompt } from '@/lib/ai/fix-prompt';
 import { LEVEL_LABEL, type Issue } from '@/lib/validate';
 import type { ArtifactKey } from '@/lib/types';
@@ -24,6 +28,29 @@ const LEVEL_CHIP: Record<Issue['level'], string> = {
   warn: 'chip chip-warn',
   info: 'chip chip-primary',
 };
+
+/**
+ * 상세명세가 빠진 기능만 AI 로 채운다. 기능명세서를 통째로 다시 만들지 않으므로
+ * 손으로 고쳐 둔 요구사항·기능·상세명세가 그대로 남는다.
+ */
+function FillSpecsButton({ planId, featureIds }: { planId: string; featureIds: string[] }) {
+  const plan = usePlannerStore((s) => s.plans.find((p) => p.id === planId));
+  const { generate, pending } = useGenerate(plan);
+  const engines = useEngines();
+  const cost = costWithEngine(SPEC_FILL_COST, engines.fs);
+  return (
+    <button
+      type="button"
+      className={`btn btn-primary btn-sm shrink-0${pending === 'fs' ? ' is-busy' : ''}`}
+      disabled={pending !== null}
+      title={`이 기능들의 상세명세만 만들어 붙입니다 · ${cost} 크레딧`}
+      onClick={() => void generate('fs', { specFeatureIds: featureIds })}
+    >
+      {pending === 'fs' ? <Spinner size={13} /> : <Sparkles size={13} />}
+      {pending === 'fs' ? '채우는 중' : 'AI로 채우기'}
+    </button>
+  );
+}
 
 export function IssueBar({
   planId,
@@ -91,6 +118,9 @@ export function IssueBar({
                 </p>
               )}
             </div>
+            {issue.fillSpecs && issue.fillSpecs.length > 0 && (
+              <FillSpecsButton planId={planId} featureIds={issue.fillSpecs} />
+            )}
             <FixWithAi planId={planId} prompt={issueFixPrompt(issue)} />
           </li>
         ))}

@@ -30,6 +30,12 @@ import { DEFAULT_ENGINE, type EngineTier } from './ai/engines';
  */
 export const DAILY_CREDIT_LIMIT = 200;
 
+/**
+ * 정합성 검사의 `AI로 채우기` — 빠진 상세명세만 채운다. 기능명세서 전체(5)를 다시 만드는
+ * 것보다 하는 일이 적어 싸게 받는다. 고급 엔진이면 두 배.
+ */
+export const SPEC_FILL_COST = 2;
+
 /** 무엇에 썼는지. 산출물 다섯 가지 + 에이전트 + 기능 배치 + UniAI. */
 export type CreditKind = ArtifactKey | 'chat' | 'place' | 'uinai';
 

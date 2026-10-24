@@ -132,6 +132,39 @@ export interface FsResult {
   specifications: Specification[];
 }
 
+/**
+ * 이미 있는 기능명세서에 상세명세를 **덧붙인다.** 기존 상세명세와 ID 는 그대로 두고,
+ * 새 것은 이어지는 번호를 받는다. 정합성 검사의 `AI로 채우기` 가 쓴다.
+ */
+export function appendSpecs(
+  existing: Specification[],
+  drafts: (Omit<FsDraft['specifications'][number], 'featureIndex'> & { featureId: string })[],
+): Specification[] {
+  const ids = nextIds('SP', existing, drafts.length);
+  const perFeature = new Map<string, number>();
+  for (const s of existing) perFeature.set(s.featureId, Math.max(perFeature.get(s.featureId) ?? 0, s.order + 1));
+  const added = drafts.map((s, i) => {
+    const order = perFeature.get(s.featureId) ?? 0;
+    perFeature.set(s.featureId, order + 1);
+    return {
+      id: ids[i],
+      featureId: s.featureId,
+      title: s.title,
+      actor: s.actor || '사용자',
+      precondition: s.precondition ?? '',
+      mainFlow: arr(s.mainFlow),
+      exceptions: arr(s.exceptions),
+      acceptanceCriteria: arr(s.acceptanceCriteria),
+      pageIds: [],
+      priority: toPriority(s.priority),
+      status: '작성중' as const,
+      order,
+      review: 'pending' as const,
+    };
+  });
+  return [...existing, ...added];
+}
+
 export function applyFs(draft: FsDraft): FsResult {
   const rawRequirements = draft.requirements ?? [];
   const rawFeatures = draft.features ?? [];
@@ -145,6 +178,9 @@ export function applyFs(draft: FsDraft): FsResult {
     category: r.category || '공통',
     priority: toPriority(r.priority),
     order: i,
+    ...(Array.isArray(r.sources) && r.sources.length > 0
+      ? { sources: [...new Set(r.sources.map((s) => String(s).trim().toUpperCase()).filter(Boolean))].slice(0, 5) }
+      : {}),
     // AI 가 만든 항목은 검토 전이다. 사용자가 승인해야 배지가 사라진다.
     review: 'pending',
   }));

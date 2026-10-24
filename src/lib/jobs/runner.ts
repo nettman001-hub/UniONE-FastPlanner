@@ -16,7 +16,7 @@
 import { usePlannerStore } from '../store';
 import { creditSnapshot, refreshCredits } from '../useCredits';
 import { ARTIFACT_LABEL, type ArtifactKey, type PlanDocuments } from '../types';
-import { costOfArtifact } from '../credits';
+import { SPEC_FILL_COST, costOfArtifact, costWithEngine } from '../credits';
 import { engineSnapshotFor } from '../useEngine';
 import { recordCompletedTask } from '../tasks';
 
@@ -34,7 +34,10 @@ interface StreamEvent {
 export interface RunArgs {
   pageIds?: string[];
   merge?: boolean;
+  /** 이번 한 번만 주는 지시 — "결제·환불 쪽을 더 자세히" */
   extra?: string;
+  /** 기능명세서에서 이 기능들의 상세명세만 채운다 */
+  specFeatureIds?: string[];
 }
 
 /** 지금 도는 생성이 있는지. 한 번에 하나만 돌린다 — 앞 단계 결과를 컨텍스트로 쓰기 때문. */
@@ -110,7 +113,10 @@ export async function runGeneration(
    * 여기서 미리 걸러 주는 것은 헛걸음을 줄이려는 것일 뿐 근거가 아니다.
    * 부족하면 서버가 `error` 사건으로 알려 주고, 아래에서 그대로 알린다.
    */
-  const firstCost = costOfArtifact(artifacts[0], engineSnapshotFor(artifacts[0]));
+  const firstCost =
+    artifacts[0] === 'fs' && (args.specFeatureIds?.length ?? 0) > 0
+      ? costWithEngine(SPEC_FILL_COST, engineSnapshotFor('fs'))
+      : costOfArtifact(artifacts[0], engineSnapshotFor(artifacts[0]));
   if (creditSnapshot().remaining < firstCost) {
     toast(
       `크레딧이 부족합니다. ${ARTIFACT_LABEL[artifacts[0]]} 생성에는 ${firstCost} 크레딧이 필요합니다. 내일 다시 충전됩니다.`,

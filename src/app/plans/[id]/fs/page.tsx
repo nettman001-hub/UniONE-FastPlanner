@@ -1085,6 +1085,21 @@ function RequirementEditor({
           onChange={(description) => onChange({ description })}
         />
       </Field>
+      {/*
+        PRD 의 어디에서 나왔는지. SC 는 시나리오, G 는 목표, IN 은 범위 포함, NFR 은 비기능.
+        정합성 검사가 이것으로 "요구사항으로 이어지지 않은 시나리오" 를 찾는다.
+      */}
+      {(requirement.sources ?? []).length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-[var(--fg-muted)]">
+          <span className="font-semibold">PRD 출처</span>
+          {(requirement.sources ?? []).map((source) => (
+            <span key={source} className="chip">
+              {source}
+            </span>
+          ))}
+          <span className="text-[11px] text-[var(--fg-subtle)]">SC 시나리오 · G 목표 · IN 범위 · NFR 비기능</span>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="분류" hint="예: 회원, 콘텐츠, 결제">
           <InlineText
