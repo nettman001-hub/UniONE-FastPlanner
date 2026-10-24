@@ -2,6 +2,7 @@ import { PLATFORM_LABEL, type ArtifactKey, type Plan, type PlanBrief } from '../
 import { answersBlock, followupBlock } from '../brief-questions';
 import { hasArtifact } from '../artifact-status';
 import { skillBlock } from '../skills';
+import { structureBlock, structureLine } from '../archetypes';
 
 export const SYSTEM_PROMPT = `당신은 IT 서비스 기획 전문가입니다. 사용자가 준 서비스 아이디어를 실제 개발팀이 그대로 착수할 수 있는 기획 산출물로 바꾸는 일을 합니다.
 
@@ -19,10 +20,13 @@ export function briefBlock(brief: PlanBrief): string {
     `한 줄 소개: ${brief.oneLiner || '(미입력)'}`,
     `서비스 아이디어: ${brief.idea}`,
     `타겟 사용자: ${brief.targetUser || '(미입력)'}`,
-    `기획 목적: ${brief.purpose || '(미입력)'}`,
-    `플랫폼: ${PLATFORM_LABEL[brief.platform]}`,
   ];
+  if (brief.providerUser) lines.push(`제공하는 쪽 사용자: ${brief.providerUser}`);
+  lines.push(`기획 목적: ${brief.purpose || '(미입력)'}`, `플랫폼: ${PLATFORM_LABEL[brief.platform]}`);
+  const structure = structureLine(brief.structure);
+  if (structure) lines.push(structure);
   if (brief.reference) lines.push(`참고 서비스: ${brief.reference}`);
+  if (brief.referenceDiff) lines.push(`참고 서비스와 다른 점: ${brief.referenceDiff}`);
   if (brief.mustHave) lines.push(`반드시 포함할 기능: ${brief.mustHave}`);
 
   /*
@@ -30,7 +34,7 @@ export function briefBlock(brief: PlanBrief): string {
    * 있지만 "관리자 화면 필요합니다" 는 그렇지 않다. 그래서 따로 떼어 "반드시
    * 반영" 이라고 못 박는다. 줄글에 섞으면 모델이 하나쯤 흘린다.
    */
-  const picked = answersBlock(brief.answers);
+  const picked = answersBlock(brief.answers, brief.structure);
   if (picked) lines.push('', picked);
   const asked = followupBlock(brief.followups);
   if (asked) lines.push('', asked);
@@ -150,6 +154,11 @@ export function buildPrompt(
     '## 서비스 정보',
     briefBlock(plan.brief),
   ];
+  // 구조 지침은 서비스 정보 바로 뒤, 앞 단계 산출물보다 먼저 — 문서의 뼈대를 정하는 것이라서.
+  const shape = structureBlock(plan.brief, artifact);
+  if (shape) {
+    sections.push('', shape);
+  }
   const context = contextBlock(plan, artifact);
   if (context) {
     sections.push('', context);

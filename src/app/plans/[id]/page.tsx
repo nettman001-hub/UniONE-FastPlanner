@@ -47,7 +47,8 @@ import { PromptViewerModal } from '@/components/PromptViewerModal';
 import { useAuth } from '@/lib/auth/client';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
-import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
+import { visibleQuestions } from '@/lib/brief-questions';
+import { ARCHETYPES, CAUTIONS } from '@/lib/archetypes';
 import { issueFixPrompt } from '@/lib/ai/fix-prompt';
 import { useGenerate } from '@/lib/useGenerate';
 import { useEngines } from '@/lib/useEngine';
@@ -348,7 +349,15 @@ function PlanOverview() {
             {briefOpen && (
               <div className="fade-in grid gap-2 sm:grid-cols-2">
                 <BriefCard title="서비스 아이디어" body={plan.brief.idea} full />
-                <BriefCard title="참고 서비스" body={plan.brief.reference} />
+                <BriefCard
+                  title="참고 서비스"
+                  body={[plan.brief.reference, plan.brief.referenceDiff && `다른 점: ${plan.brief.referenceDiff}`]
+                    .filter(Boolean)
+                    .join('\n')}
+                />
+                {structureText(plan.brief) && (
+                  <BriefCard title="서비스 구조" body={structureText(plan.brief)} full />
+                )}
                 <BriefCard title="꼭 포함할 기능" body={plan.brief.mustHave} />
                 {/*
                   기획할 때 고른 답을 여기서 볼 수 있어야 한다. 안 보이면 문서가
@@ -771,10 +780,26 @@ function PlanOverview() {
 function answersText(brief: Plan['brief']): string {
   const picked = brief.answers ?? {};
   const lines: string[] = [];
-  for (const q of BRIEF_QUESTIONS) {
+  // 문서에 들어간 것과 같은 것만 보여 준다 — 지금 구조에서 묻는 질문.
+  for (const q of visibleQuestions(brief.structure)) {
     const chosen = q.choices.filter((c) => (picked[q.key] ?? []).includes(c.value));
     if (chosen.length > 0) lines.push(`${q.ask} ${chosen.map((c) => c.label).join(', ')}`);
   }
+  return lines.join('\n');
+}
+
+/** 서비스 구조를 사람이 읽는 줄로. 문서가 왜 이런 뼈대로 나왔는지 여기서 알 수 있어야 한다. */
+function structureText(brief: Plan['brief']): string {
+  const s = brief.structure;
+  if (!s) return '';
+  if (s.primary === 'none') return '해당 없음 — 구조 지침 없이 만듭니다.';
+  const main = ARCHETYPES[s.primary];
+  const lines = [
+    `${main.emoji} ${main.label}${s.secondary ? ` + ${ARCHETYPES[s.secondary].emoji} ${ARCHETYPES[s.secondary].label}` : ''} (${s.source === 'user' ? '확인함' : 'AI 추정'})`,
+  ];
+  if (s.primary === 'matching') lines.push(s.twoSided === false ? '같은 처지끼리 잇습니다.' : '제공하는 쪽이 따로 있습니다.');
+  lines.push(`문서에 반영: ${main.preview}`);
+  if (s.cautions?.length) lines.push(`함께 고려: ${s.cautions.map((c) => CAUTIONS[c].label).join(', ')}`);
   return lines.join('\n');
 }
 

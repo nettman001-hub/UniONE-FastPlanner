@@ -11,6 +11,7 @@
 
 import { createEmptyPlan } from './store';
 import { normalizeUinAiScreens } from './design/uinai';
+import { normalizeStructure } from './archetypes';
 import { type ArtifactKey, type Plan, type Platform } from './types';
 
 const ARTIFACT_KEYS: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
@@ -50,6 +51,11 @@ export function planFromValue(raw: unknown): Plan | null {
   // 요구분석 답은 문서를 만드는 근거다. 가져오기에서 흘리면 다시 만들 때 달라진다.
   if (brief.answers && typeof brief.answers === 'object') base.brief.answers = brief.answers;
   if (Array.isArray(brief.followups)) base.brief.followups = brief.followups;
+  // 구조도 문서의 뼈대를 정한다. 손으로 고친 파일일 수 있어 다시 세운다.
+  const structure = normalizeStructure(brief.structure);
+  if (structure) base.brief.structure = structure;
+  if (asString(brief.providerUser)) base.brief.providerUser = asString(brief.providerUser);
+  if (asString(brief.referenceDiff)) base.brief.referenceDiff = asString(brief.referenceDiff);
 
   const generated = { ...base.generated };
   if (value.generated && typeof value.generated === 'object') {

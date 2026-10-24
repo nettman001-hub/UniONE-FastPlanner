@@ -12,6 +12,7 @@ import {
   type Plan,
 } from './types';
 import { hasArtifact } from './artifact-status';
+import { ARCHETYPES } from './archetypes';
 import {
   normalizeUinAiScreens,
   UINAI_AGENT_PROMPT,
@@ -69,8 +70,15 @@ export function toMarkdown(plan: Plan, artifacts?: ArtifactKey[]): string {
   out.push('| 항목 | 내용 |');
   out.push('| --- | --- |');
   out.push(`| 타겟 사용자 | ${brief.targetUser || '-'} |`);
+  if (brief.providerUser) out.push(`| 제공하는 쪽 사용자 | ${brief.providerUser} |`);
   out.push(`| 기획 목적 | ${brief.purpose || '-'} |`);
   out.push(`| 플랫폼 | ${PLATFORM_LABEL[brief.platform]} |`);
+  if (brief.structure && brief.structure.primary !== 'none') {
+    const { primary, secondary } = brief.structure;
+    out.push(
+      `| 서비스 구조 | ${ARCHETYPES[primary].label}${secondary ? ` + ${ARCHETYPES[secondary].label}` : ''} |`,
+    );
+  }
   out.push(`| 최종 수정 | ${new Date(plan.updatedAt).toLocaleString('ko-KR')} |`);
   out.push('');
 
@@ -431,6 +439,7 @@ export function toAgentBundle(plan: Plan): string {
         targetUser: plan.brief.targetUser,
         purpose: plan.brief.purpose,
         platform: PLATFORM_LABEL[plan.brief.platform],
+        ...(plan.brief.structure ? { structure: plan.brief.structure } : {}),
       },
       prd: plan.prd,
       requirements: plan.requirements.map((req) => ({

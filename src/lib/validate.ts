@@ -5,7 +5,8 @@
  * 기획 문서는 서로 참조하기 때문에 한쪽만 고치면 조용히 깨지는데, 이걸 잡아 준다.
  */
 
-import { ARTIFACT_LABEL, type ArtifactKey, type Plan } from './types';
+import { ARTIFACT_LABEL, type ArchetypeKey, type ArtifactKey, type Plan } from './types';
+import { ARCHETYPES } from './archetypes';
 import { stalePages } from './ia/wireframe-sync';
 import { hasArtifact } from './artifact-status';
 
@@ -30,6 +31,18 @@ export interface Issue {
    */
   regenerate?: boolean;
 }
+
+/** 구조마다 화면 이름에 있어야 할 말. 묶음 안의 말 중 하나만 있으면 된다. 첫 말이 표시 이름. */
+const STRUCTURE_SCREENS: Record<ArchetypeKey, string[][]> = {
+  matching: [['후기', '리뷰', '평가'], ['신고', '차단']],
+  commerce: [['주문'], ['장바구니', '카트']],
+  booking: [['예약'], ['일정', '시간', '달력', '슬롯']],
+  community: [['작성', '글쓰기'], ['신고']],
+  workspace: [['구성원', '멤버', '팀원', '권한'], ['초대']],
+  personal: [['기록', '입력'], ['통계', '리포트', '요약']],
+  learning: [['학습', '진도', '레슨'], ['퀴즈', '과제']],
+  directory: [['검색'], ['제보']],
+};
 
 export const LEVEL_LABEL: Record<IssueLevel, string> = {
   error: '오류',
@@ -362,6 +375,28 @@ export function validatePlan(plan: Plan): Issue[] {
       detail: '화면 구성이 비어 있습니다.',
       targets: emptyWireframes,
       href: '/wireframe',
+    });
+  }
+
+  /* 서비스 구조 ---------------------------------------------------- */
+  /*
+   * 구조마다 문서에 넣겠다고 한 것(archetypes.ts 의 effects)이 실제로 들어갔는지 본다.
+   * 화면 이름에 그 말이 없을 뿐 다른 이름으로 있을 수 있어 `제안` 으로 둔다.
+   */
+  const structure = plan.brief.structure;
+  if (structure && structure.primary !== 'none' && hasArtifact(plan, 'ia')) {
+    const names = plan.iaPages.map((p) => p.name).join(' ');
+    const lacking = STRUCTURE_SCREENS[structure.primary]
+      .filter((words) => !words.some((w) => names.includes(w)))
+      .map((words) => `${words[0]} 화면`);
+    add({
+      id: 'structure-screens',
+      level: 'info',
+      artifact: 'ia',
+      title: `${ARCHETYPES[structure.primary].label} 구조인데 보이지 않는 화면`,
+      detail: `이 구조에서는 보통 필요한 화면입니다. 다른 이름으로 있다면 넘어가도 됩니다.`,
+      targets: lacking,
+      href: '/ia',
     });
   }
 

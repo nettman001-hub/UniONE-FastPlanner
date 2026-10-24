@@ -26,7 +26,8 @@ import { userAgentEngine } from '@/lib/db/user-settings';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { isAiEnabled, resolveProvider } from '@/lib/ai/provider';
 import { maxTokensFor } from '@/lib/jobs/queue';
-import { answersBlock } from '@/lib/brief-questions';
+import { answersBlock, visibleQuestions } from '@/lib/brief-questions';
+import { ARCHETYPES, normalizeStructure, structureLine } from '@/lib/archetypes';
 import { PLATFORM_LABEL, type PlanBrief } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -78,6 +79,17 @@ export async function POST(request: Request) {
   const engine = await userAgentEngine(user.id);
   const aiRuntime = await readAiRuntime();
 
+  // 브라우저가 보낸 값이라 다시 세운다.
+  const structure = normalizeStructure(brief.structure);
+  const asked = visibleQuestions(structure).map((q) => q.ask);
+  const hints =
+    structure && structure.primary !== 'none'
+      ? [
+          ...ARCHETYPES[structure.primary].followupHints,
+          ...(structure.secondary ? ARCHETYPES[structure.secondary].followupHints.slice(0, 1) : []),
+        ]
+      : [];
+
   const prompt = [
     '아래 서비스 아이디어를 읽고, **기획을 시작하기 전에 반드시 확인해야 하는 질문**을 3~5개 만드세요.',
     '',
@@ -85,9 +97,16 @@ export async function POST(request: Request) {
     `한 줄 소개: ${brief.oneLiner || '(미입력)'}`,
     `아이디어: ${brief.idea}`,
     `타겟 사용자: ${brief.targetUser || '(미입력)'}`,
+    brief.providerUser ? `제공하는 쪽 사용자: ${brief.providerUser}` : '',
+    brief.purpose ? `기획 목적: ${brief.purpose}` : '',
     `플랫폼: ${PLATFORM_LABEL[brief.platform]}`,
+    structureLine(structure),
+    brief.reference ? `참고 서비스: ${brief.reference}` : '',
+    brief.referenceDiff ? `참고 서비스와 다른 점: ${brief.referenceDiff}` : '',
     brief.mustHave ? `꼭 넣을 기능: ${brief.mustHave}` : '',
-    answersBlock(brief.answers),
+    answersBlock(brief.answers, structure),
+    asked.length > 0 ? `\n## 이미 보기로 물은 질문 (답이 없어도 다시 묻지 마세요)\n${asked.map((q) => `- ${q}`).join('\n')}` : '',
+    hints.length > 0 ? `\n## 이 구조에서 문서를 갈라놓는 것 (아직 안 물었다면 우선)\n${hints.map((h) => `- ${h}`).join('\n')}` : '',
     '',
     '규칙:',
     '- **이 서비스에만 해당하는 질문**을 하세요. 어느 서비스에나 통하는 일반론은 쓰지 마세요.',

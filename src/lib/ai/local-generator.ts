@@ -6,7 +6,7 @@
  * 어느 쪽이 만들었는지 구분하지 않는다.
  */
 
-import { PLATFORM_LABEL, type ArtifactKey, type Plan, type PlanBrief } from '../types';
+import { PLATFORM_LABEL, type ArchetypeKey, type ArtifactKey, type Plan, type PlanBrief } from '../types';
 import type {
   ArtifactDraftMap,
   FlowDraft,
@@ -495,6 +495,68 @@ const KITS: DomainKit[] = [
     ],
   },
   {
+    /*
+     * 키워드로는 고르지 않는다(빈 목록). 브리프의 서비스 구조가 중개·매칭일 때만 쓴다.
+     * "공유" 같은 말로 고르면 커뮤니티와 갈리지 않는다.
+     */
+    id: 'matching',
+    label: '중개·매칭',
+    keywords: [],
+    noun: '요청',
+    verb: '매칭',
+    values: ['믿을 만한 상대를 빨리 찾는다', '요청부터 완료까지 상태가 보인다', '후기로 신뢰가 쌓인다'],
+    requirements: [
+      {
+        title: '등록과 탐색',
+        description: '제공하는 쪽이 자신을 등록하고, 찾는 쪽이 조건으로 상대를 찾는다.',
+        category: '매칭',
+        priority: 'P0',
+        features: [
+          { name: '프로필 등록', description: '제공할 수 있는 것과 조건, 가능 지역·시간을 등록한다.' },
+          { name: '상대 탐색', description: '지역·조건·평점으로 상대를 찾고 비교한다.' },
+          { name: '프로필 상세', description: '소개, 후기, 인증 여부를 확인한다.' },
+        ],
+      },
+      {
+        title: '요청과 성사',
+        description: '요청을 보내고 받는 쪽이 수락하거나 거절한다.',
+        category: '매칭',
+        priority: 'P0',
+        features: [
+          { name: '요청 보내기', description: '원하는 내용과 일정을 적어 요청한다.' },
+          { name: '수락·거절', description: '받은 요청을 수락하거나 사유와 함께 거절한다. 응답이 없으면 자동 만료된다.' },
+          { name: '진행 상태', description: '요청됨 → 수락됨 → 진행 중 → 완료/취소 상태를 양쪽에 보여준다.' },
+          { name: '1:1 메시지', description: '성사된 상대와 세부 내용을 주고받는다.' },
+        ],
+      },
+      {
+        title: '신뢰와 안전',
+        description: '거래 후 평가하고 문제를 신고한다.',
+        category: '신뢰',
+        priority: 'P1',
+        features: [
+          { name: '상호 후기', description: '완료 후 서로 별점과 후기를 남긴다.' },
+          { name: '신고·차단', description: '문제 있는 상대를 신고하고 차단한다.' },
+        ],
+      },
+    ],
+    pages: [
+      { name: '홈', path: '/', description: '근처 추천 상대와 진행 중인 매칭을 보여준다.' },
+      {
+        name: '탐색',
+        path: '/search',
+        description: '조건으로 상대를 찾는 영역.',
+        children: ['목록', '프로필 상세'],
+      },
+      {
+        name: '매칭',
+        path: '/matches',
+        description: '요청과 진행 상태를 관리하는 영역.',
+        children: ['보낸 요청', '받은 요청', '매칭 상세', '후기 작성'],
+      },
+    ],
+  },
+  {
     id: 'generic',
     label: '일반',
     keywords: [],
@@ -537,15 +599,37 @@ const KITS: DomainKit[] = [
   },
 ];
 
+/**
+ * 서비스 구조 → 키트. 구조가 정해져 있으면 업종 키워드보다 **먼저** 본다 — AI 가 실패해
+ * 여기로 떨어져도 사용자가 확인한 뼈대는 지켜야 한다. 개인 기록·정보 찾기는 업종 키워드로
+ * 고른다(헬스·금융 키트가 그 모양이다). 업종 키워드에 걸리지 않으면 일반.
+ */
+const KIT_BY_STRUCTURE: Partial<Record<ArchetypeKey, string>> = {
+  matching: 'matching',
+  commerce: 'commerce',
+  booking: 'booking',
+  community: 'community',
+  workspace: 'productivity',
+  learning: 'learning',
+};
+
 function pickKit(brief: PlanBrief): DomainKit {
+  const fixed = brief.structure && brief.structure.primary !== 'none' ? KIT_BY_STRUCTURE[brief.structure.primary] : undefined;
+  const byStructure = fixed ? KITS.find((kit) => kit.id === fixed) : undefined;
+  if (byStructure) return byStructure;
+
   const haystack = [brief.title, brief.oneLiner, brief.idea, brief.purpose, brief.mustHave]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
 
+  // 개인 기록이면 그 모양의 키트(헬스·금융) 안에서만 고른다.
+  const pool =
+    brief.structure?.primary === 'personal' ? KITS.filter((kit) => kit.id === 'health' || kit.id === 'finance') : KITS;
+
   let best = KITS[KITS.length - 1];
   let bestScore = 0;
-  for (const kit of KITS) {
+  for (const kit of pool) {
     const score = kit.keywords.reduce(
       (acc, keyword) => acc + (haystack.includes(keyword) ? 1 : 0),
       0,

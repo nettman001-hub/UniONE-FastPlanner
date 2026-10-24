@@ -30,7 +30,9 @@ import { useAiMode } from '@/lib/useGenerate';
 import {
   ARTIFACT_LABEL,
   PLATFORM_LABEL,
+  type ArchetypeKey,
   type ArtifactKey,
+  type BriefStructure,
   type Plan,
   type PlanBrief,
   type Platform,
@@ -42,7 +44,19 @@ import { GuestImportBanner, RequireAuth, SyncBadge, UserMenu } from '@/component
 import { HeaderAiStatus } from '@/components/HeaderAiStatus';
 import { Logo } from '@/components/Logo';
 import { BRAND_NAME, BRAND_SHORT, BRAND_TAGLINE } from '@/lib/brand';
-import { BRIEF_QUESTIONS } from '@/lib/brief-questions';
+import { recommendedChoices, visibleQuestions } from '@/lib/brief-questions';
+import {
+  ARCHETYPES,
+  ARCHETYPE_KEYS,
+  CAUTIONS,
+  IDEA_LINES,
+  guessStructure,
+  ideaHasContent,
+  ideaLineFilled,
+  insertIdeaLine,
+  normalizeStructure,
+  stripEmptyIdeaLines,
+} from '@/lib/archetypes';
 import { ENGINE_LABEL, ENGINE_TIERS, ENGINE_WHAT, type EngineTier } from '@/lib/ai/engines';
 import { setEnginesLocally, useEngines, type EngineMap } from '@/lib/useEngine';
 
@@ -53,11 +67,32 @@ import { setEnginesLocally, useEngines, type EngineMap } from '@/lib/useEngine';
 const ARTIFACT_KEYS: ArtifactKey[] = ['prd', 'fs', 'ia', 'flow', 'wireframe'];
 const PLATFORM_KEYS: Platform[] = ['web', 'app', 'both', 'admin', 'windows'];
 
+/**
+ * 예시는 **서비스명과 아이디어를 함께** 채운다. 아이디어만 채우면 서비스명이 비어
+ * `다음` 이 막혀, 눌러 본 사람이 거기서 멈췄다. 아이디어는 줄 형식으로 보여 주어
+ * 무엇을 적으면 되는지를 예시가 대신 알려 준다.
+ */
 const IDEA_SAMPLES = [
-  '동네 반려견 산책 메이트 매칭 앱',
-  '1인 창업자를 위한 간편 세금 정산 웹',
-  '사내 스터디 모임 관리 도구',
-  '중고 장비를 빌려주는 취미 공유 플랫폼',
+  {
+    label: '반려견 산책 매칭',
+    title: '멍메이트',
+    idea: '해결할 문제: 혼자 사는 반려인은 함께 산책할 이웃을 찾기 어렵다\n해결 방법: 동네와 산책 시간이 맞는 견주를 이어 준다\n핵심 행동: 근처 메이트 찾기 → 산책 요청 → 함께 산책 → 후기 남기기',
+  },
+  {
+    label: '1인 창업 세금 정산',
+    title: '셀프택스',
+    idea: '해결할 문제: 1인 창업자는 매출·경비를 정리해 세금 신고를 준비하기 번거롭다\n해결 방법: 매출과 경비를 기록하면 신고에 필요한 금액을 자동으로 정리해 준다\n핵심 행동: 영수증 기록 → 월별 집계 확인 → 신고 자료 내려받기',
+  },
+  {
+    label: '사내 스터디 관리',
+    title: '스터디룸',
+    idea: '해결할 문제: 사내 스터디 모임의 일정·출석·자료가 메신저에 흩어져 있다\n해결 방법: 모임별로 일정, 출석, 자료를 한곳에서 관리한다\n핵심 행동: 스터디 만들기 → 팀원 초대 → 일정 등록 → 출석 체크',
+  },
+  {
+    label: '취미 장비 대여',
+    title: '빌려써',
+    idea: '해결할 문제: 가끔 쓰는 캠핑·촬영 장비는 사기엔 비싸고 빌릴 곳이 없다\n해결 방법: 장비를 가진 이웃과 필요한 사람을 이어 주고 대여 기간을 관리한다\n핵심 행동: 장비 검색 → 대여 요청 → 수락 → 반납 확인',
+  },
 ];
 
 /**
@@ -257,6 +292,242 @@ function PlanCard({
 /* 기획하기 위저드                                                       */
 /* ------------------------------------------------------------------ */
 
+/** 구조 추정 API 가 주는 '비어 있는 줄' 후보. */
+interface StructureSuggestion {
+  line: string;
+  text: string;
+}
+
+type StructureState = 'idle' | 'loading' | 'done' | 'failed';
+
+/**
+ * 입력이 멈출 때마다 부르는 자동 호출의 한도. 크레딧을 받지 않는 호출이라
+ * 위저드 한 번에 이만큼만 저절로 부른다. 넘으면 `다시 읽기` 만 남는다.
+ */
+const MAX_STRUCTURE_CALLS = 4;
+
+const SOURCE_LABEL: Record<BriefStructure['source'], string> = {
+  user: '확인함',
+  ai: 'AI 추정',
+  rule: '키워드로 추정 — 확인해 주세요',
+};
+
+function archetypeChip(key: ArchetypeKey) {
+  return `${ARCHETYPES[key].emoji} ${ARCHETYPES[key].label}`;
+}
+
+/**
+ * 1단계의 서비스 구조 칸.
+ *
+ * **숨기지 않는다.** 구조는 문서 전체의 뼈대를 바꾸는데, 생성 뒤에는 브리프를 고칠 수
+ * 없다. 틀린 추정을 바로잡을 기회는 여기뿐이다. 그래서 무엇으로 읽었는지와 함께
+ * "문서에 무엇이 들어가는지" 를 보여 준다 — 사용자가 맞는지 판단할 근거다.
+ */
+function StructurePanel({
+  structure,
+  state,
+  stale,
+  ready,
+  onChange,
+  onReread,
+}: {
+  structure: BriefStructure | undefined;
+  state: StructureState;
+  /** 사용자가 확인한 뒤 아이디어가 바뀌었다 */
+  stale: boolean;
+  /** 아이디어가 읽을 만큼 적혔는가 */
+  ready: boolean;
+  onChange: (next: BriefStructure | undefined) => void;
+  onReread: () => void;
+}) {
+  const [picking, setPicking] = useState<null | 'primary' | 'secondary'>(null);
+
+  const pick = (key: ArchetypeKey | 'none') => {
+    if (picking === 'secondary' && structure && key !== 'none') {
+      onChange({ ...structure, secondary: key === structure.primary ? undefined : key, source: 'user' });
+    } else {
+      onChange({
+        primary: key,
+        ...(key !== 'none' && structure?.secondary && structure.secondary !== key
+          ? { secondary: structure.secondary }
+          : {}),
+        ...(key === 'matching' ? { twoSided: structure?.twoSided ?? true } : {}),
+        ...(structure?.cautions ? { cautions: structure.cautions } : {}),
+        source: 'user',
+      });
+    }
+    setPicking(null);
+  };
+
+  const main = structure && structure.primary !== 'none' ? ARCHETYPES[structure.primary] : null;
+  const sub = structure?.secondary ? ARCHETYPES[structure.secondary] : null;
+
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <p className="text-[12.5px] font-bold">서비스 구조</p>
+        {structure && state !== 'loading' && (
+          <span className="text-[11px] text-[var(--fg-subtle)]">{SOURCE_LABEL[structure.source]}</span>
+        )}
+        <span className="flex-1" />
+        {structure && structure.source !== 'user' && state !== 'loading' && (
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => onChange({ ...structure, source: 'user' })}
+          >
+            <Check size={12} />
+            맞아요
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => setPicking(picking ? null : 'primary')}
+        >
+          {picking ? '닫기' : structure ? '바꾸기' : '직접 고르기'}
+        </button>
+      </div>
+
+      {state === 'loading' && (
+        <p className="mt-1.5 flex items-center gap-2 text-[12px] text-[var(--fg-muted)]">
+          <Spinner size={12} />
+          서비스 구조를 읽는 중… 기다리지 않고 넘어가셔도 됩니다.
+        </p>
+      )}
+
+      {state !== 'loading' && !structure && (
+        <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
+          {ready
+            ? '구조를 읽지 못했습니다. 직접 골라 주시면 문서의 뼈대가 정확해집니다.'
+            : '아이디어를 조금 더 적으시면 어떤 구조의 서비스인지 읽어 드립니다.'}
+        </p>
+      )}
+
+      {state !== 'loading' && structure && (
+        <div className="mt-1.5 flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {main ? (
+              <span className="chip chip-primary">
+                {archetypeChip(main.key)} <span className="opacity-70">주</span>
+              </span>
+            ) : (
+              <span className="chip">해당 없음 — 구조 지침 없이 만듭니다</span>
+            )}
+            {sub && (
+              <span className="chip">
+                {archetypeChip(sub.key)} <span className="opacity-70">보조</span>
+                <button
+                  type="button"
+                  aria-label="보조 유형 빼기"
+                  className="ml-0.5 text-[var(--fg-subtle)] hover:text-[var(--fg)]"
+                  onClick={() => onChange({ ...structure, secondary: undefined, source: 'user' })}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {main && !sub && (
+              <button
+                type="button"
+                className="text-[11.5px] font-semibold text-[var(--primary)]"
+                onClick={() => setPicking('secondary')}
+              >
+                + 보조 유형
+              </button>
+            )}
+          </div>
+          {structure.reason && (
+            <p className="text-[11.5px] leading-relaxed text-[var(--fg-muted)]">{structure.reason}</p>
+          )}
+          {main && (
+            <p className="text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
+              <span className="font-semibold text-[var(--fg)]">문서에 반영:</span> {main.preview}
+              {sub ? ` · ${sub.preview.split(' · ')[0]}` : ''}
+            </p>
+          )}
+          {structure.primary === 'matching' && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { value: true, label: '제공하는 쪽이 따로 있음' },
+                { value: false, label: '같은 처지끼리' },
+              ].map((option) => {
+                const on = (structure.twoSided ?? true) === option.value;
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    className={on ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                    onClick={() => onChange({ ...structure, twoSided: option.value, source: 'user' })}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {(structure.cautions ?? []).length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-[var(--fg-muted)]">
+              함께 고려:
+              {(structure.cautions ?? []).map((key) => (
+                <span key={key} className="chip">
+                  {CAUTIONS[key].label}
+                  <button
+                    type="button"
+                    aria-label={`${CAUTIONS[key].label} 빼기`}
+                    className="ml-0.5 text-[var(--fg-subtle)] hover:text-[var(--fg)]"
+                    onClick={() =>
+                      onChange({ ...structure, cautions: (structure.cautions ?? []).filter((c) => c !== key) })
+                    }
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {stale && (
+            <p className="text-[11.5px] text-[var(--fg-muted)]">
+              아이디어가 바뀌었습니다.{' '}
+              <button type="button" className="font-semibold text-[var(--primary)]" onClick={onReread}>
+                다시 읽기
+              </button>
+            </p>
+          )}
+        </div>
+      )}
+
+      {picking && (
+        <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+          {ARCHETYPE_KEYS.filter((key) => picking === 'primary' || key !== structure?.primary).map((key) => (
+            <button
+              key={key}
+              type="button"
+              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-left hover:border-[var(--primary-border)]"
+              onClick={() => pick(key)}
+            >
+              <span className="block text-[12.5px] font-bold">{archetypeChip(key)}</span>
+              <span className="block text-[11px] leading-snug text-[var(--fg-subtle)]">
+                {ARCHETYPES[key].examples}
+              </span>
+            </button>
+          ))}
+          {picking === 'primary' && (
+            <button
+              type="button"
+              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-left hover:border-[var(--primary-border)]"
+              onClick={() => pick('none')}
+            >
+              <span className="block text-[12.5px] font-bold">해당 없음</span>
+              <span className="block text-[11px] leading-snug text-[var(--fg-subtle)]">게임, 기기 연동 등</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const createPlan = usePlannerStore((s) => s.createPlan);
@@ -274,6 +545,20 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const askedFor = useRef('');
   const lastStepTimeRef = useRef(0);
   const wizardBodyRef = useRef<HTMLDivElement>(null);
+  const ideaRef = useRef<HTMLTextAreaElement>(null);
+
+  /* 서비스 구조 추정 */
+  const [structureState, setStructureState] = useState<StructureState>('idle');
+  const [structureStale, setStructureStale] = useState(false);
+  const [suggestions, setSuggestions] = useState<StructureSuggestion[]>([]);
+  const structureSeed = useRef('');
+  const structureCalls = useRef(0);
+  const structureAbort = useRef<AbortController | null>(null);
+  /** 응답이 왔을 때의 최신 브리프. 응답을 기다리는 사이 사용자가 구조를 직접 골랐을 수 있다. */
+  const briefRef = useRef(brief);
+  useEffect(() => {
+    briefRef.current = brief;
+  }, [brief]);
 
   /**
    * 단계가 바뀔 때마다:
@@ -303,6 +588,79 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   const patch = (next: Partial<PlanBrief>) => setBrief((prev) => ({ ...prev, ...next }));
 
+  /**
+   * 아이디어를 읽고 서비스 구조를 추정한다. **기다리게 하지 않는다** — `다음` 은 언제나 바로
+   * 넘어가고, 늦게 온 결과는 2단계 맨 위 한 줄에 보인다. 실패하거나 15초가 지나면
+   * 키워드로 추정한다.
+   *
+   * 사용자가 확인한 구조는 덮어쓰지 않는다. 아이디어가 바뀌었다고 알리고 `다시 읽기` 만 둔다.
+   */
+  const readStructure = async (force = false) => {
+    const { title, idea } = briefRef.current;
+    if (idea.trim().length < 15) return;
+    const seed = `${title.trim()}|${idea.trim()}`;
+    if (!force && structureSeed.current === seed) return;
+    if (!force && structureCalls.current >= MAX_STRUCTURE_CALLS) return;
+    structureSeed.current = seed;
+    if (!force) structureCalls.current += 1;
+
+    structureAbort.current?.abort();
+    const controller = new AbortController();
+    structureAbort.current = controller;
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    setStructureState('loading');
+
+    let next: BriefStructure | undefined;
+    let nextSuggestions: StructureSuggestion[] = [];
+    try {
+      const res = await fetch('/api/brief/structure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, idea }),
+        signal: controller.signal,
+      });
+      const data = (await res.json()) as { structure?: unknown; suggestions?: StructureSuggestion[] };
+      next = normalizeStructure(data.structure);
+      nextSuggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+    } catch {
+      // 뒤 요청에 밀려 끊긴 것이면 그쪽이 결과를 낸다.
+      if (structureAbort.current !== controller) return;
+      next = guessStructure(`${title} ${idea}`);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (structureAbort.current !== controller) return;
+
+    setSuggestions(nextSuggestions);
+    setStructureState(next ? 'done' : 'failed');
+    if (briefRef.current.structure?.source === 'user' && !force) {
+      setStructureStale(true);
+      return;
+    }
+    setStructureStale(false);
+    if (next) setBrief((prev) => ({ ...prev, structure: next }));
+  };
+
+  /** 입력이 1.5초 멈추면 읽는다. 같은 내용이면 다시 부르지 않는다. */
+  useEffect(() => {
+    if (!open || step !== 1 || brief.idea.trim().length < 15) return;
+    const timer = setTimeout(() => void readStructure(), 1500);
+    return () => clearTimeout(timer);
+    // readStructure 는 최신 브리프를 ref 로 읽는다. 입력이 바뀔 때만 다시 건다.
+  }, [open, step, brief.idea, brief.title]);
+
+  /** 아이디어 줄을 넣고 그 자리로 커서를 옮긴다. 쓰던 글은 덮지 않는다. */
+  const addIdeaLine = (label: string, text = '') => {
+    const { idea, cursor } = insertIdeaLine(brief.idea, label, text);
+    patch({ idea });
+    requestAnimationFrame(() => {
+      const el = ideaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(cursor, cursor);
+    });
+  };
+
   const answers = brief.answers ?? {};
   const pick = (key: string, value: string, multi: boolean) =>
     setBrief((prev) => {
@@ -321,10 +679,10 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
    * 아이디어를 읽고 되물을 것을 만들어 둔다.
    *
    * 4단계로 넘어갈 때 **미리** 부른다. 5단계에 도착해서 부르면 사용자가 빈 화면을
-   * 보며 기다리게 된다. 아이디어가 그대로면 다시 부르지 않는다.
+   * 보며 기다리게 된다. 아이디어·답·구조가 그대로면 다시 부르지 않는다.
    */
   const askFollowups = async (force = false) => {
-    const seed = `${brief.idea}|${JSON.stringify(brief.answers ?? {})}`;
+    const seed = `${brief.idea}|${JSON.stringify(brief.answers ?? {})}|${JSON.stringify(brief.structure ?? null)}`;
     if (!force && askedFor.current === seed) return;
     askedFor.current = seed;
     setAsking(true);
@@ -348,21 +706,40 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   };
 
   const missing: string[] = [];
+  // 줄 라벨만 있는 빈 틀로는 통과시키지 않는다.
+  if (!ideaHasContent(brief.idea)) missing.push('서비스 아이디어');
   if (!brief.title.trim()) missing.push('서비스명');
-  if (!brief.idea.trim()) missing.push('서비스 아이디어');
   const step1Blocked = step === 1 && missing.length > 0;
+  const hasDraft = Boolean(brief.title.trim() || brief.idea.trim());
 
+  const structure = brief.structure;
+  const twoSided = structure?.primary === 'matching' && structure.twoSided !== false;
+  const questions = visibleQuestions(structure);
+  const recommended = recommendedChoices(structure);
+
+  /** 처음부터 다시. 제출했을 때와 `새로 쓰기` 를 눌렀을 때만 지운다. */
+  const reset = () => {
+    setStep(1);
+    setBrief(EMPTY_BRIEF);
+    setFollowups([]);
+    setAskReason('');
+    askedFor.current = '';
+    structureAbort.current?.abort();
+    structureAbort.current = null;
+    structureSeed.current = '';
+    structureCalls.current = 0;
+    setStructureState('idle');
+    setStructureStale(false);
+    setSuggestions([]);
+    setSubmitting(false);
+  };
+
+  /**
+   * 닫아도 쓰던 것은 남긴다. 예전에는 닫으면 바로 지워져서, 바깥을 잘못 한 번 누르면
+   * 처음부터 다시 써야 했다. 새로 시작하려면 1단계의 `새로 쓰기` 를 누른다.
+   */
   const close = () => {
     onClose();
-    // 다음에 열 때 처음부터 시작하도록 되돌린다.
-    setTimeout(() => {
-      setStep(1);
-      setBrief(EMPTY_BRIEF);
-      setFollowups([]);
-      setAskReason('');
-      askedFor.current = '';
-      setSubmitting(false);
-    }, 200);
   };
 
   const submit = async () => {
@@ -398,13 +775,23 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
     const answered = followups
       .filter((f) => f.answer.trim())
       .map((f) => ({ question: f.question, answer: f.answer.trim() }));
+    // 지금 구조에서 보이지 않는 질문의 답은 남기지 않는다 — 보이지 않는 답이 문서를 바꾸면 안 된다.
+    const shown = new Set(questions.map((q) => q.key));
+    const keptAnswers = Object.fromEntries(
+      Object.entries(brief.answers ?? {}).filter(([key, values]) => shown.has(key) && values.length > 0),
+    );
+    const { providerUser, referenceDiff, ...rest } = brief;
     const id = createPlan({
-      ...brief,
+      ...rest,
       title: brief.title.trim(),
-      idea: brief.idea.trim(),
+      idea: stripEmptyIdeaLines(brief.idea),
+      answers: keptAnswers,
+      ...(twoSided && providerUser?.trim() ? { providerUser: providerUser.trim() } : {}),
+      ...(referenceDiff?.trim() ? { referenceDiff: referenceDiff.trim() } : {}),
       ...(answered.length > 0 ? { followups: answered } : {}),
     });
-    close();
+    onClose();
+    setTimeout(reset, 200);
     /*
      * `start` 는 **시작하지 않는다.** 개요 화면에서 어느 버튼을 눌러야 하는지
      * 표시만 한다. 세 단계를 채운 것과 크레딧을 쓰겠다는 것은 다른 결정이다.
@@ -422,6 +809,8 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       document.activeElement.blur();
     }
 
+    // 1단계를 떠날 때 아직 안 읽었으면 읽기 시작한다. 결과는 기다리지 않는다.
+    if (step === 1) void readStructure();
     /*
      * 4단계로 갈 때 미리 물어 두고, 4단계를 떠날 때 한 번 더 본다.
      * 미리 부르는 것은 5단계에서 기다리지 않기 위해서고, 두 번째는
@@ -530,66 +919,118 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
         })}
       </ol>
 
+      {/*
+        1단계 — 무엇을 만드나요.
+
+        아이디어를 맨 위에 둔다. 이름 짓기는 비전문가가 가장 오래 멈추는 곳이라 뒤로 미루고
+        "가칭이어도 된다" 고 알린다. 엔진과 한 줄 소개는 '무엇을 만드나' 와 상관없어 3단계로 옮겼다.
+      */}
       {step === 1 && (
         <div className="flex flex-col gap-3.5">
-          <Field label="서비스명" required>
-            <input
-              className="input"
-              autoFocus
-              value={brief.title}
-              placeholder="예: 멍메이트"
-              onChange={(e) => patch({ title: e.target.value })}
-            />
-          </Field>
-          <Field label="한 줄 소개">
-            <input
-              className="input"
-              value={brief.oneLiner}
-              placeholder="예: 우리 동네 산책 친구를 찾아주는 반려견 매칭 서비스"
-              onChange={(e) => patch({ oneLiner: e.target.value })}
-            />
-          </Field>
-          <Field label="서비스 아이디어" required hint="자세할수록 더 정확한 산출물이 나옵니다.">
+          {hasDraft && (
+            <div className="-mb-2 flex justify-end">
+              <button
+                type="button"
+                className="text-[11.5px] font-semibold text-[var(--fg-subtle)] hover:text-[var(--fg)]"
+                onClick={reset}
+              >
+                새로 쓰기
+              </button>
+            </div>
+          )}
+          <Field label="서비스 아이디어" required hint="줄을 채울수록 문서가 정확해집니다. 한두 줄로 시작하셔도 됩니다.">
             <textarea
+              ref={ideaRef}
               className="textarea"
+              autoFocus
               rows={5}
               value={brief.idea}
-              placeholder="어떤 문제를 어떻게 풀어주는 서비스인지 적어 주세요."
+              placeholder={IDEA_LINES.map((l) => `${l.label}: ${l.example}`).join('\n')}
               onChange={(e) => patch({ idea: e.target.value })}
             />
           </Field>
-          <div className="flex flex-wrap gap-1.5">
-            {IDEA_SAMPLES.map((sample) => (
-              <button
-                key={sample}
-                type="button"
-                className="chip hover:border-[var(--primary-border)] hover:text-[var(--primary)]"
-                onClick={() => patch({ idea: sample })}
-              >
-                <Sparkles size={11} />
-                {sample}
-              </button>
-            ))}
-          </div>
-          <Field
-            label="이번 기획의 AI 엔진"
-            hint="플랜을 만들면 이후 PRD·기능명세·IA·플로우·와이어프레임 생성에 모두 적용됩니다. 고급 엔진은 크레딧이 두 배입니다."
-          >
-            <div className="flex flex-wrap gap-2">
-              {ENGINE_TIERS.map((tier) => (
+          {/*
+            줄 넣기 칩 — 누르면 그 줄을 끝에 넣고, 채워지면 ✓ 가 된다. 어디가 비었는지가 보이고,
+            버튼이 따로 늘지 않는다. 결제·특징·차별점은 넣지 않는다 — 4단계와 3단계가 묻는다.
+          */}
+          <div className="-mt-1.5 flex flex-wrap gap-1.5">
+            {IDEA_LINES.map(({ label }) => {
+              const filled = ideaLineFilled(brief.idea, label);
+              return (
                 <button
-                  key={tier}
+                  key={label}
                   type="button"
-                  className={planEngine === tier ? 'btn btn-primary' : 'btn'}
-                  aria-pressed={planEngine === tier}
-                  onClick={() => setPlanEngine(tier)}
+                  className={filled ? 'chip chip-primary' : 'chip hover:border-[var(--primary-border)] hover:text-[var(--primary)]'}
+                  onClick={() => addIdeaLine(label)}
                 >
-                  {planEngine === tier && <Check size={13} />}
-                  {ENGINE_LABEL[tier]}
+                  {filled ? <Check size={11} /> : <Plus size={11} />}
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {/* 예시는 칸이 비었을 때만 — 쓰던 글을 덮어쓰지 않도록. 서비스명도 함께 채워 바로 넘어갈 수 있게. */}
+          {!brief.idea.trim() && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11.5px] text-[var(--fg-subtle)]">예시로 시작:</span>
+              {IDEA_SAMPLES.map((sample) => (
+                <button
+                  key={sample.label}
+                  type="button"
+                  className="chip hover:border-[var(--primary-border)] hover:text-[var(--primary)]"
+                  onClick={() => patch({ idea: sample.idea, title: brief.title.trim() ? brief.title : sample.title })}
+                >
+                  <Sparkles size={11} />
+                  {sample.label}
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">{ENGINE_WHAT[planEngine]}</p>
+          )}
+          {/*
+            비어 있는 줄의 후보. AI 가 글을 고쳐 쓰지 않는다 — 고른 것만 들어간다.
+            지어낸 문장이 몰래 '사용자 아이디어' 가 되어 다섯 문서에 사실로 퍼지면 안 된다.
+          */}
+          {suggestions.filter((s) => !ideaLineFilled(brief.idea, s.line)).length > 0 && (
+            <div className="flex flex-col gap-1">
+              <p className="text-[11.5px] text-[var(--fg-subtle)]">비어 있는 줄 제안 — 고르면 넣습니다</p>
+              {suggestions
+                .filter((s) => !ideaLineFilled(brief.idea, s.line))
+                .map((s) => (
+                  <button
+                    key={`${s.line}-${s.text}`}
+                    type="button"
+                    className="chip w-fit max-w-full text-left hover:border-[var(--primary-border)] hover:text-[var(--primary)]"
+                    onClick={() => addIdeaLine(s.line, s.text)}
+                  >
+                    <Plus size={11} />
+                    <span className="truncate">
+                      {s.line}: {s.text}
+                    </span>
+                  </button>
+                ))}
+            </div>
+          )}
+          <StructurePanel
+            structure={structure}
+            state={structureState}
+            stale={structureStale}
+            ready={brief.idea.trim().length >= 15}
+            onChange={(next) => {
+              setStructureStale(false);
+              patch({ structure: next });
+            }}
+            onReread={() => void readStructure(true)}
+          />
+          <Field label="서비스명" required hint="가칭이어도 됩니다. 개요에서 바꿀 수 있습니다.">
+            <input
+              className="input"
+              value={brief.title}
+              placeholder="예: 멍메이트"
+              onChange={(e) => patch({ title: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !step1Blocked) goToNextStep();
+              }}
+            />
           </Field>
           {missing.length > 0 && (
             <p className="text-[11.5px] text-[var(--fg-subtle)]">
@@ -601,15 +1042,60 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
 
       {step === 2 && (
         <div className="flex flex-col gap-3.5">
-          <Field label="타겟 사용자" hint="비워 두면 AI가 아이디어를 보고 추정합니다.">
-            <input
-              className="input"
-              autoFocus
-              value={brief.targetUser}
-              placeholder="예: 서울에 사는 20~30대 1인 가구 반려인"
-              onChange={(e) => patch({ targetUser: e.target.value })}
-            />
-          </Field>
+          {/* 1단계에서 늦게 온 추정도 여기서 보이게 한다. */}
+          {(structureState === 'loading' || structure) && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-[var(--surface-2)] px-3 py-2 text-[12px]">
+              <span className="font-bold">서비스 구조</span>
+              {structureState === 'loading' ? (
+                <span className="flex items-center gap-1.5 text-[var(--fg-muted)]">
+                  <Spinner size={12} />
+                  읽는 중…
+                </span>
+              ) : structure && structure.primary !== 'none' ? (
+                <span className="text-[var(--fg-muted)]">
+                  {archetypeChip(structure.primary)}
+                  {structure.secondary ? ` + ${archetypeChip(structure.secondary)}` : ''} · {SOURCE_LABEL[structure.source]}
+                </span>
+              ) : (
+                <span className="text-[var(--fg-muted)]">해당 없음</span>
+              )}
+              <span className="flex-1" />
+              <button type="button" className="font-semibold text-[var(--primary)]" onClick={() => setStep(1)}>
+                바꾸기
+              </button>
+            </div>
+          )}
+          {twoSided ? (
+            <>
+              <Field label="찾는 쪽 사용자" hint="비워 두면 AI가 아이디어를 보고 추정합니다.">
+                <input
+                  className="input"
+                  autoFocus
+                  value={brief.targetUser}
+                  placeholder="예: 영어 과외 선생님을 찾는 중·고등학생 학부모"
+                  onChange={(e) => patch({ targetUser: e.target.value })}
+                />
+              </Field>
+              <Field label="제공하는 쪽 사용자">
+                <input
+                  className="input"
+                  value={brief.providerUser ?? ''}
+                  placeholder="예: 경력 2년 이상의 영어 과외 선생님"
+                  onChange={(e) => patch({ providerUser: e.target.value })}
+                />
+              </Field>
+            </>
+          ) : (
+            <Field label="타겟 사용자" hint="비워 두면 AI가 아이디어를 보고 추정합니다.">
+              <input
+                className="input"
+                autoFocus
+                value={brief.targetUser}
+                placeholder="예: 서울에 사는 20~30대 1인 가구 반려인"
+                onChange={(e) => patch({ targetUser: e.target.value })}
+              />
+            </Field>
+          )}
           <Field label="기획 목적">
             <input
               className="input"
@@ -645,19 +1131,38 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               onChange={(e) => patch({ reference: e.target.value })}
             />
           </Field>
+          <Field label="참고 서비스와 다른 점" hint="핵심 가치와 범위를 정하는 데 씁니다.">
+            <input
+              className="input"
+              value={brief.referenceDiff ?? ''}
+              placeholder="예: 당근의 동네 인증은 따르고, 채팅 대신 예약으로 바로 잡는다"
+              onChange={(e) => patch({ referenceDiff: e.target.value })}
+            />
+          </Field>
           <Field label="반드시 포함할 기능">
             <textarea
               className="textarea"
-              rows={4}
+              rows={3}
               value={brief.mustHave ?? ''}
               placeholder="예: 위치 기반 매칭, 산책 일지, 신고하기"
               onChange={(e) => patch({ mustHave: e.target.value })}
+            />
+          </Field>
+          <Field label="한 줄 소개" hint="홈 카드에 보입니다. 비워 두면 아이디어로 대신합니다.">
+            <input
+              className="input"
+              value={brief.oneLiner}
+              placeholder="예: 우리 동네 산책 친구를 찾아주는 반려견 매칭 서비스"
+              onChange={(e) => patch({ oneLiner: e.target.value })}
             />
           </Field>
           {/*
             예전에는 여기 "PRD도 바로 생성하기" 체크박스가 있었고 기본이 켜짐이었다.
             그래서 `플랜 만들기` 를 누른 순간 생성이 시작되고 크레딧이 나갔다.
             시작은 다음 화면에서 사용자가 직접 누른다.
+
+            엔진은 1단계에서 여기로 옮겼다. 비용 결정은 크레딧 이야기가 나오는 자리에 둔다.
+            `이대로 만들기` 는 3단계부터, `플랜 만들기` 는 5단계에 있으니 어느 경로든 여기를 지난다.
           */}
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
             <p className="text-[12.5px] font-bold">다음 화면에서 시작하실 수 있습니다</p>
@@ -666,6 +1171,24 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               <span className="font-semibold text-[var(--fg)]">AI로 생성</span> 버튼을 표시해 드리니,
               준비되셨을 때 누르세요. 크레딧은 그때부터 듭니다.
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-[11.5px] font-semibold">이번 기획의 AI 엔진</span>
+              {ENGINE_TIERS.map((tier) => (
+                <button
+                  key={tier}
+                  type="button"
+                  className={planEngine === tier ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                  aria-pressed={planEngine === tier}
+                  onClick={() => setPlanEngine(tier)}
+                >
+                  {planEngine === tier && <Check size={12} />}
+                  {ENGINE_LABEL[tier]}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--fg-subtle)]">
+              {ENGINE_WHAT[planEngine]} 다섯 문서 모두에 적용되며, 고급 엔진은 크레딧이 두 배입니다.
+            </p>
           </div>
         </div>
       )}
@@ -673,37 +1196,47 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       {/*
         4단계 — 고르기만 하면 되는 요구분석.
 
-        빈칸이 아니라 보기다. "기획 목적" 칸에 무엇을 쓸지 모르던 사람도 "관리자
-        화면 필요합니다" 는 고를 수 있다. 여섯 개를 다 골라도 10초면 끝난다.
+        빈칸이 아니라 보기다. 공통 질문 뒤에 **서비스 구조에 따라 갈라지는 질문**이 붙는다
+        (주 유형 2개 + 보조 유형 1개). 구조에 어울리는 보기에는 `추천` 만 표시하고 미리 고르지 않는다.
       */}
       {step === 4 && (
         <div className="flex flex-col gap-3.5">
           <p className="text-[12px] leading-relaxed text-[var(--fg-muted)]">
             고르기만 하시면 됩니다. 건너뛰셔도 되지만, 답하실수록 문서가 정확해집니다.
           </p>
-          {BRIEF_QUESTIONS.map((q) => (
-            <div key={q.key}>
-              <p className="text-[12.5px] font-bold">{q.ask}</p>
-              <p className="mt-0.5 text-[11px] text-[var(--fg-subtle)]">{q.why}</p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {q.choices.map((c) => {
-                  const on = (answers[q.key] ?? []).includes(c.value);
-                  return (
-                    <button
-                      key={c.value}
-                      type="button"
-                      className={on ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
-                      onClick={() => pick(q.key, c.value, q.multi)}
-                      title={c.effect}
-                    >
-                      {on && <Check size={12} />}
-                      {c.label}
-                    </button>
-                  );
-                })}
+          {questions.map((q) => {
+            const typeKey = q.types?.find((t) => t === structure?.primary || t === structure?.secondary);
+            return (
+              <div key={q.key}>
+                <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] font-bold">
+                  {q.ask}
+                  {typeKey && (
+                    <span className="chip text-[10.5px] font-semibold">{archetypeChip(typeKey)}</span>
+                  )}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[var(--fg-subtle)]">{q.why}</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {q.choices.map((c) => {
+                    const on = (answers[q.key] ?? []).includes(c.value);
+                    const rec = !on && (recommended[q.key] ?? []).includes(c.value);
+                    return (
+                      <button
+                        key={c.value}
+                        type="button"
+                        className={on ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                        onClick={() => pick(q.key, c.value, q.multi)}
+                        title={c.effect}
+                      >
+                        {on && <Check size={12} />}
+                        {c.label}
+                        {rec && <span className="text-[10.5px] font-semibold text-[var(--primary)]">추천</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

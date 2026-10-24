@@ -461,6 +461,41 @@ export interface PlanBrief {
   answers?: Record<string, string[]>;
   /** AI 가 되물은 질문과 그 답. */
   followups?: Array<{ question: string; answer: string }>;
+  /** 서비스 구조(아키타입). 예전 플랜에는 없다. */
+  structure?: BriefStructure;
+  /** 제공하는 쪽 사용자 — 중개·매칭에서 제공자가 따로 있을 때만. */
+  providerUser?: string;
+  /** 참고 서비스와 다른 점 */
+  referenceDiff?: string;
+}
+
+/** 서비스 구조 — 업종이 아니라 **누가 무엇을 주고받는가**로 나눈다. */
+export type ArchetypeKey =
+  | 'matching'
+  | 'commerce'
+  | 'booking'
+  | 'community'
+  | 'workspace'
+  | 'personal'
+  | 'learning'
+  | 'directory';
+
+/** 업종이 문서를 실제로 바꾸는 신호 — 동의·규제·안전. */
+export type CautionKey = 'location' | 'meeting' | 'minor' | 'health' | 'money';
+
+export interface BriefStructure {
+  primary: ArchetypeKey | 'none';
+  secondary?: ArchetypeKey;
+  /**
+   * 누가 정했나. `user` 는 사용자가 확인했거나 직접 고른 것 — 프롬프트에 "반드시 반영"으로
+   * 들어간다. `ai`·`rule` 은 추정이라 아이디어 설명과 어긋나면 아이디어를 따른다.
+   */
+  source: 'user' | 'ai' | 'rule';
+  /** 중개·매칭에서 제공하는 쪽이 따로 있는가 (숨고형). 없으면 같은 처지끼리 (산책 메이트형). */
+  twoSided?: boolean;
+  cautions?: CautionKey[];
+  /** 화면 표시용 한 문장. 프롬프트에는 넣지 않는다. */
+  reason?: string;
 }
 
 /** 문서 묶음 — 버전 스냅샷 대상 */
