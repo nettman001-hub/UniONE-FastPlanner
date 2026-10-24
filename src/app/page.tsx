@@ -924,7 +924,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               </button>
             </div>
           )}
-          <Field label="서비스 아이디어" required hint="줄을 채울수록 문서가 정확해집니다. 한두 줄로 시작하셔도 됩니다.">
+          <Field label="서비스 아이디어" required hint="형식 없이 자유롭게 쭉 적으셔도 됩니다. 아래 칩은 빠뜨리기 쉬운 것을 짚어 주는 도우미일 뿐 필수가 아닙니다. 문제·해결 방법·핵심 행동이 글에 들어 있을수록 문서가 정확해집니다.">
             <textarea
               ref={ideaRef}
               className="textarea"
