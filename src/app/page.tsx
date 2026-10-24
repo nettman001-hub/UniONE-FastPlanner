@@ -300,12 +300,6 @@ interface StructureSuggestion {
 
 type StructureState = 'idle' | 'loading' | 'done' | 'failed';
 
-/**
- * 입력이 멈출 때마다 부르는 자동 호출의 한도. 크레딧을 받지 않는 호출이라
- * 위저드 한 번에 이만큼만 저절로 부른다. 넘으면 `다시 읽기` 만 남는다.
- */
-const MAX_STRUCTURE_CALLS = 4;
-
 const SOURCE_LABEL: Record<BriefStructure['source'], string> = {
   user: '확인함',
   ai: 'AI 추정',
@@ -329,16 +323,17 @@ function StructurePanel({
   stale,
   ready,
   onChange,
-  onReread,
+  onGenerate,
 }: {
   structure: BriefStructure | undefined;
   state: StructureState;
-  /** 사용자가 확인한 뒤 아이디어가 바뀌었다 */
+  /** 구조를 만든 뒤 아이디어가 바뀌었다 */
   stale: boolean;
   /** 아이디어가 읽을 만큼 적혔는가 */
   ready: boolean;
   onChange: (next: BriefStructure | undefined) => void;
-  onReread: () => void;
+  /** `서비스 구조 생성하기` — 이것을 눌렀을 때만 AI 가 읽는다 */
+  onGenerate: () => void;
 }) {
   const [picking, setPicking] = useState<null | 'primary' | 'secondary'>(null);
 
@@ -370,6 +365,18 @@ function StructurePanel({
           <span className="text-[11px] text-[var(--fg-subtle)]">{SOURCE_LABEL[structure.source]}</span>
         )}
         <span className="flex-1" />
+        {state !== 'loading' && (
+          <button
+            type="button"
+            className={structure ? 'btn btn-sm' : 'btn btn-primary btn-sm'}
+            disabled={!ready}
+            title={ready ? undefined : '아이디어를 15자 이상 적으면 누를 수 있습니다'}
+            onClick={onGenerate}
+          >
+            <Sparkles size={12} />
+            {structure ? '다시 생성' : '서비스 구조 생성하기'}
+          </button>
+        )}
         {structure && structure.source !== 'user' && state !== 'loading' && (
           <button
             type="button"
@@ -392,15 +399,17 @@ function StructurePanel({
       {state === 'loading' && (
         <p className="mt-1.5 flex items-center gap-2 text-[12px] text-[var(--fg-muted)]">
           <Spinner size={12} />
-          서비스 구조를 읽는 중… 기다리지 않고 넘어가셔도 됩니다.
+          서비스 구조를 만드는 중… 기다리지 않고 넘어가셔도 됩니다.
         </p>
       )}
 
       {state !== 'loading' && !structure && (
         <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--fg-subtle)]">
-          {ready
+          {state === 'failed'
             ? '구조를 읽지 못했습니다. 직접 골라 주시면 문서의 뼈대가 정확해집니다.'
-            : '아이디어를 조금 더 적으시면 어떤 구조의 서비스인지 읽어 드립니다.'}
+            : ready
+              ? '아이디어를 다 적으셨으면 서비스 구조 생성하기를 눌러 주세요. 직접 고르셔도 됩니다.'
+              : '아이디어를 다 적은 뒤 서비스 구조를 만들어 드립니다. 직접 고르셔도 됩니다.'}
         </p>
       )}
 
@@ -489,8 +498,8 @@ function StructurePanel({
           {stale && (
             <p className="text-[11.5px] text-[var(--fg-muted)]">
               아이디어가 바뀌었습니다.{' '}
-              <button type="button" className="font-semibold text-[var(--primary)]" onClick={onReread}>
-                다시 읽기
+              <button type="button" className="font-semibold text-[var(--primary)]" onClick={onGenerate}>
+                다시 생성
               </button>
             </p>
           )}
@@ -549,10 +558,8 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   /* 서비스 구조 추정 */
   const [structureState, setStructureState] = useState<StructureState>('idle');
-  const [structureStale, setStructureStale] = useState(false);
   const [suggestions, setSuggestions] = useState<StructureSuggestion[]>([]);
   const structureSeed = useRef('');
-  const structureCalls = useRef(0);
   const structureAbort = useRef<AbortController | null>(null);
   /** 응답이 왔을 때의 최신 브리프. 응답을 기다리는 사이 사용자가 구조를 직접 골랐을 수 있다. */
   const briefRef = useRef(brief);
@@ -589,20 +596,16 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const patch = (next: Partial<PlanBrief>) => setBrief((prev) => ({ ...prev, ...next }));
 
   /**
-   * 아이디어를 읽고 서비스 구조를 추정한다. **기다리게 하지 않는다** — `다음` 은 언제나 바로
-   * 넘어가고, 늦게 온 결과는 2단계 맨 위 한 줄에 보인다. 실패하거나 15초가 지나면
-   * 키워드로 추정한다.
+   * 아이디어를 읽고 서비스 구조를 추정한다. **사용자가 `서비스 구조 생성하기` 를 눌렀을 때만** 부른다.
    *
-   * 사용자가 확인한 구조는 덮어쓰지 않는다. 아이디어가 바뀌었다고 알리고 `다시 읽기` 만 둔다.
+   * 예전에는 입력이 멈출 때마다 저절로 불렀다. 쓰는 도중의 반쪽짜리 아이디어로 추정이 계속
+   * 바뀌어 산만했고, 서비스명을 고칠 때도 다시 불렸다. 다 쓴 뒤에 한 번 부르는 것이 맞다.
+   * 실패하거나 15초가 지나면 키워드로 추정한다.
    */
-  const readStructure = async (force = false) => {
+  const readStructure = async () => {
     const { title, idea } = briefRef.current;
     if (idea.trim().length < 15) return;
-    const seed = `${title.trim()}|${idea.trim()}`;
-    if (!force && structureSeed.current === seed) return;
-    if (!force && structureCalls.current >= MAX_STRUCTURE_CALLS) return;
-    structureSeed.current = seed;
-    if (!force) structureCalls.current += 1;
+    structureSeed.current = idea.trim();
 
     structureAbort.current?.abort();
     const controller = new AbortController();
@@ -633,21 +636,8 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
 
     setSuggestions(nextSuggestions);
     setStructureState(next ? 'done' : 'failed');
-    if (briefRef.current.structure?.source === 'user' && !force) {
-      setStructureStale(true);
-      return;
-    }
-    setStructureStale(false);
     if (next) setBrief((prev) => ({ ...prev, structure: next }));
   };
-
-  /** 입력이 1.5초 멈추면 읽는다. 같은 내용이면 다시 부르지 않는다. */
-  useEffect(() => {
-    if (!open || step !== 1 || brief.idea.trim().length < 15) return;
-    const timer = setTimeout(() => void readStructure(), 1500);
-    return () => clearTimeout(timer);
-    // readStructure 는 최신 브리프를 ref 로 읽는다. 입력이 바뀔 때만 다시 건다.
-  }, [open, step, brief.idea, brief.title]);
 
   /** 아이디어 줄을 넣고 그 자리로 커서를 옮긴다. 쓰던 글은 덮지 않는다. */
   const addIdeaLine = (label: string, text = '') => {
@@ -727,9 +717,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
     structureAbort.current?.abort();
     structureAbort.current = null;
     structureSeed.current = '';
-    structureCalls.current = 0;
     setStructureState('idle');
-    setStructureStale(false);
     setSuggestions([]);
     setSubmitting(false);
   };
@@ -809,8 +797,6 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       document.activeElement.blur();
     }
 
-    // 1단계를 떠날 때 아직 안 읽었으면 읽기 시작한다. 결과는 기다리지 않는다.
-    if (step === 1) void readStructure();
     /*
      * 4단계로 갈 때 미리 물어 두고, 4단계를 떠날 때 한 번 더 본다.
      * 미리 부르는 것은 5단계에서 기다리지 않기 위해서고, 두 번째는
@@ -1013,13 +999,10 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
           <StructurePanel
             structure={structure}
             state={structureState}
-            stale={structureStale}
+            stale={Boolean(structure) && structureState === 'done' && structureSeed.current !== brief.idea.trim()}
             ready={brief.idea.trim().length >= 15}
-            onChange={(next) => {
-              setStructureStale(false);
-              patch({ structure: next });
-            }}
-            onReread={() => void readStructure(true)}
+            onChange={(next) => patch({ structure: next })}
+            onGenerate={() => void readStructure()}
           />
           <Field label="서비스명" required hint="가칭이어도 됩니다. 개요에서 바꿀 수 있습니다.">
             <input
