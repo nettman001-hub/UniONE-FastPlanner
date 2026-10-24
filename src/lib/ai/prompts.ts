@@ -336,6 +336,54 @@ export function buildSpecPrompt(plan: Plan, target: SpecTarget, others: string[]
   return sections.join('\n');
 }
 
+/**
+ * 기능명세서 AI 검토.
+ *
+ * 만든 쪽과 다른 눈으로 본다 — 브리프에서 사용자가 고른 답, 서비스 구조 지침, PRD 와 대조해
+ * 빠진 것·모순·모호한 표현을 찾는다. 생성할 때는 개수를 채우느라 놓치는 것이 생기는데,
+ * "건당 결제인데 환불이 없다" 같은 것은 따로 대조해야 보인다.
+ */
+export function buildReviewPrompt(plan: Plan): string {
+  const fsLines = plan.requirements.map((req) =>
+    [
+      `- ${req.id} ${req.title} [${req.category}·${req.priority}]${
+        req.sources?.length ? ` 출처: ${req.sources.join(', ')}` : ''
+      } — ${req.description}`,
+      ...plan.features
+        .filter((f) => f.requirementId === req.id)
+        .map((f) =>
+          [
+            `  - ${f.id} ${f.name} [${f.priority}] — ${f.description}`,
+            ...plan.specifications.filter((s) => s.featureId === f.id).map((s) => `    - ${s.id} ${s.title}`),
+          ].join('\n'),
+        ),
+    ].join('\n'),
+  );
+  const sections = [
+    '당신은 기능명세서를 검토하는 시니어 기획자입니다. 아래 기능명세서를 브리프·PRD 와 대조해 **빠진 것, 모순, 모호한 표현**을 찾으세요.',
+    '',
+    '찾는 법:',
+    '- 빠진 것: 브리프에서 사용자가 고른 답, 서비스 구조 지침, PRD(시나리오·범위·비기능·성공 지표·리스크)가 요구하는데 기능명세서에 없는 것.',
+    '  예) 돈을 건당 결제로 받는데 환불·취소 요구사항이 없음 / 중개·매칭 서비스인데 신고·차단이 없음 / 성공 지표(재이용률)는 있는데 그걸 측정할 기록·통계 기능이 없음 / 알림이 필요하다고 했는데 알림 설정이 없음.',
+    '- 모순: 항목끼리 또는 브리프와 어긋남. 예) 범위 제외 항목이 기능으로 들어감, 로그인 없이 쓴다고 했는데 가입 필수 흐름, 같은 정책의 숫자가 항목마다 다름.',
+    '- 모호: P0·P1 항목에서 숫자·조건 없이 해석이 갈리는 표현. 예) "적절한 시간 내", "일정 금액 이상".',
+    '',
+    '규칙:',
+    '- 근거가 분명한 것만 적습니다. 취향이나 있으면 좋을 것은 적지 않습니다.',
+    '- 빠진 것은 additions 에 기능으로 제안합니다. 이미 비슷한 기능이 있으면 제안하지 않습니다.',
+    '- 모순·모호는 notes 에 적습니다. targetId 는 아래 목록에 있는 ID 만 씁니다.',
+    '- 각각 최대 8개. 없으면 빈 배열로 둡니다 — 억지로 채우지 마세요.',
+    '',
+    '## 서비스 정보',
+    briefBlock(plan.brief),
+  ];
+  const shape = structureBlock(plan.brief, 'fs');
+  if (shape) sections.push('', shape);
+  if (hasArtifact(plan, 'prd')) sections.push('', prdFullBlock(plan.prd));
+  sections.push('', '## 검토할 기능명세서 (요구사항 → 기능 → 상세명세 제목)', ...fsLines);
+  return sections.join('\n');
+}
+
 export function buildChatPrompt(plan: Plan, question: string): string {
   return [
     '당신은 아래 기획 문서를 함께 다듬는 AI 기획 파트너입니다.',

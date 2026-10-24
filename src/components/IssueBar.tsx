@@ -11,7 +11,7 @@
  * 어떻게" 가 남는다. 지적에는 대상 ID 가 이미 다 있으므로 그대로 넘기면 된다.
  */
 
-import { AlertTriangle, Info, Sparkles } from 'lucide-react';
+import { AlertTriangle, Check, Info, Sparkles } from 'lucide-react';
 
 import { FixWithAi } from './FixWithAi';
 import { RegenerateTag, Spinner } from './ui';
@@ -48,6 +48,25 @@ function FillSpecsButton({ planId, featureIds }: { planId: string; featureIds: s
     >
       {pending === 'fs' ? <Spinner size={13} /> : <Sparkles size={13} />}
       {pending === 'fs' ? '채우는 중' : 'AI로 채우기'}
+    </button>
+  );
+}
+
+/** AI 검토의 고칠 점을 지운다 — 고쳤거나, 그대로 두기로 했을 때. */
+export function DismissNoteButton({ planId, noteId }: { planId: string; noteId: string }) {
+  const applyDocuments = usePlannerStore((s) => s.applyDocuments);
+  const plan = usePlannerStore((s) => s.plans.find((p) => p.id === planId));
+  return (
+    <button
+      type="button"
+      className="btn btn-sm shrink-0"
+      title="이 지적을 목록에서 지웁니다"
+      onClick={() =>
+        applyDocuments(planId, { reviewNotes: (plan?.reviewNotes ?? []).filter((n) => n.id !== noteId) })
+      }
+    >
+      <Check size={13} />
+      확인함
     </button>
   );
 }
@@ -121,6 +140,7 @@ export function IssueBar({
             {issue.fillSpecs && issue.fillSpecs.length > 0 && (
               <FillSpecsButton planId={planId} featureIds={issue.fillSpecs} />
             )}
+            {issue.noteId && <DismissNoteButton planId={planId} noteId={issue.noteId} />}
             <FixWithAi planId={planId} prompt={issueFixPrompt(issue)} />
           </li>
         ))}

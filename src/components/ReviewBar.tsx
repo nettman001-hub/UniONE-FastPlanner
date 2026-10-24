@@ -90,6 +90,15 @@ export function ReviewBar({
         <span className="max-w-[220px] truncate text-[12px] font-semibold" title={current.label}>
           {current.label}
         </span>
+        {/* AI 검토가 덧붙인 항목이면 왜 넣었는지 — 승인할지 판단할 근거다. */}
+        {current.reason && (
+          <span
+            className="hidden max-w-[260px] truncate text-[11.5px] text-[var(--fg-muted)] sm:inline"
+            title={`AI 검토: ${current.reason}`}
+          >
+            AI 검토: {current.reason}
+          </span>
+        )}
 
         <button
           className="btn btn-ghost btn-sm px-1"

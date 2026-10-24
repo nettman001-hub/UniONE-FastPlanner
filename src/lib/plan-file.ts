@@ -87,6 +87,7 @@ export function planFromValue(raw: unknown): Plan | null {
     iaPages: asArray(value.iaPages),
     flows: asArray(value.flows),
     wireframes: asArray(value.wireframes),
+    ...(Array.isArray(value.reviewNotes) ? { reviewNotes: value.reviewNotes } : {}),
     chat: asArray(value.chat),
     comments: asArray(value.comments),
     versions: asArray(value.versions),

@@ -21,12 +21,19 @@ import type { AiConfig } from '@/lib/ai/config';
 import { readAiRuntime } from '@/lib/db/ai-config';
 import { aiErrorMessage } from '@/lib/ai/errors';
 import { generateLocally } from '@/lib/ai/local-generator';
-import { ARTIFACT_SCHEMA, FS_SKELETON_SCHEMA, SPEC_SCHEMA, type FsDraft } from '@/lib/ai/schemas';
-import { FS_SKELETON_NOTE, buildPrompt, buildSpecPrompt } from '@/lib/ai/prompts';
-import { appendSpecs, draftToPatch } from '@/lib/ai/apply';
+import {
+  ARTIFACT_SCHEMA,
+  FS_SKELETON_SCHEMA,
+  REVIEW_SCHEMA,
+  SPEC_SCHEMA,
+  type FsDraft,
+  type ReviewDraft,
+} from '@/lib/ai/schemas';
+import { FS_SKELETON_NOTE, buildPrompt, buildReviewPrompt, buildSpecPrompt } from '@/lib/ai/prompts';
+import { appendSpecs, applyReview, draftToPatch } from '@/lib/ai/apply';
 import { canAfford, spendCredits } from '@/lib/db/credits';
 import type { SkillMap } from '@/lib/skills';
-import { SPEC_FILL_COST, costOfArtifact, costWithEngine } from '@/lib/credits';
+import { REVIEW_COST, SPEC_FILL_COST, costOfArtifact, costWithEngine } from '@/lib/credits';
 import { ARTIFACT_LABEL } from '@/lib/types';
 import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
 
@@ -82,6 +89,8 @@ export interface GenerateOptions {
    * `AI로 채우기` 가 보낸다. 값은 기능명세서 전체보다 싸게 받는다(`SPEC_FILL_COST`).
    */
   specFeatureIds?: string[];
+  /** 기능명세서를 다시 만들지 않고 **AI 검토만** 돌린다. 기능명세서 화면의 `AI 검토` 가 보낸다. */
+  reviewFs?: boolean;
   /**
    * 관리자가 화면에서 고친 AI 설정. 파이프라인이 시작할 때 **한 번만** 읽어
    * 단계마다 돌려 쓴다 — 5단계면 같은 질의를 다섯 번 할 이유가 없다.
@@ -103,6 +112,10 @@ export function engineFor(artifact: ArtifactKey, options: GenerateOptions): Engi
 
 export function isSpecFill(artifact: ArtifactKey, options: GenerateOptions): boolean {
   return artifact === 'fs' && (options.specFeatureIds?.length ?? 0) > 0;
+}
+
+export function isReviewOnly(artifact: ArtifactKey, options: GenerateOptions): boolean {
+  return artifact === 'fs' && options.reviewFs === true && !isSpecFill(artifact, options);
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -275,6 +288,27 @@ async function generateFsInTwoPasses(plan: Plan, options: GenerateOptions, call:
   return { requirements, features, specifications };
 }
 
+/**
+ * 기능명세서를 만든 직후 검토에 쓸 수 있는 시간의 끝. 라우트 제한(300초) 안에서 생성이 이미
+ * 오래 걸렸으면 검토를 건너뛴다 — 생성 결과까지 잃으면 안 된다. 건너뛴 검토는 기능명세서
+ * 화면의 `AI 검토` 로 따로 돌릴 수 있다.
+ */
+const FS_REVIEW_DEADLINE_MS = 280_000;
+const FS_REVIEW_MIN_MS = 45_000;
+
+/** 기능명세서 AI 검토 — 빠진 기능은 `신규` 로 덧붙이고, 모순·모호는 고칠 점으로 남긴다. */
+async function reviewFs(plan: Plan, call: Call, signal?: AbortSignal) {
+  const started = Date.now();
+  const draft = await call<ReviewDraft>(buildReviewPrompt(plan), REVIEW_SCHEMA, signal);
+  const out = applyReview(plan, draft);
+  console.info(
+    `[generate] 기능명세서 AI 검토 · 기능 추가 ${out.features.length - plan.features.length}개 · 고칠 점 ${
+      out.reviewNotes?.length ?? 0
+    }개 · ${Date.now() - started}ms`,
+  );
+  return out;
+}
+
 /** 이미 있는 기능명세서에서 상세명세가 없는 기능만 골라 채운다. 요구사항 단위로 묶어 부른다. */
 async function fillSpecs(
   plan: Plan,
@@ -361,13 +395,35 @@ async function runStep(
     return { patch: await fillSpecs(plan, options.specFeatureIds, options, call), source: 'ai' };
   }
 
+  // AI 검토만 따로. 실패하면 기능명세서는 그대로 두고 오류로 알린다.
+  if (isReviewOnly(artifact, options)) {
+    if (!useAi) throw new Error('지금은 AI 를 쓸 수 없어 검토하지 못했습니다.');
+    if (plan.features.length === 0) throw new Error('검토할 기능명세서가 없습니다.');
+    return { patch: await reviewFs(plan, call), source: 'ai' };
+  }
+
   if (!useAi) {
     return { patch: toPatch(generateLocally(artifact, plan.brief, plan, options)), source: 'local' };
   }
 
   try {
     if (artifact === 'fs') {
-      return { patch: toPatch(await generateFsInTwoPasses(plan, options, call)), source: 'ai' };
+      const started = Date.now();
+      const patch = toPatch(await generateFsInTwoPasses(plan, options, call));
+      /*
+       * 만든 직후 검토한다. 시간이 모자라면 건너뛰고, 검토가 실패해도 만든 것은 그대로 낸다.
+       */
+      const left = FS_REVIEW_DEADLINE_MS - (Date.now() - started);
+      if (left >= FS_REVIEW_MIN_MS) {
+        try {
+          Object.assign(patch, await reviewFs({ ...plan, ...patch }, call, AbortSignal.timeout(left)));
+        } catch (error) {
+          console.warn('[generate] 기능명세서 AI 검토 실패:', aiErrorMessage(error));
+        }
+      } else {
+        console.info('[generate] 기능명세서 AI 검토는 시간이 모자라 건너뜀');
+      }
+      return { patch, source: 'ai' };
     }
     let prompt = buildPrompt(plan, artifact, options.extra, options.skills?.[artifact]);
     if (artifact === 'wireframe') {
@@ -436,7 +492,9 @@ export async function* runPipeline(
      */
     const cost = isSpecFill(artifact, options)
       ? costWithEngine(SPEC_FILL_COST, engineFor(artifact, options))
-      : costOfArtifact(artifact, engineFor(artifact, options));
+      : isReviewOnly(artifact, options)
+        ? costWithEngine(REVIEW_COST, engineFor(artifact, options))
+        : costOfArtifact(artifact, engineFor(artifact, options));
     if (options.userId && !(await canAfford(options.userId, cost))) {
       yield {
         type: 'error',

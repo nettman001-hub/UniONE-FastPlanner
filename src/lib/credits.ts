@@ -36,6 +36,9 @@ export const DAILY_CREDIT_LIMIT = 200;
  */
 export const SPEC_FILL_COST = 2;
 
+/** 기능명세서 `AI 검토` 를 따로 돌릴 때. 기능명세서를 만들 때 함께 도는 검토는 값을 따로 받지 않는다. */
+export const REVIEW_COST = 2;
+
 /** 무엇에 썼는지. 산출물 다섯 가지 + 에이전트 + 기능 배치 + UniAI. */
 export type CreditKind = ArtifactKey | 'chat' | 'place' | 'uinai';
 

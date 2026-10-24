@@ -41,6 +41,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { FixWithAi } from '@/components/FixWithAi';
+import { DismissNoteButton } from '@/components/IssueBar';
 import { PlanSkills } from '@/components/PlanSkills';
 import { EngineToggle } from '@/components/EngineToggle';
 import { PromptViewerModal } from '@/components/PromptViewerModal';
@@ -947,6 +948,7 @@ function IssueRow({
               AI로 채우기
             </button>
           )}
+          {issue.noteId && <DismissNoteButton planId={planId} noteId={issue.noteId} />}
           <FixWithAi planId={planId} prompt={issueFixPrompt(issue)} />
           {issue.href && (
             <Link className="btn btn-sm shrink-0" href={`/plans/${planId}${issue.href}`}>

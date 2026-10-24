@@ -16,6 +16,7 @@ import type {
   Prd,
   Priority,
   Requirement,
+  ReviewNote,
   Specification,
   UserFlow,
   Wireframe,
@@ -23,7 +24,7 @@ import type {
   WireframeBlockType,
   WireframeDevice,
 } from '../types';
-import type { FlowDraft, FsDraft, IaDraft, PrdDraft, WireframeDraft } from './schemas';
+import type { FlowDraft, FsDraft, IaDraft, PrdDraft, ReviewDraft, WireframeDraft } from './schemas';
 import { uid } from '../ids';
 
 const PRIORITIES: Priority[] = ['P0', 'P1', 'P2', 'P3'];
@@ -163,6 +164,82 @@ export function appendSpecs(
     };
   });
   return [...existing, ...added];
+}
+
+/**
+ * AI 검토 결과를 붙인다. 빠진 기능은 `신규` 로 덧붙이고(이유 포함), 맞는 요구사항이 없으면
+ * 새 요구사항을 만든다. 모순·모호는 고칠 점(reviewNotes)으로 — 이전 검토의 고칠 점은 바꾼다.
+ * 이미 있는 이름의 기능, 목록에 없는 ID 를 가리키는 고칠 점은 버린다.
+ */
+export function applyReview(
+  plan: PlanDocuments,
+  draft: ReviewDraft,
+): Pick<PlanDocuments, 'requirements' | 'features' | 'reviewNotes'> {
+  const requirements = [...plan.requirements];
+  const features = [...plan.features];
+  const knownRequirement = new Set(requirements.map((r) => r.id));
+  const created = new Map<string, Requirement>();
+
+  for (const a of (draft.additions ?? []).slice(0, 8)) {
+    const name = a.name?.trim();
+    if (!name || features.some((f) => f.name.trim() === name)) continue;
+    const reason = a.reason?.trim() || undefined;
+    let requirementId = knownRequirement.has(a.requirementId) ? a.requirementId : '';
+    if (!requirementId) {
+      const title = a.newRequirementTitle?.trim() || '검토에서 추가된 요구사항';
+      let requirement = created.get(title);
+      if (!requirement) {
+        const [id] = nextIds('REQ', requirements, 1);
+        requirement = {
+          id,
+          title,
+          description: a.newRequirementDescription ?? '',
+          category: a.category || '공통',
+          priority: toPriority(a.priority),
+          order: requirements.length,
+          review: 'pending',
+          ...(reason ? { reviewReason: reason } : {}),
+        };
+        requirements.push(requirement);
+        created.set(title, requirement);
+        knownRequirement.add(id);
+      }
+      requirementId = requirement.id;
+    }
+    const [id] = nextIds('FN', features, 1);
+    const order = features
+      .filter((f) => f.requirementId === requirementId)
+      .reduce((max, f) => Math.max(max, f.order + 1), 0);
+    features.push({
+      id,
+      requirementId,
+      name,
+      description: a.description ?? '',
+      priority: toPriority(a.priority),
+      status: '작성중',
+      order,
+      review: 'pending',
+      ...(reason ? { reviewReason: reason } : {}),
+    });
+  }
+
+  const ids = new Set([
+    ...requirements.map((r) => r.id),
+    ...features.map((f) => f.id),
+    ...plan.specifications.map((s) => s.id),
+  ]);
+  const reviewNotes: ReviewNote[] = (draft.notes ?? [])
+    .filter((n) => ids.has(n.targetId) && n.text?.trim())
+    .slice(0, 8)
+    .map((n) => ({
+      id: uid('note'),
+      kind: n.kind === '모순' ? '모순' : '모호',
+      targetId: n.targetId,
+      text: n.text.trim(),
+      suggestion: (n.suggestion ?? '').trim(),
+    }));
+
+  return { requirements, features, reviewNotes };
 }
 
 export function applyFs(draft: FsDraft): FsResult {

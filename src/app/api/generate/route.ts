@@ -25,6 +25,8 @@ interface GenerateBody {
   merge?: boolean;
   /** 기능명세서를 다시 만들지 않고 이 기능들의 상세명세만 채운다 */
   specFeatureIds?: string[];
+  /** 기능명세서를 다시 만들지 않고 AI 검토만 */
+  reviewFs?: boolean;
 }
 
 /**
@@ -98,6 +100,7 @@ export async function POST(request: Request) {
               artifacts.length === 1 && artifacts[0] === 'fs' && Array.isArray(body.specFeatureIds)
                 ? body.specFeatureIds.filter((id) => typeof id === 'string').slice(0, 60)
                 : undefined,
+            reviewFs: artifacts.length === 1 && artifacts[0] === 'fs' && body.reviewFs === true,
             skills,
             userId: user.id,
             engines,

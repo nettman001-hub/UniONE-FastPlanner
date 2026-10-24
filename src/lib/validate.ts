@@ -33,6 +33,8 @@ export interface Issue {
   regenerate?: boolean;
   /** 상세명세를 AI 로 채울 수 있는 기능 ID. 있으면 화면에 `AI로 채우기` 가 붙는다. */
   fillSpecs?: string[];
+  /** AI 검토가 남긴 고칠 점이면 그 ID. 화면에 `확인함`(지우기)이 붙는다. */
+  noteId?: string;
 }
 
 /** 구조마다 화면 이름에 있어야 할 말. 묶음 안의 말 중 하나만 있으면 된다. 첫 말이 표시 이름. */
@@ -171,6 +173,29 @@ export function validatePlan(plan: Plan): Issue[] {
     // 빠진 것만 AI 로 채운다 — 기능명세서를 통째로 다시 만들지 않는다.
     fillSpecs: p0WithoutSpec.map((f) => f.id),
   });
+
+  /*
+   * AI 검토가 남긴 모순·모호. 규칙으로는 못 찾는 것이라 따로 받아 두었다가 여기서 함께 보인다.
+   * 대상이 지워졌으면 보이지 않는다.
+   */
+  const nameOf = (id: string) =>
+    plan.requirements.find((r) => r.id === id)?.title ??
+    plan.features.find((f) => f.id === id)?.name ??
+    plan.specifications.find((s) => s.id === id)?.title;
+  for (const note of plan.reviewNotes ?? []) {
+    const name = nameOf(note.targetId);
+    if (!name) continue;
+    issues.push({
+      id: `fs-ai-${note.id}`,
+      level: 'warn',
+      artifact: 'fs',
+      title: `AI 검토 · ${note.kind}`,
+      detail: note.suggestion ? `${note.text} → ${note.suggestion}` : note.text,
+      targets: [`${note.targetId} ${name}`],
+      href: '/fs',
+      noteId: note.id,
+    });
+  }
 
   const specWithoutCriteria = plan.specifications
     .filter((s) => s.acceptanceCriteria.length === 0)

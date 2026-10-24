@@ -22,6 +22,8 @@ export interface PendingItem extends ReviewTarget {
   label: string;
   /** REQ-001 같은 표시용 ID */
   tag: string;
+  /** AI 검토가 덧붙인 이유 */
+  reason?: string;
 }
 
 export function isPending(item: Reviewable) {
@@ -30,9 +32,10 @@ export function isPending(item: Reviewable) {
 
 /** 승인 = 표시를 지운다. 필드가 없는 상태가 곧 승인된 상태다. */
 export function stripReview<T extends Reviewable>(item: T): T {
-  if (item.review === undefined) return item;
+  if (item.review === undefined && item.reviewReason === undefined) return item;
   const next = { ...item };
   delete next.review;
+  delete next.reviewReason;
   return next;
 }
 
@@ -107,11 +110,11 @@ export function collectPending(
 
   for (const req of [...requirements].sort(byOrder)) {
     if (isPending(req)) {
-      out.push({ kind: 'requirement', id: req.id, label: req.title, tag: req.id });
+      out.push({ kind: 'requirement', id: req.id, label: req.title, tag: req.id, reason: req.reviewReason });
     }
     for (const feature of features.filter((f) => f.requirementId === req.id).sort(byOrder)) {
       if (isPending(feature)) {
-        out.push({ kind: 'feature', id: feature.id, label: feature.name, tag: feature.id });
+        out.push({ kind: 'feature', id: feature.id, label: feature.name, tag: feature.id, reason: feature.reviewReason });
       }
       for (const spec of specifications.filter((s) => s.featureId === feature.id).sort(byOrder)) {
         if (isPending(spec)) {

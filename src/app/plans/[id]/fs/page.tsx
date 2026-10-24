@@ -16,7 +16,10 @@ import {
   Table2,
   Trash2,
   X,
+  SearchCheck,
 } from 'lucide-react';
+import { REVIEW_COST, costWithEngine } from '@/lib/credits';
+import { useEngines } from '@/lib/useEngine';
 import { EmptyState, Field, InlineText, ListEditor, Spinner, useConfirm } from '@/components/ui';
 import { BRANCH_HUES, FsMindmap } from '@/components/FsMindmap';
 import { NewBadge, ReviewBar } from '@/components/ReviewBar';
@@ -162,6 +165,7 @@ export default function FsPage() {
   const rejectAllReview = usePlannerStore((s) => s.rejectAllReview);
 
   const { generate, pending } = useGenerate(plan);
+  const engines = useEngines();
   const { confirm, dialog } = useConfirm();
 
   const [view, setView] = useState<View>('map');
@@ -589,6 +593,20 @@ export default function FsPage() {
                 <span>표</span>
               </button>
             </div>
+            {/*
+              AI 검토 — 브리프·PRD 와 대조해 빠진 것·모순·모호한 표현을 찾는다. 기능명세서를 만들 때
+              함께 돌지만, 손으로 고친 뒤나 시간이 모자라 건너뛰었을 때 따로 돌린다.
+              빠진 기능은 `신규` 로 덧붙어 검토 바에서 승인·거절하고, 고칠 점은 위 점검에 뜬다.
+            */}
+            <button
+              className="btn btn-sm"
+              disabled={pending !== null}
+              title={`브리프·PRD 와 대조해 빠진 것·모순·모호한 표현을 찾습니다 · ${costWithEngine(REVIEW_COST, engines.fs)} 크레딧`}
+              onClick={() => void generate('fs', { reviewFs: true })}
+            >
+              <SearchCheck size={13} />
+              AI 검토
+            </button>
             <button
               className={`btn btn-primary btn-sm${generating ? ' is-busy' : ''}`}
               disabled={pending !== null}
@@ -1069,6 +1087,11 @@ function RequirementEditor({
       onRemove={onRemove}
       removeLabel="삭제"
     >
+      {requirement.reviewReason && (
+        <p className="rounded-md bg-[var(--surface-2)] px-2.5 py-1.5 text-[12px] leading-relaxed text-[var(--fg-muted)]">
+          <span className="font-semibold text-[var(--fg)]">AI 검토로 추가됨</span> — {requirement.reviewReason}
+        </p>
+      )}
       <Field label="요구사항명">
         <InlineText
           value={requirement.title}
@@ -1158,6 +1181,11 @@ function FeatureEditor({
       onRemove={onRemove}
       removeLabel="삭제"
     >
+      {feature.reviewReason && (
+        <p className="rounded-md bg-[var(--surface-2)] px-2.5 py-1.5 text-[12px] leading-relaxed text-[var(--fg-muted)]">
+          <span className="font-semibold text-[var(--fg)]">AI 검토로 추가됨</span> — {feature.reviewReason}
+        </p>
+      )}
       <Field label="기능명">
         <InlineText
           value={feature.name}

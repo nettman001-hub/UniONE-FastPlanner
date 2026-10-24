@@ -164,6 +164,24 @@ export type ReviewState = 'pending';
 
 export interface Reviewable {
   review?: ReviewState;
+  /**
+   * AI 검토가 덧붙인 항목이면 그 이유 — "건당 결제인데 환불 요구사항이 없어 추가".
+   * 검토 바에 함께 보여 승인할지 판단하게 한다. 승인하면 지운다.
+   */
+  reviewReason?: string;
+}
+
+/**
+ * AI 검토가 찾은 **고칠 점** — 더할 항목이 아니라 이미 있는 항목의 모순·모호한 표현.
+ * 정합성 검사의 지적으로 보이고, `AI로 수정하기` 로 고치거나 `확인함` 으로 지운다.
+ */
+export interface ReviewNote {
+  id: string;
+  kind: '모순' | '모호';
+  /** 대상 항목 ID (REQ-/FN-/SP-) */
+  targetId: string;
+  text: string;
+  suggestion: string;
 }
 
 export interface Requirement extends Reviewable {
@@ -537,6 +555,8 @@ export interface PlanDocuments {
   iaPages: IaPage[];
   flows: UserFlow[];
   wireframes: Wireframe[];
+  /** 기능명세서 AI 검토가 남긴 고칠 점. 검토할 때마다 새로 바뀐다. */
+  reviewNotes?: ReviewNote[];
 }
 
 /** UniAI가 만든 파일. 코딩 에이전트 번들에도 같은 모양으로 들어간다. */
@@ -670,5 +690,6 @@ export function pickDocuments(plan: PlanDocuments): PlanDocuments {
     iaPages: plan.iaPages,
     flows: plan.flows,
     wireframes: plan.wireframes,
+    ...(plan.reviewNotes ? { reviewNotes: plan.reviewNotes } : {}),
   };
 }

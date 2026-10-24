@@ -449,3 +449,58 @@ export const PLACEMENT_SCHEMA = object({
     }),
   },
 });
+
+/* ------------------------------------------------------------------ */
+/* 기능명세서 AI 검토                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 빠진 것은 **더할 기능**으로, 모순·모호는 **고칠 점**으로 받는다. 더할 기능은 `신규` 배지로
+ * 들어가 검토 바에서 승인·거절하고, 고칠 점은 정합성 검사의 지적으로 보인다.
+ */
+export const REVIEW_SCHEMA = object({
+  additions: {
+    type: 'array',
+    description: '빠진 것을 채울 기능 0~8개. 근거가 분명한 것만.',
+    items: object({
+      requirementId: str('넣을 기존 요구사항 ID (REQ-001 형식). 맞는 요구사항이 없으면 빈 문자열.'),
+      newRequirementTitle: str('requirementId 가 빈 문자열일 때 새 요구사항명. 아니면 빈 문자열.'),
+      newRequirementDescription: str('새 요구사항 설명 2~3문장. 아니면 빈 문자열.'),
+      category: str('새 요구사항 분류. 아니면 빈 문자열.'),
+      name: str('추가할 기능명'),
+      description: str('기능 설명 2~3문장. 규칙은 숫자로.'),
+      priority: PRIORITY,
+      reason: str(
+        '왜 빠졌다고 보는지 한 문장. 근거가 된 브리프·PRD 항목을 밝힌다 (예: "건당 결제인데 환불 요구사항이 없음").',
+      ),
+    }),
+  },
+  notes: {
+    type: 'array',
+    description: '이미 있는 항목의 모순·모호한 표현 0~8개.',
+    items: object({
+      kind: {
+        type: 'string',
+        enum: ['모순', '모호'],
+        description: '모순 = 다른 항목·브리프와 어긋남. 모호 = 숫자·조건 없이 해석이 갈림.',
+      },
+      targetId: str('대상 항목 ID (REQ-/FN-/SP- 형식, 위 목록에 있는 것만)'),
+      text: str('무엇이 문제인지 한 문장'),
+      suggestion: str('어떻게 고치면 되는지 한 문장 (숫자·조건 포함)'),
+    }),
+  },
+});
+
+export interface ReviewDraft {
+  additions: {
+    requirementId: string;
+    newRequirementTitle: string;
+    newRequirementDescription: string;
+    category: string;
+    name: string;
+    description: string;
+    priority: string;
+    reason: string;
+  }[];
+  notes: { kind: string; targetId: string; text: string; suggestion: string }[];
+}
