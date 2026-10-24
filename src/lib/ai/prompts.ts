@@ -1,4 +1,4 @@
-import { PLATFORM_LABEL, type ArtifactKey, type Plan, type PlanBrief } from '../types';
+import { PLATFORM_LABEL, type ArtifactKey, type BriefSummary, type Plan, type PlanBrief } from '../types';
 import { answersBlock, followupBlock } from '../brief-questions';
 import { hasArtifact } from '../artifact-status';
 import { skillBlock } from '../skills';
@@ -14,6 +14,28 @@ export const SYSTEM_PROMPT = `당신은 IT 서비스 기획 전문가입니다. 
 - 분량은 요청된 개수 범위를 지킵니다. 억지로 채우기 위해 중복 항목을 만들지 않습니다.
 - 결과는 지정된 JSON 스키마로만 응답합니다.`;
 
+/** 붙여 넣은 자료를 프롬프트에 넣는 상한. 길면 정작 문서를 쓸 여유가 줄어든다. */
+const MATERIALS_LIMIT = 5000;
+
+export function summaryBlock(summary: BriefSummary | undefined): string {
+  if (!summary) return '';
+  const lines = summary.lines.filter((l) => l.text.trim());
+  const assumptions = summary.assumptions.filter((a) => a.trim());
+  if (lines.length === 0 && assumptions.length === 0) return '';
+  const out = [
+    '## 사용자가 확인한 기획 요약 (가장 우선 — 다른 설명과 어긋나면 이것을 따른다)',
+    ...lines.map((l) => `- ${l.label}: ${l.text.trim()}`),
+  ];
+  if (assumptions.length > 0) {
+    out.push(
+      '',
+      '## 가정 (정하지 않은 것을 이렇게 두기로 사용자가 확인함 — PRD 제약사항에 "가정: …" 으로 적는다)',
+      ...assumptions.map((a) => `- ${a.trim()}`),
+    );
+  }
+  return out.join('\n');
+}
+
 export function briefBlock(brief: PlanBrief): string {
   const lines = [
     `서비스명: ${brief.title}`,
@@ -28,6 +50,26 @@ export function briefBlock(brief: PlanBrief): string {
   if (brief.reference) lines.push(`참고 서비스: ${brief.reference}`);
   if (brief.referenceDiff) lines.push(`참고 서비스와 다른 점: ${brief.referenceDiff}`);
   if (brief.mustHave) lines.push(`반드시 포함할 기능: ${brief.mustHave}`);
+  if (brief.niceToHave) lines.push(`있으면 좋은 기능 (P1~P2 로 둔다): ${brief.niceToHave}`);
+  if (brief.notInScope) {
+    lines.push(`이번에 만들지 않을 것 (PRD 범위 제외에 그대로 적고, 기능으로 만들지 않는다): ${brief.notInScope}`);
+  }
+
+  /*
+   * 마지막 단계에서 사용자가 읽고 고친 요약. 아이디어 설명은 해석의 여지가 있지만 이것은
+   * 사용자가 "이게 맞다" 고 확인한 것이라 가장 앞선다.
+   */
+  const summary = summaryBlock(brief.summary);
+  if (summary) lines.push('', summary);
+
+  if (brief.materials?.trim()) {
+    const text = brief.materials.trim();
+    lines.push(
+      '',
+      '## 사용자가 붙여 넣은 참고 자료 (회의록·기존 기획서 등 — 사실과 요구를 뽑아 반영하되, 위 확정 사항과 어긋나면 위를 따른다)',
+      text.length > MATERIALS_LIMIT ? `${text.slice(0, MATERIALS_LIMIT)}\n…(이하 생략)` : text,
+    );
+  }
 
   /*
    * 고른 답은 **추측할 여지가 없는 사실**이다. 아이디어 설명은 해석의 여지가

@@ -459,14 +459,38 @@ export interface PlanBrief {
    * 예전 플랜에는 없으므로 없을 수 있다.
    */
   answers?: Record<string, string[]>;
-  /** AI 가 되물은 질문과 그 답. */
-  followups?: Array<{ question: string; answer: string }>;
+  /**
+   * AI 가 되물은 질문과 그 답. **답하지 않은 질문도 남긴다**(answer 가 빈 문자열) —
+   * 그 부분은 문서에서 '가정' 으로 표시해야 하기 때문이다. 예전 플랜에는 답한 것만 있다.
+   */
+  followups?: Array<{ question: string; answer: string; area?: string }>;
+  /** 있으면 좋은 기능 — 꼭 필요한 것(mustHave)과 나눠 우선순위를 낮게 잡는다. */
+  niceToHave?: string;
+  /** 이번에 만들지 않을 것 — PRD 범위 제외에 그대로 들어간다. */
+  notInScope?: string;
+  /** 붙여 넣은 기존 자료(회의록·기획서·요청 메일). 길면 잘라서 넣는다. */
+  materials?: string;
+  /** 마지막 단계에서 사용자가 확인한 기획 요약. 문서 생성의 가장 우선하는 근거다. */
+  summary?: BriefSummary;
   /** 서비스 구조(아키타입). 예전 플랜에는 없다. */
   structure?: BriefStructure;
   /** 제공하는 쪽 사용자 — 중개·매칭에서 제공자가 따로 있을 때만. */
   providerUser?: string;
   /** 참고 서비스와 다른 점 */
   referenceDiff?: string;
+}
+
+export interface BriefSummaryLine {
+  label: string;
+  text: string;
+  /** 사용자가 직접 말하지 않아 AI 가 채운 줄. 사용자가 고치면 false 가 된다. */
+  assumed?: boolean;
+}
+
+export interface BriefSummary {
+  lines: BriefSummaryLine[];
+  /** 정하지 않은 것을 어떻게 가정했는지 — PRD 제약사항에 '가정:' 으로 들어간다. */
+  assumptions: string[];
 }
 
 /** 서비스 구조 — 업종이 아니라 **누가 무엇을 주고받는가**로 나눈다. */

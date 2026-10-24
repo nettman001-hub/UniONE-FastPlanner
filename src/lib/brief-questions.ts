@@ -45,7 +45,21 @@ export interface BriefQuestion {
    * 개요에 보여 주는 곳이 모두 이 목록만 돌기 때문에, 따로 두면 답이 조용히 사라진다.
    */
   types?: ArchetypeKey[];
+  /**
+   * 어느 단계 화면에 보이나. 없으면 4단계. 2단계의 '누구를 위한' 보기도 이 목록에 둔다 —
+   * 답이 같은 길로 프롬프트와 개요에 들어가야 하기 때문이다.
+   */
+  step?: 2 | 4;
+  /** 4단계 `더 자세히` 안에 접혀 있는 질문. 답하면 깊어지지만 기본으로는 안 보인다. */
+  advanced?: boolean;
 }
+
+/**
+ * `잘 모르겠어요` 의 값. 고르면 AI 가 서비스에 맞게 정하되, 문서에 **가정** 으로 남겨
+ * 사용자가 나중에 확인하게 한다. 비워 두는 것과 다르다 — 비우면 AI 가 말없이 추측한다.
+ */
+export const UNSURE = '__unsure';
+export const UNSURE_LABEL = '잘 모르겠어요';
 
 export const BRIEF_QUESTIONS: BriefQuestion[] = [
   {
@@ -121,6 +135,113 @@ export const BRIEF_QUESTIONS: BriefQuestion[] = [
       },
       { value: '정식', label: '1~3개월, 제대로', effect: 'P0·P1 을 고르게 배분하고 예외 흐름까지 설계합니다.' },
       { value: '검토', label: '아직 검토 단계입니다', effect: '범위를 넓게 잡고 선택지를 함께 제시합니다.' },
+    ],
+  },
+
+  /* 4단계 `더 자세히` — 답하면 기능·비기능 요구사항이 구체적으로 갈린다 ---- */
+
+  {
+    key: 'talk',
+    advanced: true,
+    ask: '사용자끼리 대화가 필요한가요?',
+    why: '채팅·댓글 기능과 신고 처리 범위가 달라집니다.',
+    multi: true,
+    choices: [
+      { value: '채팅', label: '1:1 채팅', effect: '사용자끼리 1:1 채팅(읽음 표시, 차단·신고)을 포함합니다.' },
+      { value: '댓글', label: '댓글', effect: '게시물·항목에 댓글과 답글, 신고를 포함합니다.' },
+      { value: '없음', label: '필요 없습니다', effect: '사용자끼리 메시지를 주고받는 기능을 만들지 않습니다.' },
+    ],
+  },
+  {
+    key: 'media',
+    advanced: true,
+    ask: '사용자가 무엇을 올리나요?',
+    why: '업로드·용량 제한·검수 기능이 붙을지 결정합니다.',
+    multi: true,
+    choices: [
+      { value: '사진', label: '사진', effect: '사진 업로드(여러 장, 용량·장수 제한, 미리보기)를 포함합니다.' },
+      { value: '파일', label: '문서·파일', effect: '파일 첨부와 형식·용량 제한, 내려받기를 포함합니다.' },
+      { value: '동영상', label: '동영상', effect: '동영상 업로드·재생과 처리 대기 상태를 포함합니다.' },
+      { value: '없음', label: '올리지 않음', effect: '사용자 업로드 기능을 만들지 않습니다.' },
+    ],
+  },
+  {
+    key: 'integrations',
+    advanced: true,
+    ask: '외부 서비스와 연결하나요?',
+    why: '연동 기능과 실패 시 예외 처리가 들어갑니다.',
+    multi: true,
+    choices: [
+      { value: '지도', label: '지도·위치', effect: '지도 API 연동(지도 표시, 주소 검색, 거리 계산)과 연동 실패 처리를 포함합니다.' },
+      { value: '결제', label: '결제(PG)', effect: '결제대행(PG) 연동, 결제 실패·취소·환불 처리를 포함합니다.' },
+      { value: '알림톡', label: '카카오 알림톡', effect: '알림톡 발송 연동과 발송 실패 시 문자 대체를 포함합니다.' },
+      { value: '캘린더', label: '캘린더', effect: '외부 캘린더(구글 등) 일정 내보내기·동기화를 포함합니다.' },
+    ],
+  },
+  {
+    key: 'scale',
+    advanced: true,
+    ask: '첫해 예상 이용자는 얼마나 되나요?',
+    why: '성능·가용성 같은 비기능 요구사항의 수준이 달라집니다.',
+    multi: false,
+    choices: [
+      { value: '소규모', label: '1천 명 이하', effect: '소규모 운영을 전제로 비기능 요구사항을 단순하게 잡습니다.' },
+      { value: '중규모', label: '1만 명 안팎', effect: '동시 접속과 응답 시간 목표(예: 주요 화면 2초 이내)를 비기능 요구사항에 적습니다.' },
+      { value: '대규모', label: '10만 명 이상', effect: '확장성, 캐시, 장애 대응, 모니터링을 비기능 요구사항과 리스크에 적습니다.' },
+    ],
+  },
+
+  /* 2단계 — 누구를 위한, 무엇을 위한 기획인가 --------------------------- */
+
+  {
+    key: 'purpose',
+    step: 2,
+    ask: '이 기획서를 어디에 쓰시나요?',
+    why: '문서에서 무엇을 가장 꼼꼼히 적을지가 달라집니다.',
+    multi: false,
+    choices: [
+      { value: 'MVP', label: '최소 출시 범위 정하기', effect: '최소 출시 범위를 정하는 것이 목적입니다. P0 를 꼭 필요한 것으로 좁히고 나머지는 향후 확장으로 미룹니다.' },
+      { value: '견적', label: '개발 견적·외주 발주', effect: '개발 견적·외주 발주용입니다. 범위 제외, 가정, 비기능 요구사항, 화면 목록을 빠짐없이 명확히 적습니다.' },
+      { value: '투자', label: '투자·사업계획', effect: '투자·사업계획용입니다. 문제 정의, 차별점, 성공 지표, 마일스톤을 강조합니다.' },
+      { value: '보고', label: '사내 보고·승인', effect: '사내 보고·승인용입니다. 배경, 기대 효과, 일정, 리스크를 의사결정자가 읽기 쉽게 정리합니다.' },
+      { value: '개편', label: '기존 서비스 개편', effect: '기존 서비스 개편입니다. 지금의 불편과 바뀌는 점, 기존 데이터·사용자 이전을 다룹니다.' },
+    ],
+  },
+  {
+    key: 'audience',
+    step: 2,
+    ask: '주 고객은 누구인가요?',
+    why: '가입 방식, 조직 계정, 도입 절차가 달라집니다.',
+    multi: false,
+    choices: [
+      { value: 'B2C', label: '일반 개인', effect: '일반 개인 고객이 대상입니다. 가입 장벽을 낮추고 온보딩을 짧게 설계합니다.' },
+      { value: 'B2B', label: '기업·기관', effect: '기업·기관 고객이 대상입니다. 조직 단위 계정, 담당자 권한, 도입 문의·계약 흐름을 고려합니다.' },
+      { value: '내부', label: '우리 회사 직원', effect: '사내 직원용입니다. 사내 계정 로그인, 부서·권한, 감사 기록을 고려하고 마케팅·온보딩 화면은 최소화합니다.' },
+    ],
+  },
+  {
+    key: 'age',
+    step: 2,
+    ask: '주 연령대는요?',
+    why: '보호자 동의, 글자 크기, 흐름의 단순함이 달라집니다.',
+    multi: true,
+    choices: [
+      { value: '미성년', label: '10대 이하', effect: '미성년 사용자가 있습니다. 만 14세 미만 법정대리인 동의와 보호 장치를 넣습니다.' },
+      { value: '2030', label: '20~30대', effect: '20~30대가 주 사용자입니다. 모바일 중심의 빠른 흐름과 공유 기능을 고려합니다.' },
+      { value: '4050', label: '40~50대', effect: '40~50대가 주 사용자입니다. 글자 크기와 단계 수를 무리 없게 설계합니다.' },
+      { value: '60plus', label: '60대 이상', effect: '60대 이상이 주 사용자입니다. 큰 글씨, 단순한 흐름, 전화·보호자 도움 경로를 넣습니다.' },
+    ],
+  },
+  {
+    key: 'frequency',
+    step: 2,
+    ask: '얼마나 자주 쓰나요?',
+    why: '홈 화면 구성과 재방문 장치가 달라집니다.',
+    multi: false,
+    choices: [
+      { value: '매일', label: '매일', effect: '매일 쓰는 서비스입니다. 홈에서 바로 핵심 행동을 하게 하고 재방문 알림·습관 장치를 설계합니다.' },
+      { value: '주간', label: '주 1~2회', effect: '주 1~2회 쓰는 서비스입니다. 다시 왔을 때 지난 상태를 이어 보게 하고 리마인드를 둡니다.' },
+      { value: '가끔', label: '필요할 때만', effect: '필요할 때만 쓰는 서비스입니다. 로그인 없이 둘러보기와 빠른 검색을 우선하고, 다시 찾게 할 알림 동의를 받습니다.' },
     ],
   },
 
@@ -421,6 +542,14 @@ export function answersBlock(answers: BriefAnswers | undefined, structure?: Brie
     const picked = answers[question.key];
     if (!picked || picked.length === 0) continue;
 
+    if (picked.includes(UNSURE)) {
+      lines.push(`- ${question.ask} ${UNSURE_LABEL}`);
+      lines.push(
+        `  → 사용자가 정하지 못했습니다. 이 서비스에 맞는 값을 골라 반영하고, PRD 제약사항에 "가정: …" 으로 적어 확인받게 합니다.`,
+      );
+      continue;
+    }
+
     const chosen = question.choices.filter((c) => picked.includes(c.value));
     if (chosen.length === 0) continue;
 
@@ -441,9 +570,46 @@ export interface BriefFollowup {
 
 export function followupBlock(followups: BriefFollowup[] | undefined): string {
   const answered = (followups ?? []).filter((f) => f.answer.trim());
-  if (answered.length === 0) return '';
-  return [
-    '## 추가 문답 (사용자가 답한 것 — 반드시 반영)',
-    ...answered.map((f) => `- ${f.question}\n  답: ${f.answer.trim()}`),
-  ].join('\n');
+  const open = (followups ?? []).filter((f) => !f.answer.trim());
+  const parts: string[] = [];
+  if (answered.length > 0) {
+    parts.push(
+      [
+        '## 추가 문답 (사용자가 답한 것 — 반드시 반영)',
+        ...answered.map((f) => `- ${f.question}\n  답: ${f.answer.trim()}`),
+      ].join('\n'),
+    );
+  }
+  /*
+   * 물었는데 답이 없는 것. 버리면 AI 가 말없이 추측하고, 그 추측이 사실처럼 문서에 들어간다.
+   * 가정으로 드러내 두어야 개발 전에 누군가 확인한다.
+   */
+  if (open.length > 0) {
+    parts.push(
+      [
+        '## 아직 정하지 않은 것 (물었지만 답이 없음 — 서비스에 맞게 정하되 PRD 제약사항에 "가정: …" 으로 적는다)',
+        ...open.map((f) => `- ${f.question}`),
+      ].join('\n'),
+    );
+  }
+  return parts.join('\n\n');
+}
+
+/**
+ * 마지막 단계 '이해한 내용' 의 줄. 실제 기획자가 첫 미팅 끝에 "제가 이해한 게 맞나요?" 하고
+ * 되짚는 항목이다. 이 줄을 사용자가 고치면 그것이 문서 생성의 가장 앞선 근거가 된다.
+ */
+export const SUMMARY_LABELS = [
+  '누구의',
+  '어떤 문제를',
+  '어떻게 풀고',
+  '처음 가치를 느끼는 순간',
+  '돈은',
+  '이번에 만들 것',
+  '만들지 않을 것',
+] as const;
+
+/** 단계 화면에 보일 질문. 4단계의 `더 자세히` 는 따로 접는다. */
+export function questionsForStep(structure: BriefStructure | undefined, step: 2 | 4): BriefQuestion[] {
+  return visibleQuestions(structure).filter((q) => (q.step ?? 4) === step);
 }

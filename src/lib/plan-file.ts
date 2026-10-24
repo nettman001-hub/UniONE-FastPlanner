@@ -56,6 +56,19 @@ export function planFromValue(raw: unknown): Plan | null {
   if (structure) base.brief.structure = structure;
   if (asString(brief.providerUser)) base.brief.providerUser = asString(brief.providerUser);
   if (asString(brief.referenceDiff)) base.brief.referenceDiff = asString(brief.referenceDiff);
+  for (const key of ['niceToHave', 'notInScope', 'materials'] as const) {
+    if (asString(brief[key])) base.brief[key] = asString(brief[key]);
+  }
+  // 사용자가 확인한 요약 — 문서 생성의 가장 앞선 근거라 가져오기에서 흘리면 안 된다.
+  const summary = brief.summary as unknown;
+  if (summary && typeof summary === 'object') {
+    const raw = summary as { lines?: unknown; assumptions?: unknown };
+    const lines = asArray<{ label?: unknown; text?: unknown; assumed?: unknown }>(raw.lines)
+      .filter((l) => typeof l?.label === 'string' && typeof l?.text === 'string')
+      .map((l) => ({ label: String(l.label), text: String(l.text), ...(l.assumed === true ? { assumed: true } : {}) }));
+    const assumptions = asArray<unknown>(raw.assumptions).filter((a): a is string => typeof a === 'string');
+    if (lines.length > 0 || assumptions.length > 0) base.brief.summary = { lines, assumptions };
+  }
 
   const generated = { ...base.generated };
   if (value.generated && typeof value.generated === 'object') {

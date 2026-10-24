@@ -33,6 +33,7 @@ import {
   type ArchetypeKey,
   type ArtifactKey,
   type BriefStructure,
+  type BriefSummary,
   type Plan,
   type PlanBrief,
   type Platform,
@@ -44,7 +45,14 @@ import { GuestImportBanner, RequireAuth, SyncBadge, UserMenu } from '@/component
 import { HeaderAiStatus } from '@/components/HeaderAiStatus';
 import { Logo } from '@/components/Logo';
 import { BRAND_NAME, BRAND_SHORT, BRAND_TAGLINE } from '@/lib/brand';
-import { recommendedChoices, visibleQuestions } from '@/lib/brief-questions';
+import {
+  UNSURE,
+  UNSURE_LABEL,
+  questionsForStep,
+  recommendedChoices,
+  visibleQuestions,
+  type BriefQuestion,
+} from '@/lib/brief-questions';
 import {
   ARCHETYPES,
   ARCHETYPE_KEYS,
@@ -104,10 +112,11 @@ const IDEA_SAMPLES = [
  */
 const WIZARD_STEPS = [
   '무엇을 만드나요',
-  '누구를 위한 건가요',
-  '참고 정보(선택)',
+  '누구를 위해',
+  '참고 정보',
   '몇 가지만 더',
   '확인할 것',
+  '이해한 내용',
 ];
 const LAST_STEP = WIZARD_STEPS.length;
 
@@ -117,7 +126,19 @@ interface Followup {
   why: string;
   choices: string[];
   answer: string;
+  /** 질문이 다루는 영역(정책·규칙, 예외 상황 …) */
+  area?: string;
+  /** 보기 중 AI 가 추천하는 것과 그 이유 */
+  recommended?: string;
+  recommendReason?: string;
+  /** 2 면 답한 것에서 이어 물은 꼬리 질문 */
+  round?: 1 | 2;
 }
+
+type SummaryState = 'idle' | 'loading' | 'done' | 'failed';
+
+/** 문서 깊이 표시의 이름. 답할수록 오른쪽으로 간다. */
+const DEPTH_LABEL = ['기본', '충분', '상세'] as const;
 
 const EMPTY_BRIEF: PlanBrief = {
   title: '',
@@ -559,6 +580,14 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   /* 서비스 구조 추정 */
   const [structureState, setStructureState] = useState<StructureState>('idle');
   const [suggestions, setSuggestions] = useState<StructureSuggestion[]>([]);
+
+  /* 2~6단계 */
+  const [followupRound, setFollowupRound] = useState<1 | 2>(1);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showMaterials, setShowMaterials] = useState(false);
+  const [summaryState, setSummaryState] = useState<SummaryState>('idle');
+  const [summaryReason, setSummaryReason] = useState('');
+  const summaryFor = useRef('');
   const structureSeed = useRef('');
   const structureAbort = useRef<AbortController | null>(null);
   /** 응답이 왔을 때의 최신 브리프. 응답을 기다리는 사이 사용자가 구조를 직접 골랐을 수 있다. */
@@ -654,7 +683,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const answers = brief.answers ?? {};
   const pick = (key: string, value: string, multi: boolean) =>
     setBrief((prev) => {
-      const current = prev.answers?.[key] ?? [];
+      const current = (prev.answers?.[key] ?? []).filter((v) => v !== UNSURE);
       const next = multi
         ? current.includes(value)
           ? current.filter((v) => v !== value)
@@ -684,8 +713,9 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
         body: JSON.stringify({ brief }),
       });
       const data = (await res.json()) as { questions?: Followup[]; reason?: string };
-      const next = (data.questions ?? []).map((q) => ({ ...q, answer: '' }));
+      const next = (data.questions ?? []).map((q) => ({ ...q, answer: '', round: 1 as const }));
       setFollowups(next);
+      setFollowupRound(1);
       if (next.length === 0) setAskReason(data.reason ?? '여쭤볼 것을 찾지 못했습니다.');
     } catch {
       setFollowups([]);
@@ -693,6 +723,139 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
     } finally {
       setAsking(false);
     }
+  };
+
+  /**
+   * 답한 것에서 이어지는 꼬리 질문을 한 번 더 받는다. 기존 질문은 그대로 두고 뒤에 붙인다.
+   * "보증금으로 처리" 같은 결정을 실제로 구현하려면 무엇을 더 정해야 하는지를 묻는다.
+   */
+  const askMore = async () => {
+    setAsking(true);
+    try {
+      const res = await fetch('/api/brief/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brief: { ...brief, followups: followups.map((f) => ({ question: f.question, answer: f.answer })) },
+          round: 2,
+        }),
+      });
+      const data = (await res.json()) as { questions?: Followup[]; reason?: string };
+      const more = (data.questions ?? []).map((q) => ({ ...q, answer: '', round: 2 as const }));
+      if (more.length === 0) toast(data.reason ?? '더 여쭤볼 것이 없습니다.');
+      setFollowups((prev) => [...prev, ...more.filter((q) => !prev.some((p) => p.question === q.question))]);
+    } catch {
+      toast('더 여쭤볼 것을 만들지 못했습니다.', 'danger');
+    } finally {
+      setFollowupRound(2);
+      setAsking(false);
+    }
+  };
+
+  /**
+   * 마지막 단계의 '이해한 내용' 을 만든다. 들어설 때 한 번, 앞 단계 내용이 바뀌었으면 다시.
+   * 사용자가 고친 요약은 `다시 정리하기` 를 누르기 전에는 덮지 않는다.
+   */
+  const makeSummary = async (force = false) => {
+    const seed = JSON.stringify({ ...brief, summary: undefined, followups });
+    if (!force && summaryFor.current === seed) return;
+    summaryFor.current = seed;
+    setSummaryState('loading');
+    setSummaryReason('');
+    try {
+      const res = await fetch('/api/brief/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brief: { ...brief, followups: followups.map((f) => ({ question: f.question, answer: f.answer })) },
+        }),
+      });
+      const data = (await res.json()) as { summary?: BriefSummary | null; reason?: string };
+      if (data.summary) {
+        patch({ summary: data.summary });
+        setSummaryState('done');
+      } else {
+        patch({ summary: undefined });
+        setSummaryReason(data.reason ?? '');
+        setSummaryState('failed');
+      }
+    } catch {
+      setSummaryReason('요약을 만들지 못했습니다.');
+      setSummaryState('failed');
+    }
+  };
+
+  /** 사용자가 고친 줄은 더 이상 추정이 아니다. */
+  const updateSummaryLine = (index: number, text: string) =>
+    setBrief((prev) =>
+      prev.summary
+        ? {
+            ...prev,
+            summary: {
+              ...prev.summary,
+              lines: prev.summary.lines.map((l, i) => (i === index ? { ...l, text, assumed: false } : l)),
+            },
+          }
+        : prev,
+    );
+  const updateAssumption = (index: number, text: string) =>
+    setBrief((prev) => {
+      if (!prev.summary) return prev;
+      const assumptions = [...prev.summary.assumptions];
+      assumptions[index] = text;
+      return { ...prev, summary: { ...prev.summary, assumptions } };
+    });
+  const removeAssumption = (index: number) =>
+    setBrief((prev) =>
+      prev.summary
+        ? { ...prev, summary: { ...prev.summary, assumptions: prev.summary.assumptions.filter((_, i) => i !== index) } }
+        : prev,
+    );
+
+  /** 질문 하나. 2단계와 4단계가 같이 쓴다. */
+  const renderQuestion = (q: BriefQuestion) => {
+    const typeKey = q.types?.find((t) => t === structure?.primary || t === structure?.secondary);
+    const picked = answers[q.key] ?? [];
+    const unsure = picked.includes(UNSURE);
+    return (
+      <div key={q.key}>
+        <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] font-bold">
+          {q.ask}
+          {typeKey && <span className="chip text-[10.5px] font-semibold">{archetypeChip(typeKey)}</span>}
+        </p>
+        <p className="mt-0.5 text-[11px] text-[var(--fg-subtle)]">{q.why}</p>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {q.choices.map((c) => {
+            const on = picked.includes(c.value);
+            const rec = !on && (recommended[q.key] ?? []).includes(c.value);
+            return (
+              <button
+                key={c.value}
+                type="button"
+                className={on ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                onClick={() => pick(q.key, c.value, q.multi)}
+                title={c.effect}
+              >
+                {on && <Check size={12} />}
+                {c.label}
+                {rec && <span className="text-[10.5px] font-semibold text-[var(--primary)]">추천</span>}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            className={unsure ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+            title="AI가 서비스에 맞게 정하고 문서에 '가정'으로 표시합니다."
+            onClick={() =>
+              setBrief((prev) => ({ ...prev, answers: { ...prev.answers, [q.key]: unsure ? [] : [UNSURE] } }))
+            }
+          >
+            {unsure && <Check size={12} />}
+            {UNSURE_LABEL}
+          </button>
+        </div>
+      </div>
+    );
   };
 
   const missing: string[] = [];
@@ -707,6 +870,22 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const questions = visibleQuestions(structure);
   const recommended = recommendedChoices(structure);
 
+  /**
+   * 문서 깊이 — 답한 만큼 오른쪽으로 간다. 점수 자체는 의미가 없고, "더 답하면 문서가
+   * 촘촘해진다" 를 눈으로 보이게 하려는 것이다.
+   */
+  const depthScore =
+    IDEA_LINES.filter((l) => ideaLineFilled(brief.idea, l.label)).length +
+    (brief.idea.trim().length > 80 ? 1 : 0) +
+    (structure ? (structure.source === 'user' ? 2 : 1) : 0) +
+    (brief.targetUser.trim() ? 1 : 0) +
+    Object.values(brief.answers ?? {}).filter((v) => v.length > 0).length +
+    [brief.referenceDiff, brief.mustHave, brief.niceToHave, brief.notInScope, brief.materials].filter((v) => v?.trim())
+      .length +
+    followups.filter((f) => f.answer.trim()).length +
+    (brief.summary ? 2 : 0);
+  const depthLevel = depthScore >= 20 ? 2 : depthScore >= 10 ? 1 : 0;
+
   /** 처음부터 다시. 제출했을 때와 `새로 쓰기` 를 눌렀을 때만 지운다. */
   const reset = () => {
     setStep(1);
@@ -719,6 +898,12 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
     structureSeed.current = '';
     setStructureState('idle');
     setSuggestions([]);
+    setFollowupRound(1);
+    setShowAdvanced(false);
+    setShowMaterials(false);
+    summaryFor.current = '';
+    setSummaryState('idle');
+    setSummaryReason('');
     setSubmitting(false);
   };
 
@@ -760,23 +945,40 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       return;
     }
 
-    const answered = followups
-      .filter((f) => f.answer.trim())
-      .map((f) => ({ question: f.question, answer: f.answer.trim() }));
+    /*
+     * 답하지 않은 질문도 남긴다. 버리면 AI 가 그 자리를 말없이 추측하는데, 남기면 문서에
+     * '가정' 으로 드러나 개발 전에 누군가 확인한다.
+     */
+    const asked = followups.map((f) => ({
+      question: f.question,
+      answer: f.answer.trim(),
+      ...(f.area ? { area: f.area } : {}),
+    }));
+    const summary = brief.summary
+      ? {
+          lines: brief.summary.lines.filter((l) => l.text.trim()),
+          assumptions: brief.summary.assumptions.map((a) => a.trim()).filter(Boolean),
+        }
+      : undefined;
     // 지금 구조에서 보이지 않는 질문의 답은 남기지 않는다 — 보이지 않는 답이 문서를 바꾸면 안 된다.
     const shown = new Set(questions.map((q) => q.key));
     const keptAnswers = Object.fromEntries(
       Object.entries(brief.answers ?? {}).filter(([key, values]) => shown.has(key) && values.length > 0),
     );
-    const { providerUser, referenceDiff, ...rest } = brief;
+    const { providerUser, referenceDiff, niceToHave, notInScope, materials, ...rest } = brief;
+    const trimmed = (value: string | undefined) => (value?.trim() ? value.trim() : undefined);
     const id = createPlan({
       ...rest,
       title: brief.title.trim(),
       idea: stripEmptyIdeaLines(brief.idea),
       answers: keptAnswers,
       ...(twoSided && providerUser?.trim() ? { providerUser: providerUser.trim() } : {}),
-      ...(referenceDiff?.trim() ? { referenceDiff: referenceDiff.trim() } : {}),
-      ...(answered.length > 0 ? { followups: answered } : {}),
+      ...(trimmed(referenceDiff) ? { referenceDiff: trimmed(referenceDiff) } : {}),
+      ...(trimmed(niceToHave) ? { niceToHave: trimmed(niceToHave) } : {}),
+      ...(trimmed(notInScope) ? { notInScope: trimmed(notInScope) } : {}),
+      ...(trimmed(materials) ? { materials: trimmed(materials) } : {}),
+      summary: summary && (summary.lines.length > 0 || summary.assumptions.length > 0) ? summary : undefined,
+      ...(asked.length > 0 ? { followups: asked } : {}),
     });
     onClose();
     setTimeout(reset, 200);
@@ -804,6 +1006,8 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
      * 씨앗이 같아 다시 부르지 않는다.
      */
     if (step === 3 || step === 4) void askFollowups();
+    // 마지막 단계에 들어서면 지금까지 받은 것을 정리한다.
+    if (step === 5) void makeSummary();
     setStep((s) => Math.min(s + 1, LAST_STEP));
   };
 
@@ -904,6 +1108,18 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
           );
         })}
       </ol>
+      <div className="-mt-3 mb-4 flex items-center gap-2" title="답할수록 문서가 촘촘해집니다">
+        <span className="text-[11px] font-semibold text-[var(--fg-subtle)]">문서 깊이</span>
+        <div className="flex flex-1 gap-1">
+          {DEPTH_LABEL.map((label, i) => (
+            <span
+              key={label}
+              className={`h-1.5 flex-1 rounded-full ${i <= depthLevel ? 'bg-[var(--primary)]' : 'bg-[var(--surface-3)]'}`}
+            />
+          ))}
+        </div>
+        <span className="text-[11px] font-bold text-[var(--fg-muted)]">{DEPTH_LABEL[depthLevel]}</span>
+      </div>
 
       {/*
         1단계 — 무엇을 만드나요.
@@ -1023,6 +1239,12 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
         </div>
       )}
 
+      {/*
+        2단계 — 누구를 위한, 무엇을 위한 기획인가.
+
+        예전에는 '기획 목적' 이 빈칸이었고 대부분 비워 두었다. 이제는 보기다. 문서에서 무엇을
+        꼼꼼히 쓸지(견적용이면 범위 제외·가정, 투자용이면 지표·마일스톤)가 여기서 갈린다.
+      */}
       {step === 2 && (
         <div className="flex flex-col gap-3.5">
           {/* 1단계에서 늦게 온 추정도 여기서 보이게 한다. */}
@@ -1032,7 +1254,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               {structureState === 'loading' ? (
                 <span className="flex items-center gap-1.5 text-[var(--fg-muted)]">
                   <Spinner size={12} />
-                  읽는 중…
+                  만드는 중…
                 </span>
               ) : structure && structure.primary !== 'none' ? (
                 <span className="text-[var(--fg-muted)]">
@@ -1069,7 +1291,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               </Field>
             </>
           ) : (
-            <Field label="타겟 사용자" hint="비워 두면 AI가 아이디어를 보고 추정합니다.">
+            <Field label="타겟 사용자" hint="누가, 어떤 상황에서 쓰는지 적을수록 페르소나가 구체적이 됩니다.">
               <input
                 className="input"
                 autoFocus
@@ -1079,11 +1301,12 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               />
             </Field>
           )}
-          <Field label="기획 목적">
+          {questionsForStep(structure, 2).map(renderQuestion)}
+          <Field label="목적을 직접 적기 (선택)">
             <input
               className="input"
               value={brief.purpose}
-              placeholder="예: MVP 범위를 정하고 개발 견적을 받기 위해"
+              placeholder="예: 다음 달 외주 업체 세 곳에 견적을 받기 위해"
               onChange={(e) => patch({ purpose: e.target.value })}
             />
           </Field>
@@ -1103,6 +1326,12 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
         </div>
       )}
 
+      {/*
+        3단계 — 범위를 세 갈래로 나눈다: 꼭 / 있으면 좋음 / 이번엔 안 만듦.
+
+        '안 만들 것' 은 견적 때 가장 많이 다투는 곳인데, 예전에는 AI 가 지어냈다.
+        사용자가 직접 적은 것은 PRD 범위 제외에 그대로 들어간다.
+      */}
       {step === 3 && (
         <div className="flex flex-col gap-3.5">
           <Field label="참고 서비스" hint="비슷하게 만들고 싶은 서비스가 있다면 적어 주세요.">
@@ -1122,15 +1351,52 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               onChange={(e) => patch({ referenceDiff: e.target.value })}
             />
           </Field>
-          <Field label="반드시 포함할 기능">
+          <Field label="꼭 있어야 할 기능" hint="없으면 출시할 수 없는 것. 필수(P0)로 들어갑니다.">
             <textarea
               className="textarea"
-              rows={3}
+              rows={2}
               value={brief.mustHave ?? ''}
-              placeholder="예: 위치 기반 매칭, 산책 일지, 신고하기"
+              placeholder="예: 위치 기반 매칭, 신고하기"
               onChange={(e) => patch({ mustHave: e.target.value })}
             />
           </Field>
+          <Field label="있으면 좋은 기능" hint="여유가 되면 넣을 것. 우선순위를 낮게 잡습니다.">
+            <textarea
+              className="textarea"
+              rows={2}
+              value={brief.niceToHave ?? ''}
+              placeholder="예: 산책 일지, 배지"
+              onChange={(e) => patch({ niceToHave: e.target.value })}
+            />
+          </Field>
+          <Field label="이번에 만들지 않을 것" hint="견적·일정에서 가장 많이 다투는 부분입니다. 적으면 범위 제외에 그대로 들어갑니다.">
+            <textarea
+              className="textarea"
+              rows={2}
+              value={brief.notInScope ?? ''}
+              placeholder="예: 결제, 펫시터 연결, 관리자 통계"
+              onChange={(e) => patch({ notInScope: e.target.value })}
+            />
+          </Field>
+          {showMaterials || brief.materials ? (
+            <Field label="기존 자료 붙여넣기" hint="회의록·기존 기획서·고객 요청 메일 등. 앞부분 5,000자까지 참고합니다.">
+              <textarea
+                className="textarea"
+                rows={4}
+                value={brief.materials ?? ''}
+                placeholder="자료의 내용을 그대로 붙여 넣으세요."
+                onChange={(e) => patch({ materials: e.target.value })}
+              />
+            </Field>
+          ) : (
+            <button
+              type="button"
+              className="w-fit text-[12px] font-semibold text-[var(--primary)]"
+              onClick={() => setShowMaterials(true)}
+            >
+              + 기존 자료 붙여넣기 (회의록·기획서)
+            </button>
+          )}
           <Field label="한 줄 소개" hint="홈 카드에 보입니다. 비워 두면 아이디어로 대신합니다.">
             <input
               className="input"
@@ -1145,7 +1411,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
             시작은 다음 화면에서 사용자가 직접 누른다.
 
             엔진은 1단계에서 여기로 옮겼다. 비용 결정은 크레딧 이야기가 나오는 자리에 둔다.
-            `이대로 만들기` 는 3단계부터, `플랜 만들기` 는 5단계에 있으니 어느 경로든 여기를 지난다.
+            `이대로 만들기` 는 3단계부터, `플랜 만들기` 는 마지막 단계에 있으니 어느 경로든 여기를 지난다.
           */}
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
             <p className="text-[12.5px] font-bold">다음 화면에서 시작하실 수 있습니다</p>
@@ -1179,47 +1445,37 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
       {/*
         4단계 — 고르기만 하면 되는 요구분석.
 
-        빈칸이 아니라 보기다. 공통 질문 뒤에 **서비스 구조에 따라 갈라지는 질문**이 붙는다
-        (주 유형 2개 + 보조 유형 1개). 구조에 어울리는 보기에는 `추천` 만 표시하고 미리 고르지 않는다.
+        공통 질문 뒤에 **서비스 구조에 따라 갈라지는 질문**이 붙는다(주 유형 2개 + 보조 1개).
+        `잘 모르겠어요` 는 비워 두는 것과 다르다 — AI 가 정하되 문서에 '가정' 으로 남긴다.
+        더 깊게 답하고 싶은 사람을 위한 질문은 `더 자세히` 안에 접어 둔다.
       */}
       {step === 4 && (
         <div className="flex flex-col gap-3.5">
           <p className="text-[12px] leading-relaxed text-[var(--fg-muted)]">
-            고르기만 하시면 됩니다. 건너뛰셔도 되지만, 답하실수록 문서가 정확해집니다.
+            고르기만 하시면 됩니다. 모르겠으면 <b>{UNSURE_LABEL}</b>를 누르세요 — AI가 정하고 문서에
+            &lsquo;가정&rsquo;으로 표시합니다.
           </p>
-          {questions.map((q) => {
-            const typeKey = q.types?.find((t) => t === structure?.primary || t === structure?.secondary);
-            return (
-              <div key={q.key}>
-                <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] font-bold">
-                  {q.ask}
-                  {typeKey && (
-                    <span className="chip text-[10.5px] font-semibold">{archetypeChip(typeKey)}</span>
-                  )}
-                </p>
-                <p className="mt-0.5 text-[11px] text-[var(--fg-subtle)]">{q.why}</p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {q.choices.map((c) => {
-                    const on = (answers[q.key] ?? []).includes(c.value);
-                    const rec = !on && (recommended[q.key] ?? []).includes(c.value);
-                    return (
-                      <button
-                        key={c.value}
-                        type="button"
-                        className={on ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
-                        onClick={() => pick(q.key, c.value, q.multi)}
-                        title={c.effect}
-                      >
-                        {on && <Check size={12} />}
-                        {c.label}
-                        {rec && <span className="text-[10.5px] font-semibold text-[var(--primary)]">추천</span>}
-                      </button>
-                    );
-                  })}
-                </div>
+          {questionsForStep(structure, 4)
+            .filter((q) => !q.advanced)
+            .map(renderQuestion)}
+          <div className="rounded-lg border border-[var(--border)] px-3 py-2.5">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-left text-[12.5px] font-bold"
+              aria-expanded={showAdvanced}
+              onClick={() => setShowAdvanced((v) => !v)}
+            >
+              더 자세히 답하기 (대화·업로드·외부 연동·규모)
+              <span className="text-[var(--fg-subtle)]">{showAdvanced ? '접기' : '펼치기'}</span>
+            </button>
+            {showAdvanced && (
+              <div className="mt-3 flex flex-col gap-3.5">
+                {questionsForStep(structure, 4)
+                  .filter((q) => q.advanced)
+                  .map(renderQuestion)}
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
       )}
 
@@ -1227,12 +1483,12 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
         5단계 — AI 가 이 아이디어에만 해당하는 것을 되묻는다.
 
         고정 폼으로는 "처음 만나는 사람끼리 안전은 어떻게 확보하나요" 같은 질문이
-        나올 수 없다. 답을 못 만들었으면 조용히 넘긴다 — 여기서 막히면 플랜을
-        아예 못 만든다.
+        나올 수 없다. 질문마다 영역 꼬리표와 추천 보기를 붙이고, 답한 것에서 이어지는
+        꼬리 질문을 한 번 더 받을 수 있다. 답하지 않은 질문은 버리지 않고 '가정' 으로 넘긴다.
       */}
       {step === 5 && (
         <div className="flex flex-col gap-3.5">
-          {asking && (
+          {asking && followups.length === 0 && (
             <div className="flex items-center gap-2 text-[12.5px] text-[var(--fg-muted)]">
               <Spinner size={14} />
               아이디어를 읽고 여쭤볼 것을 고르는 중입니다…
@@ -1242,7 +1498,7 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
           {!asking && followups.length === 0 && (
             <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
               <p className="text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
-                {askReason || '더 여쭤볼 것이 없습니다.'} <b>플랜 만들기</b>를 눌러 주세요.
+                {askReason || '더 여쭤볼 것이 없습니다.'} <b>다음</b>을 눌러 주세요.
               </p>
               {/* 한 번 실패했다고 포기시키지 않는다. */}
               <button type="button" className="btn btn-sm mt-2" onClick={() => void askFollowups(true)}>
@@ -1252,37 +1508,63 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
             </div>
           )}
 
-          {!asking && followups.length > 0 && (
-            <p className="text-[12px] leading-relaxed text-[var(--fg-muted)]">
-              아이디어를 읽고 여쭤봅니다. <b>답하지 않으셔도 됩니다</b> — 답하신 것만
-              문서에 반영합니다.
-            </p>
+          {followups.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="flex-1 text-[12px] leading-relaxed text-[var(--fg-muted)]">
+                <b>답하지 않으셔도 됩니다</b> — 답하지 않은 것은 문서에 &lsquo;가정&rsquo;으로 남겨 나중에 확인하게 합니다.
+              </p>
+              {followups.some((f) => !f.answer.trim() && f.recommended) && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() =>
+                    setFollowups((prev) =>
+                      prev.map((p) => (!p.answer.trim() && p.recommended ? { ...p, answer: p.recommended } : p)),
+                    )
+                  }
+                >
+                  <Check size={12} />
+                  빈 곳은 추천대로
+                </button>
+              )}
+            </div>
           )}
 
           {followups.map((f, index) => (
             <div key={f.question}>
-              <p className="text-[12.5px] font-bold">{f.question}</p>
+              <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] font-bold">
+                {f.question}
+                {f.area && <span className="chip text-[10.5px] font-semibold">{f.area}</span>}
+                {f.round === 2 && <span className="chip text-[10.5px] font-semibold">꼬리 질문</span>}
+              </p>
               {f.why && <p className="mt-0.5 text-[11px] text-[var(--fg-subtle)]">{f.why}</p>}
               {f.choices.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {f.choices.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={f.answer === c ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
-                      onClick={() =>
-                        setFollowups((prev) =>
-                          prev.map((p, i) =>
-                            i === index ? { ...p, answer: p.answer === c ? '' : c } : p,
-                          ),
-                        )
-                      }
-                    >
-                      {f.answer === c && <Check size={12} />}
-                      {c}
-                    </button>
-                  ))}
+                  {f.choices.map((c) => {
+                    const on = f.answer === c;
+                    const rec = !on && f.recommended === c;
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        className={on ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+                        title={f.recommended === c && f.recommendReason ? `추천 이유: ${f.recommendReason}` : undefined}
+                        onClick={() =>
+                          setFollowups((prev) =>
+                            prev.map((p, i) => (i === index ? { ...p, answer: p.answer === c ? '' : c } : p)),
+                          )
+                        }
+                      >
+                        {on && <Check size={12} />}
+                        {c}
+                        {rec && <span className="text-[10.5px] font-semibold text-[var(--primary)]">추천</span>}
+                      </button>
+                    );
+                  })}
                 </div>
+              )}
+              {f.recommended && f.recommendReason && !f.answer && (
+                <p className="mt-1 text-[11px] text-[var(--fg-subtle)]">추천 이유: {f.recommendReason}</p>
               )}
               <input
                 className="input mt-1.5"
@@ -1296,6 +1578,114 @@ function PlanWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
               />
             </div>
           ))}
+
+          {asking && followups.length > 0 && (
+            <div className="flex items-center gap-2 text-[12.5px] text-[var(--fg-muted)]">
+              <Spinner size={14} />
+              답하신 것에서 이어지는 질문을 고르는 중입니다…
+            </div>
+          )}
+
+          {/*
+            꼬리 질문은 한 번만. 답한 것이 있어야 이어 물을 것이 생긴다.
+            "보증금으로 처리" → "보증금은 얼마, 언제 돌려주나요?" 처럼 정책을 숫자까지 내린다.
+          */}
+          {!asking && followupRound === 1 && followups.some((f) => f.answer.trim()) && (
+            <button type="button" className="btn btn-sm w-fit" onClick={() => void askMore()}>
+              <Sparkles size={12} />
+              답한 것에서 더 여쭤보기
+            </button>
+          )}
+        </div>
+      )}
+
+      {/*
+        6단계 — 제가 이해한 게 맞나요?
+
+        지금까지 받은 것을 7줄로 되짚는다. 잘못 이해한 부분은 PRD 를 만들고 크레딧을 쓴 뒤에야
+        드러나기 쉬운데, 그 전에 줄마다 읽고 고치게 한다. 여기서 확인한 요약이 모든 문서 생성에서
+        가장 앞선다. AI 가 추측한 줄에는 `추정` 을 붙여 어디를 봐야 하는지 알려 준다.
+      */}
+      {step === 6 && (
+        <div className="flex flex-col gap-3">
+          {summaryState === 'loading' && (
+            <div className="flex items-center gap-2 text-[12.5px] text-[var(--fg-muted)]">
+              <Spinner size={14} />
+              지금까지 적어 주신 것을 정리하는 중입니다…
+            </div>
+          )}
+
+          {summaryState !== 'loading' && !brief.summary && (
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
+              <p className="text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
+                {summaryReason || '요약을 만들지 못했습니다.'} <b>플랜 만들기</b>를 눌러도 됩니다.
+              </p>
+              <button type="button" className="btn btn-sm mt-2" onClick={() => void makeSummary(true)}>
+                <Sparkles size={12} />
+                다시 정리하기
+              </button>
+            </div>
+          )}
+
+          {summaryState !== 'loading' && brief.summary && (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="flex-1 text-[12px] leading-relaxed text-[var(--fg-muted)]">
+                  이렇게 이해했습니다. <b>틀린 줄은 바로 고쳐 주세요.</b> <span className="chip text-[10.5px]">추정</span>{' '}
+                  표시는 직접 말씀하지 않아 AI가 채운 줄입니다.
+                </p>
+                <button type="button" className="btn btn-sm" onClick={() => void makeSummary(true)}>
+                  다시 정리하기
+                </button>
+              </div>
+              {brief.summary.lines.map((line, index) => (
+                <div key={line.label} className="grid gap-1 sm:grid-cols-[132px_1fr] sm:items-center">
+                  <span className="flex items-center gap-1.5 text-[12px] font-bold">
+                    {line.label}
+                    {line.assumed && <span className="chip text-[10.5px] font-semibold">추정</span>}
+                  </span>
+                  <input
+                    className="input"
+                    value={line.text}
+                    placeholder="비어 있습니다 — 적어 주시면 반영합니다"
+                    onChange={(e) => updateSummaryLine(index, e.target.value)}
+                  />
+                </div>
+              ))}
+              <div className="mt-1">
+                <p className="text-[12px] font-bold">가정</p>
+                <p className="mt-0.5 text-[11px] text-[var(--fg-subtle)]">
+                  정하지 않은 것을 이렇게 두고 만듭니다. 문서의 제약사항에 &lsquo;가정&rsquo;으로 적혀 나중에 확인할 수 있습니다.
+                </p>
+                <div className="mt-1.5 flex flex-col gap-1.5">
+                  {brief.summary.assumptions.map((assumption, index) => (
+                    <div key={index} className="flex items-center gap-1.5">
+                      <input
+                        className="input"
+                        value={assumption}
+                        onChange={(e) => updateAssumption(index, e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        aria-label="가정 빼기"
+                        onClick={() => removeAssumption(index)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="w-fit text-[12px] font-semibold text-[var(--primary)]"
+                    onClick={() => updateAssumption(brief.summary?.assumptions.length ?? 0, '')}
+                  >
+                    + 가정 추가
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
       </div>

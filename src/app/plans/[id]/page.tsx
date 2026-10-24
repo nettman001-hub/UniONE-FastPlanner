@@ -47,7 +47,7 @@ import { PromptViewerModal } from '@/components/PromptViewerModal';
 import { useAuth } from '@/lib/auth/client';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
-import { visibleQuestions } from '@/lib/brief-questions';
+import { UNSURE, UNSURE_LABEL, visibleQuestions } from '@/lib/brief-questions';
 import { ARCHETYPES, CAUTIONS } from '@/lib/archetypes';
 import { issueFixPrompt } from '@/lib/ai/fix-prompt';
 import { useGenerate } from '@/lib/useGenerate';
@@ -358,7 +358,17 @@ function PlanOverview() {
                 {structureText(plan.brief) && (
                   <BriefCard title="서비스 구조" body={structureText(plan.brief)} full />
                 )}
-                <BriefCard title="꼭 포함할 기능" body={plan.brief.mustHave} />
+                <BriefCard
+                  title="범위"
+                  body={[
+                    plan.brief.mustHave && `꼭: ${plan.brief.mustHave}`,
+                    plan.brief.niceToHave && `있으면 좋음: ${plan.brief.niceToHave}`,
+                    plan.brief.notInScope && `이번엔 안 만듦: ${plan.brief.notInScope}`,
+                  ]
+                    .filter(Boolean)
+                    .join('\n')}
+                />
+                {summaryText(plan.brief) && <BriefCard title="이해한 내용 (확인함)" body={summaryText(plan.brief)} full />}
                 {/*
                   기획할 때 고른 답을 여기서 볼 수 있어야 한다. 안 보이면 문서가
                   왜 이렇게 나왔는지 알 수 없고, 잘못 고른 것도 못 찾는다.
@@ -782,9 +792,21 @@ function answersText(brief: Plan['brief']): string {
   const lines: string[] = [];
   // 문서에 들어간 것과 같은 것만 보여 준다 — 지금 구조에서 묻는 질문.
   for (const q of visibleQuestions(brief.structure)) {
+    if ((picked[q.key] ?? []).includes(UNSURE)) {
+      lines.push(`${q.ask} ${UNSURE_LABEL} (가정으로 정함)`);
+      continue;
+    }
     const chosen = q.choices.filter((c) => (picked[q.key] ?? []).includes(c.value));
     if (chosen.length > 0) lines.push(`${q.ask} ${chosen.map((c) => c.label).join(', ')}`);
   }
+  return lines.join('\n');
+}
+
+function summaryText(brief: Plan['brief']): string {
+  const s = brief.summary;
+  if (!s) return '';
+  const lines = s.lines.filter((l) => l.text.trim()).map((l) => `${l.label}: ${l.text}`);
+  if (s.assumptions.length > 0) lines.push('', '가정', ...s.assumptions.map((a) => `- ${a}`));
   return lines.join('\n');
 }
 
@@ -804,9 +826,9 @@ function structureText(brief: Plan['brief']): string {
 }
 
 function followupsText(brief: Plan['brief']): string {
+  // 답하지 않은 질문도 보여 준다 — 문서에 '가정' 으로 들어갔으니 어디를 확인해야 하는지 알려야 한다.
   return (brief.followups ?? [])
-    .filter((f) => f.answer.trim())
-    .map((f) => `${f.question}\n  ${f.answer}`)
+    .map((f) => `${f.question}\n  ${f.answer.trim() || '(답 없음 — 가정으로 정함)'}`)
     .join('\n');
 }
 

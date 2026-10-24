@@ -73,6 +73,9 @@ export function toMarkdown(plan: Plan, artifacts?: ArtifactKey[]): string {
   if (brief.providerUser) out.push(`| 제공하는 쪽 사용자 | ${brief.providerUser} |`);
   out.push(`| 기획 목적 | ${brief.purpose || '-'} |`);
   out.push(`| 플랫폼 | ${PLATFORM_LABEL[brief.platform]} |`);
+  if (brief.mustHave) out.push(`| 꼭 있어야 할 기능 | ${brief.mustHave.replace(/\n/g, ' ')} |`);
+  if (brief.niceToHave) out.push(`| 있으면 좋은 기능 | ${brief.niceToHave.replace(/\n/g, ' ')} |`);
+  if (brief.notInScope) out.push(`| 이번에 만들지 않을 것 | ${brief.notInScope.replace(/\n/g, ' ')} |`);
   if (brief.structure && brief.structure.primary !== 'none') {
     const { primary, secondary } = brief.structure;
     out.push(
