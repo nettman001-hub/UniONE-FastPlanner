@@ -876,6 +876,8 @@ function buildFs(brief: PlanBrief): FsDraft {
         '오류 상황에서 사용자가 입력한 값이 사라지지 않는다.',
         '모바일 375px 폭에서 레이아웃이 깨지지 않는다.',
       ],
+      // 정책·입력은 서비스마다 달라 일반 문장으로 채우면 오히려 틀린다. 끝난 뒤의 상태만 적는다.
+      postconditions: ['입력한 값이 저장되고 목록에 바로 반영된다.'],
       priority: feature.priority,
     }));
 

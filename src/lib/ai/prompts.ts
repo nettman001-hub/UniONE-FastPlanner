@@ -311,6 +311,12 @@ export function buildSpecPrompt(plan: Plan, target: SpecTarget, others: string[]
     '- 기본 흐름은 사용자 행동과 시스템 반응을 번갈아 4~8단계로 씁니다. 화면·버튼 이름을 실제처럼 씁니다.',
     '- 예외는 3~5개. 권한 없음·네트워크 실패·결과 없음은 해당하면 반드시 넣고, 이 기능만의 예외(취소·중복·한도 초과·시간 초과)를 더합니다.',
     '- 인수 조건은 3~5개. 숫자와 조건이 들어간 검증 가능한 문장으로 씁니다.',
+    '- 비즈니스 규칙은 정책을 숫자·조건으로 씁니다 (예: "취소는 이용 24시간 전까지 무료, 이후 불가"). 정책을 기본 흐름 문장에 섞지 말고 여기로 뺍니다.',
+    '- 입력 항목은 사용자가 넣는 값마다 필수 여부와 검증 규칙(형식·범위·길이)을 씁니다. 입력이 없는 기능이면 비웁니다.',
+    '- 상태 변화는 이 흐름으로 바뀌는 대상의 상태를 전·후·계기로 씁니다 (예: 대여 | 요청됨 → 수락됨 | 제공자가 수락). 바뀌는 것이 없으면 비웁니다.',
+    '- 사후 조건은 흐름이 끝난 뒤 참이어야 하는 것(저장된 상태·보낸 알림)을 1~3개 씁니다.',
+    '- 역할별 차이는 역할마다 다르게 동작할 때만 씁니다.',
+    '- 이 다섯 칸(비즈니스 규칙·입력 항목·상태 변화·사후 조건·역할별 차이)은 P0·P1 상세명세에 채웁니다. P2·P3 는 비워도 됩니다.',
     '- 다른 요구사항이 다루는 내용은 여기서 만들지 않습니다.',
     '',
     '## 서비스 정보',
@@ -402,7 +408,11 @@ export function buildChatPrompt(plan: Plan, question: string): string {
     '- `fs` — 고칠 것이 상세 기능뿐이면 specifications 만 담습니다.',
     '  새 기능에는 상위 requirementId, 새 상세 기능에는 상위 featureId 를 반드시 적으세요.',
     '  예: `{"specifications":[{"featureId":"FN-001","title":"...","actor":"...",' +
-      '"precondition":"...","mainFlow":[],"exceptions":[],"acceptanceCriteria":[],"priority":"P1"}]}`',
+      '"precondition":"...","mainFlow":[],"exceptions":[],"acceptanceCriteria":[],"businessRules":[],' +
+      '"inputs":[{"name":"...","required":true,"rule":"..."}],' +
+      '"stateChanges":[{"entity":"...","from":"...","to":"...","trigger":"..."}],' +
+      '"postconditions":[],"roleDifferences":[],"priority":"P1"}]}`',
+    '  상세 기능을 고칠 때 바꾸지 않을 칸은 빼도 됩니다 — 뺀 칸은 그대로 남습니다.',
     '- `prd` — **고칠 칸만** 담습니다. 개요만 고치면 `{"overview":"..."}` 하나면 됩니다.',
     '  담은 칸은 통째로 바뀌므로, 목록을 고칠 때는 그 목록의 항목을 빠짐없이 적으세요.',
     '- `ia` — 화면 단위입니다. 상위 화면은 parentId(PG-형식)로 가리키고, 최상위는 null 입니다.',

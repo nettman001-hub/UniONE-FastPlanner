@@ -153,6 +153,34 @@ const SPEC_ITEM = {
     '예외 처리 3~5개. 권한 없음·네트워크 실패·결과 없음은 해당하면 반드시 넣고, 이 기능만의 예외(취소·중복·한도 초과 등)를 더한다.',
   ),
   acceptanceCriteria: strArray('인수 조건 3~5개. QA 가 그대로 테스트할 수 있게 숫자와 조건을 넣는다.'),
+  /*
+   * 아래 다섯 칸은 `object()` 가 모두 required 로 만든다. 해당 없으면 빈 배열을 낸다.
+   * P2·P3 는 비워도 되게 해 두었다 — 상세명세 하나의 출력이 늘면 기능명세서 생성이 그만큼 느려진다.
+   */
+  businessRules: strArray(
+    '비즈니스 규칙 0~5개. 정책을 숫자·조건으로 (예: "취소는 이용 24시간 전까지 무료, 이후 불가"). 기본 흐름과 겹치지 않게. P2·P3 는 빈 배열이어도 된다.',
+  ),
+  inputs: {
+    type: 'array',
+    description: '사용자가 입력하는 항목과 검증 0~8개. 입력이 없는 기능이면 빈 배열.',
+    items: object({
+      name: str('입력 항목명 (예: 보증금)'),
+      required: { type: 'boolean', description: '필수 입력이면 true' },
+      rule: str('검증 규칙 — 형식·범위·길이 (예: 1만~50만 원, 정수)'),
+    }),
+  },
+  stateChanges: {
+    type: 'array',
+    description: '이 흐름으로 바뀌는 상태 0~4개. 바뀌는 것이 없으면 빈 배열.',
+    items: object({
+      entity: str('상태가 바뀌는 대상 (예: 대여)'),
+      from: str('바뀌기 전 상태. 새로 생기는 것이면 빈 문자열'),
+      to: str('바뀐 뒤 상태 (예: 수락됨)'),
+      trigger: str('바꾸는 계기 (예: 제공자가 수락)'),
+    }),
+  },
+  postconditions: strArray('사후 조건 1~3개. 흐름이 끝난 뒤 참이어야 하는 것 (저장된 상태·보낸 알림). P2·P3 는 빈 배열이어도 된다.'),
+  roleDifferences: strArray('역할별 차이 0~3개. 역할마다 다르게 동작할 때만 (예: "제공자: 거절 사유 필수"). 없으면 빈 배열.'),
   priority: PRIORITY,
 };
 
@@ -367,6 +395,12 @@ export interface FsDraft {
     mainFlow: string[];
     exceptions: string[];
     acceptanceCriteria: string[];
+    /* 확장 칸 — 내장 생성기는 비워 둘 수 있어 선택이다. 적용할 때 빈 배열로 채운다. */
+    businessRules?: string[];
+    inputs?: { name: string; required: boolean; rule: string }[];
+    stateChanges?: { entity: string; from: string; to: string; trigger: string }[];
+    postconditions?: string[];
+    roleDifferences?: string[];
     priority: string;
   }[];
 }

@@ -35,6 +35,7 @@
  */
 
 import { nextIds, uid } from '../ids';
+import { mergeDetail, toDetail } from '../spec-detail';
 import { WIREFRAME_BLOCK_LABEL } from '../types';
 import type {
   Feature,
@@ -201,6 +202,7 @@ function mergeFs(plan: Plan, draft: Record<string, unknown>): EditResult {
         mainFlow: list(raw.mainFlow, was.mainFlow),
         exceptions: list(raw.exceptions, was.exceptions),
         acceptanceCriteria: list(raw.acceptanceCriteria, was.acceptanceCriteria),
+        ...mergeDetail(raw, was),
         priority: toPriority(raw.priority, was.priority),
       };
       upd.sp += 1;
@@ -218,6 +220,7 @@ function mergeFs(plan: Plan, draft: Record<string, unknown>): EditResult {
       mainFlow: list(raw.mainFlow),
       exceptions: list(raw.exceptions),
       acceptanceCriteria: list(raw.acceptanceCriteria),
+      ...toDetail(raw),
       pageIds: [],
       priority: toPriority(raw.priority),
       status: '작성중',

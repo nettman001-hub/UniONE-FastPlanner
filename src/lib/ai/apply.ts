@@ -26,6 +26,7 @@ import type {
 } from '../types';
 import type { FlowDraft, FsDraft, IaDraft, PrdDraft, ReviewDraft, WireframeDraft } from './schemas';
 import { uid } from '../ids';
+import { toDetail } from '../spec-detail';
 
 const PRIORITIES: Priority[] = ['P0', 'P1', 'P2', 'P3'];
 function toPriority(value: string | undefined): Priority {
@@ -156,6 +157,7 @@ export function appendSpecs(
       mainFlow: arr(s.mainFlow),
       exceptions: arr(s.exceptions),
       acceptanceCriteria: arr(s.acceptanceCriteria),
+      ...toDetail(s),
       pageIds: [],
       priority: toPriority(s.priority),
       status: '작성중' as const,
@@ -300,6 +302,7 @@ export function applyFs(draft: FsDraft): FsResult {
       mainFlow: arr(s.mainFlow),
       exceptions: arr(s.exceptions),
       acceptanceCriteria: arr(s.acceptanceCriteria),
+      ...toDetail(s),
       pageIds: [],
       priority: toPriority(s.priority),
       status: '작성중',

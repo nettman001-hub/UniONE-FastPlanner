@@ -13,6 +13,7 @@ import {
 } from './types';
 import { hasArtifact } from './artifact-status';
 import { ARCHETYPES } from './archetypes';
+import { detailOf, inputLine, stateLine } from './spec-detail';
 import {
   normalizeUinAiScreens,
   UINAI_AGENT_PROMPT,
@@ -229,6 +230,21 @@ export function toMarkdown(plan: Plan, artifacts?: ArtifactKey[]): string {
           out.push('**인수 조건**');
           out.push(bullet(s.acceptanceCriteria));
           out.push('');
+          // 확장 칸은 **값이 있을 때만** 낸다. 예전 플랜·P2 명세에 빈 소제목이 줄줄이 붙지 않게.
+          const d = detailOf(s);
+          const more: [string, string[]][] = [
+            ['비즈니스 규칙', d.businessRules],
+            ['입력 항목', d.inputs.map(inputLine)],
+            ['상태 변화', d.stateChanges.map(stateLine)],
+            ['사후 조건', d.postconditions],
+            ['역할별 차이', d.roleDifferences],
+          ];
+          for (const [label, lines] of more) {
+            if (lines.length === 0) continue;
+            out.push(`**${label}**`);
+            out.push(bullet(lines));
+            out.push('');
+          }
         }
       }
     }

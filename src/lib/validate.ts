@@ -210,6 +210,24 @@ export function validatePlan(plan: Plan): Issue[] {
     href: '/fs',
   });
 
+  /*
+   * 필수 기능의 상세명세에 정책·마무리 상태가 없으면 개발자가 되묻게 된다.
+   * 확장 칸이 **있는** 명세만 본다 — 칸이 생기기 전에 만든 플랜이 지적으로 뒤덮이지 않게.
+   */
+  const p0SpecWithoutRules = plan.specifications
+    .filter((s) => s.priority === 'P0' && s.businessRules !== undefined)
+    .filter((s) => (s.businessRules ?? []).length === 0 && (s.postconditions ?? []).length === 0)
+    .map((s) => `${s.id} ${s.title}`);
+  add({
+    id: 'fs-p0-spec-no-rules',
+    level: 'info',
+    artifact: 'fs',
+    title: '비즈니스 규칙·사후 조건이 없는 필수 상세 명세',
+    detail: '취소 기한·한도 같은 정책과 끝난 뒤의 상태를 적어 두면 개발자가 되묻지 않습니다.',
+    targets: p0SpecWithoutRules,
+    href: '/fs',
+  });
+
   /* 정보구조도 ------------------------------------------------------ */
   if (hasArtifact(plan, 'ia')) {
     const pageIds = new Set(plan.iaPages.map((p) => p.id));

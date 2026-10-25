@@ -215,6 +215,24 @@ export interface Feature extends Reviewable {
   order: number;
 }
 
+/** 상세명세의 입력 항목 하나 */
+export interface SpecInput {
+  name: string;
+  required: boolean;
+  /** 검증 규칙 — 형식·범위·길이 */
+  rule: string;
+}
+
+/** 상세명세의 상태 변화 하나. 새로 생기는 것이면 `from` 이 빈 문자열이다. */
+export interface SpecStateChange {
+  /** 상태가 바뀌는 대상 (대여·주문 …) */
+  entity: string;
+  from: string;
+  to: string;
+  /** 바꾸는 계기 */
+  trigger: string;
+}
+
 export interface Specification extends Reviewable {
   /** SP-001 */
   id: string;
@@ -232,6 +250,21 @@ export interface Specification extends Reviewable {
   exceptions: string[];
   /** 인수 조건 */
   acceptanceCriteria: string[];
+  /*
+   * 아래 다섯 칸은 개발자·QA 가 되묻지 않게 하려고 더했다. 예전에는 "취소는 24시간 전까지" 같은
+   * 정책이 흐름 문장 속에 섞였고, 입력 검증·상태 변화는 담을 자리가 없었다.
+   * **모두 선택** — 이 칸이 생기기 전에 저장된 플랜·가져온 파일에는 없다. 읽을 때는 `spec-detail.ts` 를 거친다.
+   */
+  /** 비즈니스 규칙 — 숫자·조건으로 쓴 정책. "취소는 이용 24시간 전까지 무료, 이후 불가" */
+  businessRules?: string[];
+  /** 입력 항목과 검증. "보증금 | 필수 | 1만~50만 원 정수" */
+  inputs?: SpecInput[];
+  /** 상태 변화. "대여 | 요청됨 → 수락됨 | 제공자가 수락" */
+  stateChanges?: SpecStateChange[];
+  /** 사후 조건 — 흐름이 끝난 뒤 참이어야 하는 것 */
+  postconditions?: string[];
+  /** 역할별 차이. "제공자: 거절 사유 필수 / 요청자: 취소만 가능" */
+  roleDifferences?: string[];
   /** 연결된 IA 페이지 ID 목록 */
   pageIds: string[];
   priority: Priority;

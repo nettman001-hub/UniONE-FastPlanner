@@ -40,8 +40,11 @@ import {
   type Priority,
   type Requirement,
   type Specification,
+  type SpecInput,
+  type SpecStateChange,
   type WorkStatus,
 } from '@/lib/types';
+import { detailOf } from '@/lib/spec-detail';
 
 /* ------------------------------------------------------------------ */
 /* 상수 · 유틸                                                          */
@@ -1296,6 +1299,109 @@ function FeatureEditor({
 /* 편집 패널 — 상세 명세                                                 */
 /* ------------------------------------------------------------------ */
 
+/** 입력 항목 — 한 줄에 이름 · 필수 · 검증 규칙. */
+function InputsEditor({ items, onChange }: { items: SpecInput[]; onChange: (next: SpecInput[]) => void }) {
+  const set = (index: number, patch: Partial<SpecInput>) =>
+    onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  return (
+    <div className="flex flex-col gap-1.5">
+      {items.map((item, index) => (
+        <div key={index} className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
+          <div className="min-w-0 flex-1 sm:max-w-[34%]">
+            <InlineText value={item.name} placeholder="항목 (예: 보증금)" onChange={(name) => set(index, { name })} />
+          </div>
+          <button
+            className={`${item.required ? 'chip chip-primary' : 'chip'} shrink-0 cursor-pointer`}
+            onClick={() => set(index, { required: !item.required })}
+            aria-pressed={item.required}
+            title="누르면 필수/선택이 바뀝니다"
+          >
+            {item.required ? '필수' : '선택'}
+          </button>
+          <div className="flex min-w-0 basis-full items-center gap-1.5 sm:basis-auto sm:flex-1">
+            <div className="min-w-0 flex-1">
+              <InlineText
+                value={item.rule}
+                placeholder="검증 규칙 (예: 1만~50만 원, 정수)"
+                onChange={(rule) => set(index, { rule })}
+              />
+            </div>
+            <button
+              className="btn btn-ghost btn-sm shrink-0"
+              onClick={() => onChange(items.filter((_, i) => i !== index))}
+              aria-label={`${index + 1}번 입력 항목 삭제`}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+      ))}
+      <button
+        className="btn btn-ghost btn-sm self-start"
+        onClick={() => onChange([...items, { name: '', required: true, rule: '' }])}
+      >
+        <Plus size={13} />
+        항목 추가
+      </button>
+    </div>
+  );
+}
+
+/** 상태 변화 — 한 줄에 대상 · 전 → 후 · 계기. */
+function StateChangesEditor({
+  items,
+  onChange,
+}: {
+  items: SpecStateChange[];
+  onChange: (next: SpecStateChange[]) => void;
+}) {
+  const set = (index: number, patch: Partial<SpecStateChange>) =>
+    onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  return (
+    <div className="flex flex-col gap-2">
+      {items.map((item, index) => (
+        <div key={index} className="flex flex-wrap items-center gap-1.5">
+          <div className="min-w-0 basis-full sm:basis-[22%]">
+            <InlineText value={item.entity} placeholder="대상 (예: 대여)" onChange={(entity) => set(index, { entity })} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <InlineText value={item.from} placeholder="전 (예: 요청됨)" onChange={(from) => set(index, { from })} />
+          </div>
+          <span className="shrink-0 text-[12px] text-[var(--fg-subtle)]" aria-hidden>
+            →
+          </span>
+          <div className="min-w-0 flex-1">
+            <InlineText value={item.to} placeholder="후 (예: 수락됨)" onChange={(to) => set(index, { to })} />
+          </div>
+          <div className="flex min-w-0 basis-full items-center gap-1.5 sm:basis-auto sm:flex-1">
+            <div className="min-w-0 flex-1">
+              <InlineText
+                value={item.trigger}
+                placeholder="계기 (예: 제공자가 수락)"
+                onChange={(trigger) => set(index, { trigger })}
+              />
+            </div>
+            <button
+              className="btn btn-ghost btn-sm shrink-0"
+              onClick={() => onChange(items.filter((_, i) => i !== index))}
+              aria-label={`${index + 1}번 상태 변화 삭제`}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+      ))}
+      <button
+        className="btn btn-ghost btn-sm self-start"
+        onClick={() => onChange([...items, { entity: '', from: '', to: '', trigger: '' }])}
+      >
+        <Plus size={13} />
+        상태 변화 추가
+      </button>
+    </div>
+  );
+}
+
 function SpecificationEditor({
   spec,
   feature,
@@ -1309,6 +1415,8 @@ function SpecificationEditor({
   onChange: (patch: Partial<Specification>) => void;
   onRemove: () => void;
 }) {
+  // 예전 플랜에는 확장 칸이 없다. 빈 배열로 보여 주고, 고치면 그때 저장된다.
+  const detail = detailOf(spec);
   const togglePage = (pageId: string) => {
     const next = spec.pageIds.includes(pageId)
       ? spec.pageIds.filter((id) => id !== pageId)
@@ -1376,6 +1484,36 @@ function SpecificationEditor({
           placeholder="예: 올바른 정보 입력 시 3초 안에 홈으로 이동한다"
           addLabel="조건 추가"
           onChange={(acceptanceCriteria) => onChange({ acceptanceCriteria })}
+        />
+      </Field>
+      <Field label="비즈니스 규칙" hint="정책을 숫자·조건으로. 흐름 문장에 섞지 말고 여기에 적습니다.">
+        <ListEditor
+          items={detail.businessRules}
+          placeholder="예: 취소는 이용 24시간 전까지 무료, 이후 불가"
+          addLabel="규칙 추가"
+          onChange={(businessRules) => onChange({ businessRules })}
+        />
+      </Field>
+      <Field label="입력 항목" hint="사용자가 넣는 값마다 필수 여부와 검증 규칙(형식·범위·길이)">
+        <InputsEditor items={detail.inputs} onChange={(inputs) => onChange({ inputs })} />
+      </Field>
+      <Field label="상태 변화" hint="이 흐름으로 바뀌는 대상의 상태. 새로 생기는 것이면 '전' 을 비웁니다.">
+        <StateChangesEditor items={detail.stateChanges} onChange={(stateChanges) => onChange({ stateChanges })} />
+      </Field>
+      <Field label="사후 조건" hint="흐름이 끝난 뒤 참이어야 하는 것 — 저장된 상태·보낸 알림">
+        <ListEditor
+          items={detail.postconditions}
+          placeholder="예: 대여 상태가 '수락됨'이고 요청자에게 알림 1건이 발송된다"
+          addLabel="조건 추가"
+          onChange={(postconditions) => onChange({ postconditions })}
+        />
+      </Field>
+      <Field label="역할별 차이" hint="역할마다 다르게 동작할 때만 적습니다.">
+        <ListEditor
+          items={detail.roleDifferences}
+          placeholder="예: 제공자: 거절 사유 필수 / 요청자: 취소만 가능"
+          addLabel="차이 추가"
+          onChange={(roleDifferences) => onChange({ roleDifferences })}
         />
       </Field>
 

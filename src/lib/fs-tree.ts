@@ -7,6 +7,7 @@
  */
 
 import type { Feature, Priority, Requirement, Specification, WorkStatus } from './types';
+import { detailText } from './spec-detail';
 
 export interface FsTreeFeature {
   feature: Feature;
@@ -68,6 +69,7 @@ export function buildFsTree(
                     ...s.mainFlow,
                     ...s.exceptions,
                     ...s.acceptanceCriteria,
+                    ...detailText(s),
                   )) &&
                 prioOk(s.priority) &&
                 statusOk(s.status),
