@@ -6,6 +6,7 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  Download,
   FileText,
   MessageSquare,
   PencilLine,
@@ -23,12 +24,14 @@ import {
   SectionCard,
   Spinner,
   useConfirm,
+  useToast,
 } from '@/components/ui';
 import { GeneratingState } from '@/components/GeneratingState';
 import { NextStepButton } from '@/components/StepNav';
 import { IssueBar } from '@/components/IssueBar';
 import { usePlannerStore } from '@/lib/store';
 import { hasArtifact } from '@/lib/artifact-status';
+import { download, slugify, toPrdJson } from '@/lib/export';
 import { useGenerate } from '@/lib/useGenerate';
 import { validatePlan } from '@/lib/validate';
 import type {
@@ -104,6 +107,7 @@ export default function PrdPage() {
 
   const { generate, pending } = useGenerate(plan);
   const { confirm, dialog } = useConfirm();
+  const toast = useToast();
 
   const [mode, setMode] = useState<'doc' | 'edit'>('edit');
   const [commentSection, setCommentSection] = useState<SectionKey | null>(null);
@@ -150,6 +154,27 @@ export default function PrdPage() {
     await generate('prd');
   };
 
+  /** PRD 한 문서를 JSON 파일로 내려받는다. 화면에 보이는 값 그대로(자동 저장된 편집 내용 포함). */
+  const handleDownload = () => {
+    const filename = `${slugify(plan.brief.title)}-PRD.json`;
+    download(filename, toPrdJson(plan), 'application/json;charset=utf-8');
+    toast(`${filename} 을 내려받았습니다.`, 'ok');
+  };
+
+  const prdReady = hasArtifact(plan, 'prd');
+  const downloadButton = (
+    <button
+      className="btn btn-sm"
+      // 비어 있는 PRD 를 받아 봐야 쓸 곳이 없고, 생성 중이면 곧 통째로 바뀐다.
+      disabled={!prdReady || pending === 'prd'}
+      title={prdReady ? 'PRD 를 JSON 파일로 내려받습니다' : 'PRD 를 만든 뒤에 받을 수 있습니다'}
+      onClick={handleDownload}
+    >
+      <Download size={13} />
+      다운받기
+    </button>
+  );
+
   const generateButton = (
     <button
       className={`btn btn-primary btn-sm${pending === 'prd' ? ' is-busy' : ''}`}
@@ -192,7 +217,8 @@ export default function PrdPage() {
             입력한 내용은 자동 저장됩니다.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        {/* max-w-full + flex-wrap: 버튼이 하나 늘어도 좁은 화면에서 가로로 넘치지 않고 두 줄로 접힌다. */}
+        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-1.5">
           <div className="flex items-center gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
             <button
               className={mode === 'doc' ? 'btn btn-sm' : 'btn btn-ghost btn-sm'}
@@ -209,6 +235,7 @@ export default function PrdPage() {
               편집
             </button>
           </div>
+          {downloadButton}
           {generateButton}
           <NextStepButton planId={planId} current="prd" />
         </div>

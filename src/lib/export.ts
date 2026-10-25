@@ -437,6 +437,30 @@ export function toJson(plan: Plan): string {
 }
 
 /**
+ * PRD **한 문서만** JSON 으로. 다른 도구나 AI 에 PRD 만 건넬 때 쓴다 (플랜 전체는 `toJson`).
+ *
+ * `prd` 는 저장된 그대로라 `.prd` 를 바로 읽으면 된다. 서비스 이름·플랫폼은 파일만 봐서는
+ * 어느 서비스의 문서인지 알 수 없으므로 곁들인다.
+ */
+export function toPrdJson(plan: Plan): string {
+  return JSON.stringify(
+    {
+      format: 'uniboard/prd',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      service: {
+        name: plan.brief.title,
+        oneLiner: plan.brief.oneLiner,
+        platform: PLATFORM_LABEL[plan.brief.platform],
+      },
+      prd: plan.prd,
+    },
+    null,
+    2,
+  );
+}
+
+/**
  * Cursor·Claude Code 같은 코딩 에이전트에 바로 물릴 수 있는 형태로 정리한 번들.
  * ID 참조를 이름까지 펼쳐서 담기 때문에 문서를 따로 열지 않아도 해석할 수 있다.
  */
