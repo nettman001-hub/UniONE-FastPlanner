@@ -1,4 +1,11 @@
-import { PLATFORM_LABEL, type ArtifactKey, type BriefSummary, type Plan, type PlanBrief } from '../types';
+import {
+  PLATFORM_LABEL,
+  type ArtifactKey,
+  type BriefSummary,
+  type Plan,
+  type PlanBrief,
+  type Specification,
+} from '../types';
 import { answersBlock, followupBlock } from '../brief-questions';
 import { hasArtifact } from '../artifact-status';
 import { skillBlock } from '../skills';
@@ -311,12 +318,6 @@ export function buildSpecPrompt(plan: Plan, target: SpecTarget, others: string[]
     '- 기본 흐름은 사용자 행동과 시스템 반응을 번갈아 4~8단계로 씁니다. 화면·버튼 이름을 실제처럼 씁니다.',
     '- 예외는 3~5개. 권한 없음·네트워크 실패·결과 없음은 해당하면 반드시 넣고, 이 기능만의 예외(취소·중복·한도 초과·시간 초과)를 더합니다.',
     '- 인수 조건은 3~5개. 숫자와 조건이 들어간 검증 가능한 문장으로 씁니다.',
-    '- 비즈니스 규칙은 정책을 숫자·조건으로 씁니다 (예: "취소는 이용 24시간 전까지 무료, 이후 불가"). 정책을 기본 흐름 문장에 섞지 말고 여기로 뺍니다.',
-    '- 입력 항목은 사용자가 넣는 값마다 필수 여부와 검증 규칙(형식·범위·길이)을 씁니다. 입력이 없는 기능이면 비웁니다.',
-    '- 상태 변화는 이 흐름으로 바뀌는 대상의 상태를 전·후·계기로 씁니다 (예: 대여 | 요청됨 → 수락됨 | 제공자가 수락). 바뀌는 것이 없으면 비웁니다.',
-    '- 사후 조건은 흐름이 끝난 뒤 참이어야 하는 것(저장된 상태·보낸 알림)을 1~3개 씁니다.',
-    '- 역할별 차이는 역할마다 다르게 동작할 때만 씁니다.',
-    '- 이 다섯 칸(비즈니스 규칙·입력 항목·상태 변화·사후 조건·역할별 차이)은 P0·P1 상세명세에 채웁니다. P2·P3 는 비워도 됩니다.',
     '- 다른 요구사항이 다루는 내용은 여기서 만들지 않습니다.',
     '',
     '## 서비스 정보',
@@ -336,6 +337,58 @@ export function buildSpecPrompt(plan: Plan, target: SpecTarget, others: string[]
   if (others.length > 0) {
     sections.push('', '## 다른 요구사항 (여기서 다루지 않는다)', ...others.map((o) => `- ${o}`));
   }
+  const guide = skillBlock(skill ?? '');
+  if (guide) sections.push('', guide);
+  if (extra) sections.push('', '## 추가 지시', extra);
+  return sections.join('\n');
+}
+
+/**
+ * `이 명세 깊게 만들기` — 상세명세 **한 건**의 확장 칸(규칙·입력·상태·사후 조건·역할 차이).
+ *
+ * 기능명세서 생성에 함께 넣으면 시간 예산을 넘겨(실측 282초) 따로 부른다. 명세 한 건만 보므로
+ * 지금 적힌 흐름·예외·인수 조건과 어긋나지 않게 그것을 함께 넘긴다.
+ */
+export function buildSpecDetailPrompt(plan: Plan, spec: Specification, extra?: string, skill?: string): string {
+  const feature = plan.features.find((f) => f.id === spec.featureId);
+  const requirement = feature ? plan.requirements.find((r) => r.id === feature.requirementId) : undefined;
+  const lines = (items: string[]) => (items.length > 0 ? items.map((x) => `- ${x}`) : ['- (없음)']);
+  const sections = [
+    '아래 상세명세 **한 건**을 깊게 만드세요. 개발자와 QA 가 되묻지 않고 일할 수 있게 다섯 칸을 채웁니다.',
+    '',
+    '규칙:',
+    '- 비즈니스 규칙은 정책을 숫자·조건으로 씁니다 (예: "취소는 이용 24시간 전까지 무료, 이후 불가"). 기본 흐름 문장을 되풀이하지 않습니다.',
+    '- 입력 항목은 사용자가 넣는 값마다 필수 여부와 검증 규칙(형식·범위·길이)을 씁니다. 입력이 없는 동작이면 비웁니다.',
+    '- 상태 변화는 이 흐름으로 바뀌는 대상의 상태를 전·후·계기로 씁니다. 바뀌는 것이 없으면 비웁니다.',
+    '- 사후 조건은 흐름이 끝난 뒤 참이어야 하는 것(저장된 상태·보낸 알림)을 1~3개 씁니다.',
+    '- 역할별 차이는 역할마다 다르게 동작할 때만 씁니다.',
+    '- 아래 기본 흐름·예외·인수 조건과 어긋나지 않게 씁니다. 숫자(기한·한도)는 거기 나온 값을 따릅니다.',
+    '',
+    '## 서비스 정보',
+    briefBlock(plan.brief),
+  ];
+  const shape = structureBlock(plan.brief, 'fs');
+  if (shape) sections.push('', shape);
+  if (hasArtifact(plan, 'prd')) sections.push('', prdFullBlock(plan.prd));
+  if (requirement) {
+    sections.push('', '## 상위 요구사항', `${requirement.title} — ${requirement.description}`);
+  }
+  if (feature) sections.push('', '## 상위 기능', `${feature.name} [${feature.priority}] — ${feature.description}`);
+  sections.push(
+    '',
+    '## 이 상세명세',
+    `${spec.title} (수행 주체: ${spec.actor || '사용자'})`,
+    `사전 조건: ${spec.precondition || '(없음)'}`,
+    '',
+    '기본 흐름:',
+    ...lines(spec.mainFlow),
+    '',
+    '예외 처리:',
+    ...lines(spec.exceptions),
+    '',
+    '인수 조건:',
+    ...lines(spec.acceptanceCriteria),
+  );
   const guide = skillBlock(skill ?? '');
   if (guide) sections.push('', guide);
   if (extra) sections.push('', '## 추가 지시', extra);

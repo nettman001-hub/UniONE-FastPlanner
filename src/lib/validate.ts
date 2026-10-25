@@ -223,7 +223,8 @@ export function validatePlan(plan: Plan): Issue[] {
     level: 'info',
     artifact: 'fs',
     title: '비즈니스 규칙·사후 조건이 없는 필수 상세 명세',
-    detail: '취소 기한·한도 같은 정책과 끝난 뒤의 상태를 적어 두면 개발자가 되묻지 않습니다.',
+    detail:
+      '취소 기한·한도 같은 정책과 끝난 뒤의 상태를 적어 두면 개발자가 되묻지 않습니다. 상세 명세 편집창의 `이 명세 깊게 만들기` 로 채울 수 있습니다.',
     targets: p0SpecWithoutRules,
     href: '/fs',
   });

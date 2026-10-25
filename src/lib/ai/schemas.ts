@@ -153,12 +153,19 @@ const SPEC_ITEM = {
     '예외 처리 3~5개. 권한 없음·네트워크 실패·결과 없음은 해당하면 반드시 넣고, 이 기능만의 예외(취소·중복·한도 초과 등)를 더한다.',
   ),
   acceptanceCriteria: strArray('인수 조건 3~5개. QA 가 그대로 테스트할 수 있게 숫자와 조건을 넣는다.'),
-  /*
-   * 아래 다섯 칸은 `object()` 가 모두 required 로 만든다. 해당 없으면 빈 배열을 낸다.
-   * P2·P3 는 비워도 되게 해 두었다 — 상세명세 하나의 출력이 늘면 기능명세서 생성이 그만큼 느려진다.
-   */
+  priority: PRIORITY,
+};
+
+/**
+ * 상세명세 확장 칸 — `이 명세 깊게 만들기` 가 명세 **한 건**에 대해 따로 만든다.
+ *
+ * 처음에는 기능명세서 생성에 함께 넣었는데, 프로덕션 실측에서 상세명세 단계가 시간 예산(230초)을
+ * 넘겨 요구사항 하나가 통째로 빠지고 AI 검토도 돌지 못했다(요청 282초). 그래서 생성에서 뺐다.
+ * `object()` 가 모두 required 로 만들므로 해당 없으면 빈 배열을 낸다.
+ */
+const SPEC_DETAIL_ITEM = {
   businessRules: strArray(
-    '비즈니스 규칙 0~5개. 정책을 숫자·조건으로 (예: "취소는 이용 24시간 전까지 무료, 이후 불가"). 기본 흐름과 겹치지 않게. P2·P3 는 빈 배열이어도 된다.',
+    '비즈니스 규칙 0~5개. 정책을 숫자·조건으로 (예: "취소는 이용 24시간 전까지 무료, 이후 불가"). 기본 흐름과 겹치지 않게.',
   ),
   inputs: {
     type: 'array',
@@ -179,10 +186,19 @@ const SPEC_ITEM = {
       trigger: str('바꾸는 계기 (예: 제공자가 수락)'),
     }),
   },
-  postconditions: strArray('사후 조건 1~3개. 흐름이 끝난 뒤 참이어야 하는 것 (저장된 상태·보낸 알림). P2·P3 는 빈 배열이어도 된다.'),
+  postconditions: strArray('사후 조건 1~3개. 흐름이 끝난 뒤 참이어야 하는 것 (저장된 상태·보낸 알림).'),
   roleDifferences: strArray('역할별 차이 0~3개. 역할마다 다르게 동작할 때만 (예: "제공자: 거절 사유 필수"). 없으면 빈 배열.'),
-  priority: PRIORITY,
 };
+
+export const SPEC_DETAIL_SCHEMA = object(SPEC_DETAIL_ITEM);
+
+export interface SpecDetailDraft {
+  businessRules: string[];
+  inputs: { name: string; required: boolean; rule: string }[];
+  stateChanges: { entity: string; from: string; to: string; trigger: string }[];
+  postconditions: string[];
+  roleDifferences: string[];
+}
 
 export const FS_SCHEMA = object({
   requirements: FS_REQUIREMENTS,
@@ -395,7 +411,7 @@ export interface FsDraft {
     mainFlow: string[];
     exceptions: string[];
     acceptanceCriteria: string[];
-    /* 확장 칸 — 내장 생성기는 비워 둘 수 있어 선택이다. 적용할 때 빈 배열로 채운다. */
+    /* 확장 칸 — AI 생성은 내지 않는다(`이 명세 깊게 만들기` 가 따로 채움). 내장 생성기만 일부 채운다. */
     businessRules?: string[];
     inputs?: { name: string; required: boolean; rule: string }[];
     stateChanges?: { entity: string; from: string; to: string; trigger: string }[];

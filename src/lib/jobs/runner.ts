@@ -16,7 +16,7 @@
 import { usePlannerStore } from '../store';
 import { creditSnapshot, refreshCredits } from '../useCredits';
 import { ARTIFACT_LABEL, type ArtifactKey, type PlanDocuments } from '../types';
-import { REVIEW_COST, SPEC_FILL_COST, costOfArtifact, costWithEngine } from '../credits';
+import { REVIEW_COST, SPEC_DETAIL_COST, SPEC_FILL_COST, costOfArtifact, costWithEngine } from '../credits';
 import { engineSnapshotFor } from '../useEngine';
 import { recordCompletedTask } from '../tasks';
 
@@ -40,6 +40,8 @@ export interface RunArgs {
   specFeatureIds?: string[];
   /** 기능명세서 AI 검토만 */
   reviewFs?: boolean;
+  /** 이 상세명세 한 건만 깊게 만든다 */
+  deepenSpecId?: string;
 }
 
 /** 지금 도는 생성이 있는지. 한 번에 하나만 돌린다 — 앞 단계 결과를 컨텍스트로 쓰기 때문. */
@@ -116,7 +118,9 @@ export async function runGeneration(
    * 부족하면 서버가 `error` 사건으로 알려 주고, 아래에서 그대로 알린다.
    */
   const firstCost =
-    artifacts[0] === 'fs' && (args.specFeatureIds?.length ?? 0) > 0
+    artifacts[0] === 'fs' && args.deepenSpecId
+      ? costWithEngine(SPEC_DETAIL_COST, engineSnapshotFor('fs'))
+      : artifacts[0] === 'fs' && (args.specFeatureIds?.length ?? 0) > 0
       ? costWithEngine(SPEC_FILL_COST, engineSnapshotFor('fs'))
       : artifacts[0] === 'fs' && args.reviewFs
         ? costWithEngine(REVIEW_COST, engineSnapshotFor('fs'))
@@ -148,10 +152,12 @@ export async function runGeneration(
   cancelledByUser = false;
 
   /*
-   * `AI로 채우기`·`AI 검토` 는 기능명세서 한 단계만 만들 때의 옵션이다. 예전에는 서버가
+   * `AI로 채우기`·`AI 검토`·`깊게 만들기` 는 기능명세서 한 단계만 만들 때의 옵션이다. 예전에는 서버가
    * "여러 단계면 받지 않음" 으로 걸렀지만, 이제 단계마다 한 종씩 보내므로 여기서 거른다.
    */
-  const stepArgs: RunArgs = pipeline ? { ...args, specFeatureIds: undefined, reviewFs: undefined } : args;
+  const stepArgs: RunArgs = pipeline
+    ? { ...args, specFeatureIds: undefined, reviewFs: undefined, deepenSpecId: undefined }
+    : args;
 
   try {
     /*

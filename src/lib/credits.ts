@@ -36,6 +36,12 @@ export const DAILY_CREDIT_LIMIT = 200;
  */
 export const SPEC_FILL_COST = 2;
 
+/**
+ * 상세명세 편집창의 `이 명세 깊게 만들기` — 명세 **한 건**의 확장 칸만 만든다.
+ * 호출 한 번에 출력도 작아 `AI로 채우기`(요구사항 여럿) 보다 싸게 받는다. 고급 엔진이면 두 배.
+ */
+export const SPEC_DETAIL_COST = 1;
+
 /** 기능명세서 `AI 검토` 를 따로 돌릴 때. 기능명세서를 만들 때 함께 도는 검토는 값을 따로 받지 않는다. */
 export const REVIEW_COST = 2;
 

@@ -25,15 +25,24 @@ import {
   ARTIFACT_SCHEMA,
   FS_SKELETON_SCHEMA,
   REVIEW_SCHEMA,
+  SPEC_DETAIL_SCHEMA,
   SPEC_SCHEMA,
   type FsDraft,
   type ReviewDraft,
+  type SpecDetailDraft,
 } from '@/lib/ai/schemas';
-import { FS_SKELETON_NOTE, buildPrompt, buildReviewPrompt, buildSpecPrompt } from '@/lib/ai/prompts';
+import {
+  FS_SKELETON_NOTE,
+  buildPrompt,
+  buildReviewPrompt,
+  buildSpecDetailPrompt,
+  buildSpecPrompt,
+} from '@/lib/ai/prompts';
 import { appendSpecs, applyReview, draftToPatch } from '@/lib/ai/apply';
+import { toDetail } from '@/lib/spec-detail';
 import { canAfford, spendCredits } from '@/lib/db/credits';
 import type { SkillMap } from '@/lib/skills';
-import { REVIEW_COST, SPEC_FILL_COST, costOfArtifact, costWithEngine } from '@/lib/credits';
+import { REVIEW_COST, SPEC_DETAIL_COST, SPEC_FILL_COST, costOfArtifact, costWithEngine } from '@/lib/credits';
 import { ARTIFACT_LABEL } from '@/lib/types';
 import type { ArtifactKey, Plan, PlanDocuments } from '@/lib/types';
 
@@ -92,6 +101,11 @@ export interface GenerateOptions {
   /** 기능명세서를 다시 만들지 않고 **AI 검토만** 돌린다. 기능명세서 화면의 `AI 검토` 가 보낸다. */
   reviewFs?: boolean;
   /**
+   * 기능명세서를 다시 만들지 않고 **이 상세명세 한 건의 확장 칸만** 만든다.
+   * 상세명세 편집창의 `이 명세 깊게 만들기` 가 보낸다(`SPEC_DETAIL_COST`).
+   */
+  deepenSpecId?: string;
+  /**
    * 관리자가 화면에서 고친 AI 설정. 파이프라인이 시작할 때 **한 번만** 읽어
    * 단계마다 돌려 쓴다 — 5단계면 같은 질의를 다섯 번 할 이유가 없다.
    */
@@ -122,6 +136,10 @@ export function isSpecFill(artifact: ArtifactKey, options: GenerateOptions): boo
 
 export function isReviewOnly(artifact: ArtifactKey, options: GenerateOptions): boolean {
   return artifact === 'fs' && options.reviewFs === true && !isSpecFill(artifact, options);
+}
+
+export function isSpecDetail(artifact: ArtifactKey, options: GenerateOptions): boolean {
+  return artifact === 'fs' && typeof options.deepenSpecId === 'string' && options.deepenSpecId.length > 0;
 }
 
 /** 브라우저로 흘려보내는 사건. 한 줄에 하나씩(NDJSON) 나간다. */
@@ -301,7 +319,11 @@ async function generateFsInTwoPasses(plan: Plan, options: GenerateOptions, call:
  * 화면의 `AI 검토` 로 따로 돌릴 수 있다.
  */
 const FS_REVIEW_DEADLINE_MS = 280_000;
-const FS_REVIEW_MIN_MS = 45_000;
+/*
+ * 검토를 시작하려면 이만큼은 남아 있어야 한다. 검토 한 번이 실측 약 78초라, 45초로 두었을 때는
+ * 끝내지 못할 검토를 시작해 시간만 쓰고 결과가 없었다(프로덕션 실측, 요청 282초).
+ */
+const FS_REVIEW_MIN_MS = 90_000;
 
 /** 기능명세서 AI 검토 — 빠진 기능은 `신규` 로 덧붙이고, 모순·모호는 고칠 점으로 남긴다. */
 async function reviewFs(plan: Plan, call: Call, signal?: AbortSignal) {
@@ -392,6 +414,26 @@ async function runStep(
       config: over,
       apiKey: key,
     });
+
+  /*
+   * 상세명세 한 건 깊게 만들기. 기능명세서의 다른 것은 건드리지 않는다. 내장 생성기는 일반 문장밖에
+   * 못 만들어 오히려 틀리므로 대신하지 않는다.
+   */
+  if (isSpecDetail(artifact, options)) {
+    if (!useAi) throw new Error('지금은 AI 를 쓸 수 없어 상세명세를 깊게 만들지 못했습니다.');
+    const spec = plan.specifications.find((s) => s.id === options.deepenSpecId);
+    if (!spec) throw new Error('깊게 만들 상세명세를 찾지 못했습니다. 화면을 새로 고친 뒤 다시 시도해 주세요.');
+    const draft = await call<SpecDetailDraft>(
+      buildSpecDetailPrompt(plan, spec, options.extra, options.skills?.fs),
+      SPEC_DETAIL_SCHEMA,
+    );
+    const detail = toDetail(draft);
+    console.info(`[generate] 상세명세 깊게 만들기 ${spec.id} · 규칙 ${detail.businessRules.length}개`);
+    return {
+      patch: { specifications: plan.specifications.map((s) => (s.id === spec.id ? { ...s, ...detail } : s)) },
+      source: 'ai',
+    };
+  }
 
   /*
    * 빠진 상세명세만 채우기. **내장 생성기로 대신하지 않는다** — 대신하면 기능명세서 전체를
@@ -497,7 +539,9 @@ export async function* runPipeline(
      * **고급 엔진은 두 배다.** 화면이 값을 보여 줄 때도 같은 함수를 쓰므로,
      * "3 크레딧이라더니 6 이 나갔다" 가 생기지 않는다.
      */
-    const cost = isSpecFill(artifact, options)
+    const cost = isSpecDetail(artifact, options)
+      ? costWithEngine(SPEC_DETAIL_COST, engineFor(artifact, options))
+      : isSpecFill(artifact, options)
       ? costWithEngine(SPEC_FILL_COST, engineFor(artifact, options))
       : isReviewOnly(artifact, options)
         ? costWithEngine(REVIEW_COST, engineFor(artifact, options))

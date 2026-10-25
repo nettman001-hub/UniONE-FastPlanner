@@ -18,7 +18,7 @@ import {
   X,
   SearchCheck,
 } from 'lucide-react';
-import { REVIEW_COST, costWithEngine } from '@/lib/credits';
+import { REVIEW_COST, SPEC_DETAIL_COST, costWithEngine } from '@/lib/credits';
 import { useEngines } from '@/lib/useEngine';
 import { EmptyState, Field, InlineText, ListEditor, Spinner, useConfirm } from '@/components/ui';
 import { BRANCH_HUES, FsMindmap } from '@/components/FsMindmap';
@@ -364,6 +364,27 @@ export default function FsPage() {
     setSelection(null);
   };
 
+  /*
+   * 이 명세 깊게 만들기 — 확장 칸 다섯 개만 AI 로 채운다. 이미 적어 둔 값이 있으면 덮어쓰므로 묻는다.
+   * 기능명세서 생성에 함께 넣었더니 시간 예산을 넘겨(실측 282초) 명세 한 건 단위로 뺐다.
+   */
+  const handleDeepenSpec = async (spec: Specification) => {
+    if (!plan) return;
+    const d = detailOf(spec);
+    const filled = [d.businessRules, d.inputs, d.stateChanges, d.postconditions, d.roleDifferences].some(
+      (x) => x.length > 0,
+    );
+    if (filled) {
+      const ok = await confirm({
+        title: `${spec.id} 를 다시 깊게 만들까요?`,
+        message: '비즈니스 규칙·입력 항목·상태 변화·사후 조건·역할별 차이가 새로 만든 내용으로 바뀝니다.',
+        confirmLabel: '다시 만들기',
+      });
+      if (!ok) return;
+    }
+    await generate('fs', { deepenSpecId: spec.id });
+  };
+
   const handleRemoveSpec = async (spec: Specification) => {
     if (!plan) return;
     const ok = await confirm({
@@ -449,6 +470,12 @@ export default function FsPage() {
       pages={[...iaPages].sort(byOrder)}
       onChange={(patch) => updateSpecification(plan.id, selectedSpec.id, patch)}
       onRemove={() => void handleRemoveSpec(selectedSpec)}
+      deepen={{
+        cost: costWithEngine(SPEC_DETAIL_COST, engines.fs),
+        busy: pending !== null,
+        running: generating,
+        onRun: () => void handleDeepenSpec(selectedSpec),
+      }}
     />
   ) : (
     <div className="card">
@@ -1408,12 +1435,14 @@ function SpecificationEditor({
   pages,
   onChange,
   onRemove,
+  deepen,
 }: {
   spec: Specification;
   feature: Feature | undefined;
   pages: IaPage[];
   onChange: (patch: Partial<Specification>) => void;
   onRemove: () => void;
+  deepen: { cost: number; busy: boolean; running: boolean; onRun: () => void };
 }) {
   // 예전 플랜에는 확장 칸이 없다. 빈 배열로 보여 주고, 고치면 그때 저장된다.
   const detail = detailOf(spec);
@@ -1486,6 +1515,21 @@ function SpecificationEditor({
           onChange={(acceptanceCriteria) => onChange({ acceptanceCriteria })}
         />
       </Field>
+      {/* 아래 다섯 칸은 기능명세서 생성에서 채우지 않는다. 명세 한 건씩 여기서 AI 로 채운다. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-2.5">
+        <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-[var(--fg-muted)]">
+          규칙·입력·상태 변화·사후 조건·역할별 차이를 AI 가 이 명세에 맞춰 채웁니다.
+        </p>
+        <button
+          className={`btn btn-primary btn-sm shrink-0${deepen.running ? ' is-busy' : ''}`}
+          disabled={deepen.busy}
+          title={`이 명세의 아래 다섯 칸을 AI 로 채웁니다 · ${deepen.cost} 크레딧`}
+          onClick={deepen.onRun}
+        >
+          {deepen.running ? <Spinner size={13} /> : <Sparkles size={13} />}
+          {deepen.running ? '만드는 중' : `이 명세 깊게 만들기 · ${deepen.cost}`}
+        </button>
+      </div>
       <Field label="비즈니스 규칙" hint="정책을 숫자·조건으로. 흐름 문장에 섞지 말고 여기에 적습니다.">
         <ListEditor
           items={detail.businessRules}

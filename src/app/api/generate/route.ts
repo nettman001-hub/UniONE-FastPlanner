@@ -27,6 +27,8 @@ interface GenerateBody {
   specFeatureIds?: string[];
   /** 기능명세서를 다시 만들지 않고 AI 검토만 */
   reviewFs?: boolean;
+  /** 기능명세서를 다시 만들지 않고 이 상세명세 한 건의 확장 칸만 */
+  deepenSpecId?: string;
 }
 
 /**
@@ -103,6 +105,10 @@ export async function POST(request: Request) {
                 ? body.specFeatureIds.filter((id) => typeof id === 'string').slice(0, 60)
                 : undefined,
             reviewFs: artifacts.length === 1 && artifacts[0] === 'fs' && body.reviewFs === true,
+            deepenSpecId:
+              artifacts.length === 1 && artifacts[0] === 'fs' && typeof body.deepenSpecId === 'string'
+                ? body.deepenSpecId.slice(0, 40)
+                : undefined,
             skills,
             userId: user.id,
             engines,
