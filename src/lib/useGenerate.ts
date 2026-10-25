@@ -87,7 +87,7 @@ export function useGenerate(plan: Plan | undefined) {
     [start],
   );
 
-  /** PRD 부터 와이어프레임까지. 서버가 한 요청 안에서 이어서 만든다. */
+  /** PRD 부터 와이어프레임까지. 단계마다 요청을 따로 보내 이어서 만든다(라우트 제한 300초 때문). */
   const generateAll = useCallback(() => start(PIPELINE_ORDER), [start]);
 
   /**

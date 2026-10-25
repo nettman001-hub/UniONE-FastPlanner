@@ -36,6 +36,8 @@ interface GenerateBody {
  * 않는다. 창을 닫으면 연결이 끊기고 서버는 다음 단계로 넘어가지 않는다.
  */
 export async function POST(request: Request) {
+  // 기능명세서의 시간 예산을 라우트 제한(300초)에 맞춰 재는 기준.
+  const startedAt = Date.now();
   // 이 요청은 주인의 AI API 키를 쓴다. 로그인한 사람만 부를 수 있어야 한다.
   const { user, response } = await requireUser();
   if (!user) return response;
@@ -106,6 +108,7 @@ export async function POST(request: Request) {
             engines,
             config: runtime.config,
             apiKey: runtime.apiKey,
+            startedAt,
           },
           request.signal,
         )) {

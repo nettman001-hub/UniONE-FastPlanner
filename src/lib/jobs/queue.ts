@@ -98,6 +98,12 @@ export interface GenerateOptions {
   config?: AiConfig;
   /** 화면에서 넣어 둔 API 키. 설정과 함께 서버가 읽어 넣는다. */
   apiKey?: string;
+  /**
+   * 이 요청이 시작된 때(ms). 기능명세서의 시간 예산은 라우트 제한(300초) 안에서 재야 하므로
+   * **요청 시작부터** 센다. 단계 시작부터 세면 한 요청에서 앞 단계에 쓴 시간을 몰라 제한을 넘긴다.
+   * 비어 있으면 그 단계가 시작한 때로 본다.
+   */
+  startedAt?: number;
 }
 
 /**
@@ -252,7 +258,8 @@ async function generateFsInTwoPasses(plan: Plan, options: GenerateOptions, call:
 
   // 남은 시간이 다 되면 아직 오지 않은 호출을 끊는다.
   const budget = new AbortController();
-  const timer = setTimeout(() => budget.abort(), Math.max(10_000, FS_TIME_BUDGET_MS - (Date.now() - started)));
+  const elapsed = Date.now() - (options.startedAt ?? started);
+  const timer = setTimeout(() => budget.abort(), Math.max(10_000, FS_TIME_BUDGET_MS - elapsed));
   const specifications: SpecDraft[] = [];
   let missed = 0;
   await forEachLimit(groups, SPEC_CONCURRENCY, async (group) => {
@@ -413,7 +420,7 @@ async function runStep(
       /*
        * 만든 직후 검토한다. 시간이 모자라면 건너뛰고, 검토가 실패해도 만든 것은 그대로 낸다.
        */
-      const left = FS_REVIEW_DEADLINE_MS - (Date.now() - started);
+      const left = FS_REVIEW_DEADLINE_MS - (Date.now() - (options.startedAt ?? started));
       if (left >= FS_REVIEW_MIN_MS) {
         try {
           Object.assign(patch, await reviewFs({ ...plan, ...patch }, call, AbortSignal.timeout(left)));

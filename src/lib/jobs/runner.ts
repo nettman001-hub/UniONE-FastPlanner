@@ -7,7 +7,7 @@
  *
  * **모듈 수준에서 돈다.** React 컴포넌트 안이 아니므로, 생성을 걸어 놓고 사이드바로
  * 다른 메뉴에 넘어가도 읽기가 멈추지 않는다. 페이지 자체를 떠날 때(새로고침·창 닫기)만
- * 끊기며, 그때는 서버도 `signal.aborted` 를 보고 다음 단계로 넘어가지 않는다.
+ * 끊기며, 단계마다 요청을 따로 보내므로 그 뒤 단계는 요청되지 않는다.
  *
  * 그때까지 받은 단계는 이미 저장돼 있고, `interrupted` 기록이 남아 돌아왔을 때
  * 남은 단계부터 이어 갈 수 있다.
@@ -147,18 +147,37 @@ export async function runGeneration(
   running = controller;
   cancelledByUser = false;
 
-  try {
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ artifacts, plan, ...args }),
-      signal: controller.signal,
-    });
+  /*
+   * `AI로 채우기`·`AI 검토` 는 기능명세서 한 단계만 만들 때의 옵션이다. 예전에는 서버가
+   * "여러 단계면 받지 않음" 으로 걸렀지만, 이제 단계마다 한 종씩 보내므로 여기서 거른다.
+   */
+  const stepArgs: RunArgs = pipeline ? { ...args, specFeatureIds: undefined, reviewFs: undefined } : args;
 
-    if (!response.ok || !response.body) {
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
-      failure = data.error ?? '생성 요청에 실패했습니다.';
-    } else {
+  try {
+    /*
+     * 전체 자동 생성도 **단계마다 요청을 따로** 보낸다.
+     *
+     * 한 요청에 다섯 단계를 몰아 넣으면 라우트 제한(300초)을 넘긴다 — PRD(약 80초)에
+     * 기능명세서와 AI 검토(약 235초)만 더해도 넘고, 그러면 기능명세서까지 잃는다.
+     * 요청을 새로 열면 단계 하나가 300초를 온전히 쓴다. 앞 단계 결과는 방금 스토어에
+     * 반영했으므로 플랜을 다시 읽어 넘기면 된다.
+     */
+    for (const artifact of artifacts) {
+      const current = store.getState().getPlan(planId) ?? plan;
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ artifacts: [artifact], plan: current, ...stepArgs }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        failure = data.error ?? '생성 요청에 실패했습니다.';
+        break;
+      }
+
+      let stepFinished = false;
       for await (const line of readLines(response.body)) {
         let event: StreamEvent;
         try {
@@ -201,10 +220,14 @@ export async function runGeneration(
         }
 
         if (event.type === 'done') {
-          finished = true;
+          stepFinished = true;
         }
       }
+
+      // 실패했거나 `done` 없이 끝났다(대개 시간 제한·연결 문제). 다음 단계로 넘어가지 않는다.
+      if (failure || !stepFinished) break;
     }
+    finished = !failure && done.length === artifacts.length;
   } catch {
     // 스스로 멈춘 것은 사고가 아니다. 아래에서 따로 알린다.
     if (!failure && !cancelledByUser) failure = '연결이 끊겨 생성을 마치지 못했습니다.';
@@ -262,6 +285,9 @@ export async function runGeneration(
   // 스트림이 done 없이 끝났다 — 대개 시간 제한이나 연결 문제.
   if (done.length > 0) {
     toast(`${done.length}단계까지 만들고 멈췄습니다. 이어서 만들 수 있습니다.`, 'warn');
+  } else {
+    // 예전에는 여기서 아무 말 없이 끝나 사용자는 왜 안 됐는지 알 수 없었다.
+    toast(`${ARTIFACT_LABEL[artifacts[0]]} 생성을 마치지 못했습니다. 잠시 뒤 다시 시도해 주세요.`, 'danger');
   }
   return done.length > 0;
 }
