@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check:ai": "node scripts/check-ai.mjs"
+    "check:ai": "node scripts/check-ai.mjs",
+    "check:review-fix": "tsx --test scripts/qa/qa-review-fix.ts scripts/qa/qa-review-runner.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

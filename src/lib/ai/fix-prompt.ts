@@ -20,6 +20,7 @@ export interface FixableIssue {
   title: string;
   detail: string;
   targets: string[];
+  recheckOnly?: boolean;
 }
 
 /** 한 번에 넘길 대상 수. 너무 많으면 하나하나가 얕아진다. */
@@ -36,7 +37,7 @@ export function issueFixPrompt(issue: FixableIssue): string {
   const rest = issue.targets.length - shown.length;
 
   const lines = [
-    `${ARTIFACT_LABEL[issue.artifact]}에서 아래 문제를 고쳐 주세요.`,
+    `${ARTIFACT_LABEL[issue.artifact]}에서 아래 ${issue.recheckOnly ? '지적의 해결 여부를 현재 문서로 재검증해' : '문제를 고쳐'} 주세요.`,
     '',
     `문제: ${issue.title}`,
     `이유: ${issue.detail}`,
@@ -52,7 +53,9 @@ export function issueFixPrompt(issue: FixableIssue): string {
 
   lines.push(
     '',
-    '해당 항목만 고치고 나머지는 그대로 두세요. 무엇도 지우지 마세요.',
+    issue.recheckOnly
+      ? '문서 본문을 수정하지 말고 해당 지적의 해결 여부만 확인해 주세요.'
+      : '해당 항목만 고치고 나머지는 그대로 두세요. 무엇도 지우지 마세요.',
   );
 
   return lines.join('\n');
@@ -65,11 +68,15 @@ export function issueFixPrompt(issue: FixableIssue): string {
  * 앞의 것을 고치다가 뒤의 것이 함께 풀리는 경우도 많다.
  */
 export function issuesFixPrompt(artifact: ArtifactKey, issues: FixableIssue[]): string {
-  if (issues.length === 1) return issueFixPrompt(issues[0]);
+  // 검증만 실패한 항목은 배치에서도 다시 수정시키지 않는다. ID는 별도로 넘겨 재검증한다.
+  const editable = issues.filter((issue) => !issue.recheckOnly);
+  const requested = editable.length > 0 ? editable : issues;
+  if (requested.length === 1) return issueFixPrompt(requested[0]);
+  const recheckOnly = editable.length === 0;
 
-  const lines = [`${ARTIFACT_LABEL[artifact]}에서 아래 문제들을 고쳐 주세요.`, ''];
+  const lines = [`${ARTIFACT_LABEL[artifact]}에서 아래 ${recheckOnly ? '지적들의 해결 여부를 현재 문서로 재검증해' : '문제들을 고쳐'} 주세요.`, ''];
 
-  issues.forEach((issue, index) => {
+  requested.forEach((issue, index) => {
     const shown = issue.targets.slice(0, MAX_TARGETS);
     const rest = issue.targets.length - shown.length;
     lines.push(`${index + 1}. ${issue.title}`);
@@ -80,6 +87,8 @@ export function issuesFixPrompt(artifact: ArtifactKey, issues: FixableIssue[]): 
     lines.push('');
   });
 
-  lines.push('해당 항목만 고치고 나머지는 그대로 두세요. 무엇도 지우지 마세요.');
+  lines.push(recheckOnly
+    ? '문서 본문을 수정하지 말고 해당 지적들의 해결 여부만 확인해 주세요.'
+    : '해당 항목만 고치고 나머지는 그대로 두세요. 무엇도 지우지 마세요.');
   return lines.join('\n');
 }

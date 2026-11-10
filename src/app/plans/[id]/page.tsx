@@ -949,7 +949,13 @@ function IssueRow({
             </button>
           )}
           {issue.noteId && <DismissNoteButton planId={planId} noteId={issue.noteId} />}
-          <FixWithAi planId={planId} prompt={issueFixPrompt(issue)} />
+          <FixWithAi
+            planId={planId}
+            prompt={issueFixPrompt(issue)}
+            reviewNoteIds={issue.noteId ? [issue.noteId] : undefined}
+            recheckOnly={issue.recheckOnly}
+            label={issue.recheckOnly ? 'AI로 재검증' : 'AI로 수정하기'}
+          />
           {issue.href && (
             <Link className="btn btn-sm shrink-0" href={`/plans/${planId}${issue.href}`}>
               <CheckCircle2 size={13} />

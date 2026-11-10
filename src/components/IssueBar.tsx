@@ -83,6 +83,8 @@ export function IssueBar({
   title?: string;
 }) {
   if (issues.length === 0) return null;
+  const reviewNoteIds = issues.flatMap((issue) => issue.noteId ? [issue.noteId] : []);
+  const recheckOnly = issues.every((issue) => issue.recheckOnly);
 
   const worst = issues.some((i) => i.level === 'error')
     ? 'error'
@@ -113,7 +115,9 @@ export function IssueBar({
           <FixWithAi
             planId={planId}
             prompt={issuesFixPrompt(artifact, issues)}
-            label="전부 AI로 수정하기"
+            reviewNoteIds={reviewNoteIds.length > 0 ? reviewNoteIds : undefined}
+            recheckOnly={recheckOnly}
+            label={recheckOnly ? '전부 AI로 재검증' : '전부 AI로 수정하기'}
           />
         )}
       </div>
@@ -141,7 +145,13 @@ export function IssueBar({
               <FillSpecsButton planId={planId} featureIds={issue.fillSpecs} />
             )}
             {issue.noteId && <DismissNoteButton planId={planId} noteId={issue.noteId} />}
-            <FixWithAi planId={planId} prompt={issueFixPrompt(issue)} />
+            <FixWithAi
+              planId={planId}
+              prompt={issueFixPrompt(issue)}
+              reviewNoteIds={issue.noteId ? [issue.noteId] : undefined}
+              recheckOnly={issue.recheckOnly}
+              label={issue.recheckOnly ? 'AI로 재검증' : 'AI로 수정하기'}
+            />
           </li>
         ))}
       </ul>

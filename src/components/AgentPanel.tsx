@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, CornerDownLeft, Eraser, RotateCw, Sparkles, Square, Target, X } from 'lucide-react';
 import { usePlannerStore } from '@/lib/store';
 import { useCredits } from '@/lib/useCredits';
-import { askAgent, cancelAgent, unansweredQuestion } from '@/lib/agent/runner';
+import { askAgent, cancelAgent, unansweredRequest } from '@/lib/agent/runner';
 import { selectableItems, useSelectionStore } from '@/lib/selection';
 import { CHAT_CREDIT_COST, type Plan } from '@/lib/types';
 import { useEngine } from '@/lib/useEngine';
@@ -42,7 +42,7 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
   const outOfCredits = credits < cost;
 
   /** 답을 받지 못한 채 남은 질문 — 새로고침이나 연결 끊김으로 요청이 사라진 경우. */
-  const stranded = busy ? null : unansweredQuestion(plan.chat);
+  const stranded = busy ? null : unansweredRequest(plan.chat);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,6 +51,7 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
   const handle = (result: string) => {
     if (result === 'no-credits') toast('크레딧이 부족합니다. 내일 다시 충전됩니다.', 'warn');
     if (result === 'busy') toast('앞선 요청이 끝난 뒤에 보낼 수 있습니다.', 'warn');
+    if (result === 'already-resolved') toast('이미 해소되었거나 확인한 지적입니다.', 'warn');
   };
 
   const send = async (text: string) => {
@@ -65,7 +66,11 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
 
   const resend = async () => {
     if (!stranded) return;
-    handle(await askAgent(plan.id, stranded, { resend: true }));
+    handle(await askAgent(plan.id, stranded.content, {
+      resend: true,
+      reviewNoteIds: stranded.reviewNoteIds,
+      recheckOnly: stranded.recheckOnly,
+    }));
   };
 
   return (

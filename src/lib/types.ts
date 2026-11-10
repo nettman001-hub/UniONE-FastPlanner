@@ -182,6 +182,9 @@ export interface ReviewNote {
   targetId: string;
   text: string;
   suggestion: string;
+  /** 수정 후 재검증 실패 또는 여전히 남아 있는 문제. 예전 지적에는 없다. */
+  verification?: 'pending' | 'unresolved';
+  verificationReason?: string;
 }
 
 export interface Requirement extends Reviewable {
@@ -472,6 +475,9 @@ export interface ChatMessage {
   changes?: string[];
   /** 생성에 소모된 크레딧 */
   credits?: number;
+  /** 실패한 수정 요청을 다시 보낼 때도 같은 지적을 재검증한다. */
+  reviewNoteIds?: string[];
+  recheckOnly?: boolean;
   /**
    * 답을 받지 못하고 끝난 자리.
    *

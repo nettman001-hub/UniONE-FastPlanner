@@ -28,11 +28,15 @@ export function FixWithAi({
   prompt,
   label = 'AI로 수정하기',
   className = 'btn btn-sm shrink-0',
+  reviewNoteIds,
+  recheckOnly,
 }: {
   planId: string;
   prompt: string;
   label?: string;
   className?: string;
+  reviewNoteIds?: string[];
+  recheckOnly?: boolean;
 }) {
   /**
    * **이 버튼이** 보낸 요청이 도는 중인가.
@@ -71,9 +75,10 @@ export function FixWithAi({
     setAgentOpen(true);
     setSending(true);
     try {
-      const result = await askAgent(planId, prompt);
+      const result = await askAgent(planId, prompt, { reviewNoteIds, recheckOnly });
       if (result === 'busy') toast('앞선 요청이 끝난 뒤에 보낼 수 있습니다.', 'warn');
       if (result === 'no-credits') toast('크레딧이 부족합니다. 내일 다시 충전됩니다.', 'warn');
+      if (result === 'already-resolved') toast('이미 해소되었거나 확인한 지적입니다.', 'warn');
     } finally {
       setSending(false);
     }
@@ -95,11 +100,11 @@ export function FixWithAi({
             ? '크레딧을 모두 사용했습니다.'
             : othersBusy
               ? '다른 요청이 진행 중입니다. 끝나면 누를 수 있습니다.'
-              : `AI 에이전트에게 이 문제를 고쳐 달라고 요청합니다. (${cost} 크레딧)`
+              : `AI 에이전트에게 이 문제를 ${recheckOnly ? '재검증' : '수정·검토'}하도록 요청합니다. (${cost} 크레딧)`
         }
       >
         {sending ? <Spinner size={12} /> : <Wand2 size={12} />}
-        {sending ? '보내는 중' : label}
+        {sending ? (recheckOnly ? '재검증 중' : '수정·검토 중') : label}
       </button>
     </span>
   );

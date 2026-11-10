@@ -35,6 +35,8 @@ export interface Issue {
   fillSpecs?: string[];
   /** AI 검토가 남긴 고칠 점이면 그 ID. 화면에 `확인함`(지우기)이 붙는다. */
   noteId?: string;
+  /** 수정은 반영됐으나 검증을 마치지 못했으면 수정 대신 재검증한다. */
+  recheckOnly?: boolean;
 }
 
 /** 구조마다 화면 이름에 있어야 할 말. 묶음 안의 말 중 하나만 있으면 된다. 첫 말이 표시 이름. */
@@ -190,10 +192,16 @@ export function validatePlan(plan: Plan): Issue[] {
       level: 'warn',
       artifact: 'fs',
       title: `AI 검토 · ${note.kind}`,
-      detail: note.suggestion ? `${note.text} → ${note.suggestion}` : note.text,
+      detail: [
+        `${note.verification === 'unresolved' ? '재검증 결과: ' : ''}${note.suggestion ? `${note.text} → ${note.suggestion}` : note.text}`,
+        ...(note.verification === 'pending'
+          ? ['재검증 필요: 문서의 최신 내용으로 해결 여부를 확인하지 못했습니다.']
+          : []),
+      ].join('\n'),
       targets: [`${note.targetId} ${name}`],
       href: '/fs',
       noteId: note.id,
+      recheckOnly: note.verification === 'pending',
     });
   }
 

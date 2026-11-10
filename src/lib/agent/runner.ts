@@ -15,14 +15,34 @@ import { usePlannerStore } from '../store';
 import { creditSnapshot, refreshCredits } from '../useCredits';
 import { engineSnapshot } from '../useEngine';
 import { costWithEngine } from '../credits';
-import { CHAT_CREDIT_COST, type PlanDocuments } from '../types';
+import { CHAT_CREDIT_COST, type ChatMessage, type PlanDocuments, type ReviewNote } from '../types';
 import { recordCompletedTask } from '../tasks';
+import { changedDocumentPatch, fsDocumentsEqual } from '../ai/document-patch';
 
 interface ChatResponse {
   reply?: string;
   changes?: string[];
   patch?: Partial<PlanDocuments>;
   error?: string;
+  credits?: number;
+}
+
+/** Apply review outcomes only to findings that have not been changed or dismissed meanwhile. */
+function mergeReviewNotes(
+  before: PlanDocuments,
+  current: ReviewNote[],
+  reviewed: ReviewNote[],
+): ReviewNote[] {
+  const original = new Map((before.reviewNotes ?? []).map((note) => [note.id, note]));
+  const outcomes = new Map(reviewed.map((note) => [note.id, note]));
+  return current.flatMap((note) => {
+    const previous = original.get(note.id);
+    if (!previous || changedDocumentPatch({ ...before, reviewNotes: [previous] }, { reviewNotes: [note] })) {
+      return [note];
+    }
+    const outcome = outcomes.get(note.id);
+    return outcome ? [outcome] : [];
+  });
 }
 
 /** 같은 플랜에 두 요청이 겹치지 않게 막는다. */
@@ -57,7 +77,7 @@ export function cancelAgent(planId: string): boolean {
   return true;
 }
 
-export type AskResult = 'ok' | 'busy' | 'no-credits' | 'empty' | 'cancelled';
+export type AskResult = 'ok' | 'busy' | 'no-credits' | 'empty' | 'cancelled' | 'already-resolved';
 
 /**
  * 에이전트에게 보낸다.
@@ -67,7 +87,7 @@ export type AskResult = 'ok' | 'busy' | 'no-credits' | 'empty' | 'cancelled';
 export async function askAgent(
   planId: string,
   message: string,
-  options: { resend?: boolean } = {},
+  options: { resend?: boolean; reviewNoteIds?: string[]; recheckOnly?: boolean } = {},
 ): Promise<AskResult> {
   const text = message.trim();
   if (!text) return 'empty';
@@ -77,6 +97,10 @@ export async function askAgent(
   const plan = store.plans.find((p) => p.id === planId);
   if (!plan) return 'empty';
 
+  const existingNotes = new Set((plan.reviewNotes ?? []).map((note) => note.id));
+  const reviewNoteIds = options.reviewNoteIds?.filter((id) => existingNotes.has(id));
+  if (options.reviewNoteIds?.length && reviewNoteIds?.length === 0) return 'already-resolved';
+
   /*
    * 낼 수 있는지는 **서버가 본다**(402). 여기서는 화면에 있는 숫자로 미리
    * 걸러 주기만 한다 — 이 숫자도 서버가 준 것이라 대개 맞지만, 근거는 아니다.
@@ -85,11 +109,18 @@ export async function askAgent(
   const cost = costWithEngine(CHAT_CREDIT_COST, engineSnapshot());
   if (creditSnapshot().remaining < cost) return 'no-credits';
 
-  if (!options.resend) store.appendChat(planId, { role: 'user', content: text });
+  if (!options.resend) store.appendChat(planId, {
+    role: 'user',
+    content: text,
+    reviewNoteIds,
+    recheckOnly: options.recheckOnly,
+  });
   store.setAgentBusy(planId);
 
   const controller = new AbortController();
   inFlight.set(planId, controller);
+
+  const sentPlan = structuredClone(usePlannerStore.getState().plans.find((p) => p.id === planId) ?? plan);
 
   try {
     const response = await fetch('/api/chat', {
@@ -98,8 +129,10 @@ export async function askAgent(
       signal: controller.signal,
       // 보내는 시점의 문서를 쓴다. 대화 중에 다른 화면에서 고쳤을 수 있다.
       body: JSON.stringify({
-        plan: usePlannerStore.getState().plans.find((p) => p.id === planId) ?? plan,
+        plan: sentPlan,
         message: text,
+        reviewNoteIds,
+        recheckOnly: options.recheckOnly,
       }),
     });
     const data = (await response.json()) as ChatResponse;
@@ -123,7 +156,30 @@ export async function askAgent(
     }
 
     const latest = usePlannerStore.getState();
+    const currentPlan = latest.plans.find((p) => p.id === planId);
+    let reply = data.reply;
+    let changes = data.changes;
     if (data.patch && Object.keys(data.patch).length > 0) {
+      if (
+        !currentPlan ||
+        !fsDocumentsEqual(sentPlan, currentPlan) ||
+        JSON.stringify(sentPlan.brief) !== JSON.stringify(currentPlan.brief)
+      ) {
+        data.patch = undefined;
+        changes = [];
+        reply = '답변을 기다리는 동안 최신 문서가 변경되어 수정안과 검토 결과를 반영하지 않았습니다. 현재 문서를 기준으로 다시 요청해 주세요.';
+      } else {
+        if (data.patch.reviewNotes !== undefined) {
+          data.patch = {
+            ...data.patch,
+            reviewNotes: mergeReviewNotes(sentPlan, currentPlan.reviewNotes ?? [], data.patch.reviewNotes),
+          };
+        }
+        data.patch = changedDocumentPatch(currentPlan, data.patch);
+      }
+    }
+    if (!data.patch) changes = [];
+    if (data.patch) {
       /*
        * 고치기 **전에** 되돌릴 지점을 남긴다.
        *
@@ -139,9 +195,9 @@ export async function askAgent(
     void refreshCredits();
     latest.appendChat(planId, {
       role: 'assistant',
-      content: data.reply,
-      changes: data.changes,
-      credits: cost,
+      content: reply,
+      changes,
+      credits: data.credits ?? cost,
     });
     recordCompletedTask({
       planId,
@@ -188,17 +244,23 @@ export async function askAgent(
  *
  * 둘 다 그대로 두면 막다른 길이 된다. 그 질문을 찾아 다시 보낼 수 있게 한다.
  */
-export function unansweredQuestion(
-  chat: { role: string; content: string; failed?: boolean }[],
-): string | null {
+type ResendMessage = Pick<ChatMessage, 'content' | 'failed' | 'reviewNoteIds' | 'recheckOnly'> & {
+  role: string;
+};
+
+export function unansweredRequest(chat: ResendMessage[]): ResendMessage | null {
   const last = chat[chat.length - 1];
   if (!last) return null;
-  if (last.role === 'user') return last.content;
+  if (last.role === 'user') return last;
   if (last.role !== 'assistant' || !last.failed) return null;
 
   // 실패 바로 앞의 질문을 찾는다.
   for (let i = chat.length - 2; i >= 0; i -= 1) {
-    if (chat[i].role === 'user') return chat[i].content;
+    if (chat[i].role === 'user') return chat[i];
   }
   return null;
+}
+
+export function unansweredQuestion(chat: ResendMessage[]): string | null {
+  return unansweredRequest(chat)?.content ?? null;
 }

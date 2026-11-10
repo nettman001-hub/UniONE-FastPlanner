@@ -10,6 +10,7 @@ import { answersBlock, followupBlock } from '../brief-questions';
 import { hasArtifact } from '../artifact-status';
 import { skillBlock } from '../skills';
 import { structureBlock, structureLine } from '../archetypes';
+import { detailOf } from '../spec-detail';
 
 export const SYSTEM_PROMPT = `당신은 IT 서비스 기획 전문가입니다. 사용자가 준 서비스 아이디어를 실제 개발팀이 그대로 착수할 수 있는 기획 산출물로 바꾸는 일을 합니다.
 
@@ -395,6 +396,59 @@ export function buildSpecDetailPrompt(plan: Plan, spec: Specification, extra?: s
   return sections.join('\n');
 }
 
+/** 전체 검토와 수정 후 재검증이 같은 상세명세 본문을 읽도록 한다. */
+export function buildFsReviewContext(plan: Plan): string {
+  const requirements = plan.requirements ?? [];
+  const features = plan.features ?? [];
+  const specifications = plan.specifications ?? [];
+  const requirementIds = new Set(requirements.map((r) => r.id));
+  const featureIds = new Set(features.map((f) => f.id));
+
+  const specificationBody = (spec: Specification) => ({
+    id: spec.id,
+    featureId: spec.featureId,
+    title: spec.title,
+    actor: spec.actor ?? '',
+    precondition: spec.precondition ?? '',
+    mainFlow: spec.mainFlow ?? [],
+    exceptions: spec.exceptions ?? [],
+    acceptanceCriteria: spec.acceptanceCriteria ?? [],
+    ...detailOf(spec),
+    pageIds: spec.pageIds ?? [],
+    priority: spec.priority,
+    status: spec.status,
+  });
+  const featureBody = (feature: Plan['features'][number]) => ({
+    id: feature.id,
+    requirementId: feature.requirementId,
+    name: feature.name,
+    description: feature.description ?? '',
+    priority: feature.priority,
+    status: feature.status,
+    specifications: specifications.filter((s) => s.featureId === feature.id).map(specificationBody),
+  });
+
+  return [
+    '## 검토할 기능명세서 (요구사항 → 기능 → 상세명세 본문)',
+    '```json',
+    JSON.stringify({
+      requirements: requirements.map((req) => ({
+        id: req.id,
+        title: req.title,
+        description: req.description ?? '',
+        category: req.category,
+        priority: req.priority,
+        sources: req.sources ?? [],
+        features: features.filter((f) => f.requirementId === req.id).map(featureBody),
+      })),
+      // 상위 연결이 끊긴 항목도 검토에서 빠뜨리지 않는다.
+      unlinkedFeatures: features.filter((f) => !requirementIds.has(f.requirementId)).map(featureBody),
+      unlinkedSpecifications: specifications.filter((s) => !featureIds.has(s.featureId)).map(specificationBody),
+    }, null, 1),
+    '```',
+  ].join('\n');
+}
+
 /**
  * 기능명세서 AI 검토.
  *
@@ -403,21 +457,6 @@ export function buildSpecDetailPrompt(plan: Plan, spec: Specification, extra?: s
  * "건당 결제인데 환불이 없다" 같은 것은 따로 대조해야 보인다.
  */
 export function buildReviewPrompt(plan: Plan): string {
-  const fsLines = plan.requirements.map((req) =>
-    [
-      `- ${req.id} ${req.title} [${req.category}·${req.priority}]${
-        req.sources?.length ? ` 출처: ${req.sources.join(', ')}` : ''
-      } — ${req.description}`,
-      ...plan.features
-        .filter((f) => f.requirementId === req.id)
-        .map((f) =>
-          [
-            `  - ${f.id} ${f.name} [${f.priority}] — ${f.description}`,
-            ...plan.specifications.filter((s) => s.featureId === f.id).map((s) => `    - ${s.id} ${s.title}`),
-          ].join('\n'),
-        ),
-    ].join('\n'),
-  );
   const sections = [
     '당신은 기능명세서를 검토하는 시니어 기획자입니다. 아래 기능명세서를 브리프·PRD 와 대조해 **빠진 것, 모순, 모호한 표현**을 찾으세요.',
     '',
@@ -439,14 +478,14 @@ export function buildReviewPrompt(plan: Plan): string {
   const shape = structureBlock(plan.brief, 'fs');
   if (shape) sections.push('', shape);
   if (hasArtifact(plan, 'prd')) sections.push('', prdFullBlock(plan.prd));
-  sections.push('', '## 검토할 기능명세서 (요구사항 → 기능 → 상세명세 제목)', ...fsLines);
+  sections.push('', buildFsReviewContext(plan));
   return sections.join('\n');
 }
 
 export function buildChatPrompt(plan: Plan, question: string): string {
   return [
     '당신은 아래 기획 문서를 함께 다듬는 AI 기획 파트너입니다.',
-    '사용자의 요청이 문서 수정이라면 해당 산출물 전체를 새로 만들어 patch 에 담고, 무엇을 바꿨는지 changes 에 적습니다.',
+    '사용자의 요청이 문서 수정이라면 해당 산출물에서 손댄 항목만 patch 에 담고, 무엇을 바꿨는지 changes 에 적습니다.',
     '질문이나 검토 요청이라면 patch.artifact 를 none 으로 두고 reply 로만 답합니다.',
     '',
     '### 반드시 지킬 것',
