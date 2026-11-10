@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import {
   integrationStatus,
   removeIntegration,
@@ -16,8 +16,8 @@ import { detectCredential, StitchError } from '@/lib/design/stitch';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
-  const { user, response } = await requireUser();
+export async function GET(request: Request) {
+  const { user, response } = await requirePlanActor(request);
   if (!user) return response;
 
   try {
@@ -29,7 +29,7 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const { user, response } = await requireUser();
+  const { user, response } = await requirePlanActor(request);
   if (!user) return response;
 
   let body: { secret?: unknown };
@@ -74,8 +74,8 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE() {
-  const { user, response } = await requireUser();
+export async function DELETE(request: Request) {
+  const { user, response } = await requirePlanActor(request);
   if (!user) return response;
 
   try {

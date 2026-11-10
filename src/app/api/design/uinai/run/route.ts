@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { generateJson } from '@/lib/ai/client';
 import { isEngineTier, type EngineTier } from '@/lib/ai/engines';
 import { AiError, aiErrorMessage } from '@/lib/ai/errors';
@@ -315,9 +315,6 @@ function planProblem(plan: Plan): string | null {
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response;
-
   let body: RunBody;
   try {
     const text = await request.text();
@@ -333,6 +330,8 @@ export async function POST(request: Request) {
   if (!plan) return NextResponse.json({ error: '플랜 정보가 없습니다.' }, { status: 400 });
   const invalidPlan = planProblem(plan);
   if (invalidPlan) return NextResponse.json({ error: invalidPlan }, { status: 400 });
+  const { user, response } = await requirePlanActor(request, plan.id);
+  if (!user) return response;
   const page = plan.iaPages.find((item) => item.type === 'page' && item.id === body.pageId);
   if (!page) return NextResponse.json({ error: '만들 화면을 찾지 못했습니다.' }, { status: 400 });
   const requestId = typeof body.requestId === 'string' ? body.requestId : '';

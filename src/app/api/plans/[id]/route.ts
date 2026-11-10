@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { deletePlan, getPlan, savePlan } from '@/lib/db/plans';
 import { serverErrorMessage } from '@/lib/api-error';
 import type { Plan } from '@/lib/types';
@@ -9,15 +9,18 @@ export const dynamic = 'force-dynamic';
 
 type Context = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, { params }: Context) {
-  const { user, response } = await requireUser();
+export async function GET(request: Request, { params }: Context) {
+  const { id } = await params;
+  const { user, response } = await requirePlanActor(request, id);
   if (!user) return response;
 
-  const { id } = await params;
   try {
     const plan = await getPlan(user.id, id);
     if (!plan) return NextResponse.json({ error: '플랜을 찾을 수 없습니다.' }, { status: 404 });
-    return NextResponse.json({ plan });
+    return NextResponse.json({
+      plan,
+      ...(request.headers.has('x-admin-user-id') ? { owner: { id: user.id, name: user.name, email: user.email } } : {}),
+    });
   } catch (error) {
     return NextResponse.json({ error: describe(error) }, { status: 500 });
   }
@@ -29,10 +32,10 @@ export async function GET(_request: Request, { params }: Context) {
  * `applied: false` 는 실패가 아니라 "서버에 더 새 내용이 있어 건너뛰었다" 는 뜻이다.
  */
 export async function PUT(request: Request, { params }: Context) {
-  const { user, response } = await requireUser();
+  const { id } = await params;
+  const { user, response } = await requirePlanActor(request, id);
   if (!user) return response;
 
-  const { id } = await params;
   let body: { plan?: Plan };
   try {
     body = (await request.json()) as typeof body;
@@ -42,6 +45,9 @@ export async function PUT(request: Request, { params }: Context) {
 
   const plan = body.plan;
   if (!plan?.id) return NextResponse.json({ error: '플랜 정보가 없습니다.' }, { status: 400 });
+  if (request.headers.has('x-admin-user-id') && plan.id !== id) {
+    return NextResponse.json({ error: '플랜을 찾을 수 없습니다.' }, { status: 404 });
+  }
   // 주소의 ID 를 정답으로 본다.
   if (plan.id !== id) plan.id = id;
 
@@ -52,11 +58,11 @@ export async function PUT(request: Request, { params }: Context) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: Context) {
-  const { user, response } = await requireUser();
+export async function DELETE(request: Request, { params }: Context) {
+  const { id } = await params;
+  const { user, response } = await requirePlanActor(request, id);
   if (!user) return response;
 
-  const { id } = await params;
   try {
     // 이미 없으면 없는 대로 성공이다 — 두 번 눌러도 같은 결과여야 한다.
     return NextResponse.json({ deleted: await deletePlan(user.id, id) });

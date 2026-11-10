@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, PlusCircle, Sparkles, Wand2 } from 'lucide-react';
 
 import { usePlannerStore } from '@/lib/store';
+import { workspaceFetch as fetch } from '@/lib/admin-workspace';
 import { refreshCredits, useCredits } from '@/lib/useCredits';
 import {
   applyPlacements,

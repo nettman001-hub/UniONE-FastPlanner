@@ -16,6 +16,7 @@
 
 import { usePlannerStore } from './store';
 import type { Plan } from './types';
+import { adminWorkspace, setAdminWorkspaceOwner, workspaceFetch, workspaceStorageKey } from './admin-workspace';
 
 /*
  * 아래 두 키는 `store.ts` 의 저장소 키와 한 묶음이라 **예전 이름 그대로 둔다.**
@@ -39,6 +40,10 @@ const GUEST_BACKUP_KEY = 'unione-fastplaner:guest-backup';
  * 한쪽 기기에서 지운 플랜이 다른 기기에서 되살아나 다시 올라가는 것을 확인했다.
  */
 const SYNCED_KEY = 'unione-fastplaner:synced:v1';
+// 탭의 저장 영역은 고정한다. 문맥을 지우고 나가는 순간에도 개인 기록을 건드리지 않는다.
+const WORKSPACE = adminWorkspace();
+const SYNCED_STORAGE_KEY = workspaceStorageKey(SYNCED_KEY);
+const workspaceActive = () => !WORKSPACE || adminWorkspace() === WORKSPACE;
 
 export type SyncState = 'idle' | 'syncing' | 'saved' | 'error';
 
@@ -73,7 +78,7 @@ function serialize<T>(task: () => Promise<T>): Promise<T> {
 
 function loadSynced(owner: string): Map<string, string> {
   try {
-    const raw = localStorage.getItem(SYNCED_KEY);
+    const raw = localStorage.getItem(SYNCED_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as { owner: string; items: Record<string, string> }) : null;
     if (!parsed || parsed.owner !== owner) return new Map();
     return new Map(Object.entries(parsed.items ?? {}));
@@ -84,9 +89,9 @@ function loadSynced(owner: string): Map<string, string> {
 
 function storeSynced(owner: string | null): void {
   try {
-    if (!owner) localStorage.removeItem(SYNCED_KEY);
+    if (!owner) localStorage.removeItem(SYNCED_STORAGE_KEY);
     else localStorage.setItem(
-      SYNCED_KEY,
+      SYNCED_STORAGE_KEY,
       JSON.stringify({ owner, items: Object.fromEntries(synced) }),
     );
   } catch {
@@ -112,6 +117,7 @@ export function syncSnapshot(): { state: SyncState; error: string | null } {
 /* 보관함 ------------------------------------------------------------- */
 
 export function readGuestBackup(): Plan[] {
+  if (WORKSPACE) return [];
   if (typeof localStorage === 'undefined') return [];
   try {
     const raw = localStorage.getItem(GUEST_BACKUP_KEY);
@@ -132,6 +138,7 @@ function writeGuestBackup(plans: Plan[]) {
 }
 
 export function clearGuestBackup() {
+  if (WORKSPACE) return;
   try {
     localStorage.removeItem(GUEST_BACKUP_KEY);
   } catch {
@@ -141,6 +148,7 @@ export function clearGuestBackup() {
 
 /** 보관해 둔 플랜을 계정으로 올린다. 성공한 개수를 돌려준다. */
 export async function importGuestBackup(): Promise<number> {
+  if (WORKSPACE) return 0;
   const plans = readGuestBackup();
   if (plans.length === 0) return 0;
 
@@ -190,6 +198,25 @@ function mergeByUpdatedAt(a: Plan[], b: Plan[]): Plan[] {
  */
 export async function adoptUser(userId: string): Promise<void> {
   const store = usePlannerStore.getState();
+
+  if (WORKSPACE) {
+    if (!workspaceActive() || userId !== WORKSPACE.actorId) {
+      releaseUser();
+      return;
+    }
+    // 지원 탭에는 선택한 사용자 원본 하나만 둔다. 개인·게스트 플랜을 가져오지 않는다.
+    if (store.owner !== WORKSPACE.userId) {
+      store.setPlans([], WORKSPACE.userId);
+      synced = new Map();
+      storeSynced(WORKSPACE.userId);
+    } else {
+      store.setPlans(store.plans.filter((plan) => plan.id === WORKSPACE.planId), WORKSPACE.userId);
+      synced = loadSynced(WORKSPACE.userId);
+    }
+    await pullWorkspace();
+    if (workspaceActive()) start();
+    return;
+  }
 
   if (store.owner !== userId) {
     if (store.owner === null && store.plans.length > 0) {
@@ -254,6 +281,34 @@ async function pull(userId: string): Promise<void> {
   schedule(0);
 }
 
+/** 사용자 지원 탭은 전체 목록이 아니라 선택한 플랜만 읽는다. */
+async function pullWorkspace(): Promise<void> {
+  if (!WORKSPACE || !workspaceActive()) return;
+  const scope = WORKSPACE;
+  await serialize(async () => {
+    if (!workspaceActive()) return;
+    emit('syncing');
+    try {
+      const res = await workspaceFetch(`/api/plans/${encodeURIComponent(scope.planId)}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(await describe(res));
+      const { plan: server, owner } = (await res.json()) as { plan: Plan; owner?: { id: string; name?: string; email?: string } };
+      if (!server || server.id !== scope.planId) throw new Error('선택한 사용자 플랜을 불러오지 못했습니다.');
+      if (!workspaceActive() || usePlannerStore.getState().owner !== scope.userId) return;
+      if (owner) setAdminWorkspaceOwner(owner);
+      const local = usePlannerStore.getState().plans.filter((plan) => plan.id === scope.planId);
+      const merged = mergeByUpdatedAt(local, [server]);
+      usePlannerStore.getState().setPlans(merged, scope.userId);
+      // 오프라인 수정본이 더 최신이면 보존한 뒤 원래 사용자의 플랜으로 저장한다.
+      synced = new Map(merged[0]?.updatedAt === server.updatedAt ? [[server.id, server.updatedAt]] : []);
+      storeSynced(scope.userId);
+      emit('saved');
+    } catch (error) {
+      if (workspaceActive()) emit('error', error instanceof Error ? error.message : '사용자 플랜을 불러오지 못했습니다.');
+    }
+  });
+  if (workspaceActive()) schedule(0);
+}
+
 /* 밀어 올리기 --------------------------------------------------------- */
 
 function start() {
@@ -279,7 +334,27 @@ function schedule(delay = 1200) {
   timer = setTimeout(() => void serialize(push), delay);
 }
 
+/** 지원 탭을 닫기 전에 방금 입력한 내용까지 서버에 반영한다. 실패하면 탭 문맥을 유지한다. */
+export async function flushPlanSync(): Promise<boolean> {
+  if (timer) clearTimeout(timer);
+  timer = null;
+  if (!workspaceActive()) return false;
+  await serialize(push);
+  const state = usePlannerStore.getState();
+  if (WORKSPACE) {
+    if (!workspaceActive() || state.owner !== WORKSPACE.userId) return false;
+    const plan = state.plans.find((item) => item.id === WORKSPACE.planId);
+    // 최초 조회 실패로 작업본이 없거나 마지막 저장본과 같다면 잃을 수정이 없다.
+    // 오래된 조회 오류가 관리 목록으로 돌아가는 길을 막지 않도록 한다.
+    return !plan || synced.get(plan.id) === plan.updatedAt;
+  }
+  if (snapshot.state === 'error') return false;
+  return !!state.owner && state.plans.every((plan) => synced.get(plan.id) === plan.updatedAt);
+}
+
 async function push(): Promise<void> {
+  if (!workspaceActive()) return;
+  if (WORKSPACE) return pushWorkspace();
   const store = usePlannerStore.getState();
   const owner = store.owner;
   if (!owner) return;
@@ -330,6 +405,44 @@ async function push(): Promise<void> {
     emit('saved');
   } catch (error) {
     emit('error', error instanceof Error ? error.message : '저장에 실패했습니다.');
+  }
+}
+
+/** 선택한 플랜 외의 생성·가져오기·삭제를 지원 동기화로 추론하지 않는다. */
+async function pushWorkspace(): Promise<void> {
+  if (!WORKSPACE || !workspaceActive()) return;
+  const scope = WORKSPACE;
+  const store = usePlannerStore.getState();
+  if (store.owner !== scope.userId) return;
+  const plan = store.plans.find((item) => item.id === scope.planId);
+  // 선택한 플랜이 사라져도 다른 플랜을 지우거나 개인 계정에 새로 만들지 않는다.
+  if (!plan || synced.get(plan.id) === plan.updatedAt) return;
+  emit('syncing');
+  try {
+    const url = `/api/plans/${encodeURIComponent(scope.planId)}`;
+    const res = await workspaceFetch(url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ plan }),
+    });
+    if (!res.ok) throw new Error(await describe(res));
+    const result = (await res.json()) as { applied?: boolean };
+    if (!workspaceActive() || usePlannerStore.getState().owner !== scope.userId) return;
+    if (result.applied === false) {
+      const latest = await workspaceFetch(url, { cache: 'no-store' });
+      if (!latest.ok) throw new Error(await describe(latest));
+      const { plan: server } = (await latest.json()) as { plan: Plan };
+      if (!server || server.id !== scope.planId) throw new Error('최신 사용자 플랜을 불러오지 못했습니다.');
+      if (!workspaceActive() || usePlannerStore.getState().owner !== scope.userId) return;
+      usePlannerStore.getState().setPlans([server], scope.userId);
+      synced.set(server.id, server.updatedAt);
+    } else {
+      synced.set(plan.id, plan.updatedAt);
+    }
+    storeSynced(scope.userId);
+    emit('saved');
+  } catch (error) {
+    if (workspaceActive()) emit('error', error instanceof Error ? error.message : '사용자 플랜을 저장하지 못했습니다.');
   }
 }
 

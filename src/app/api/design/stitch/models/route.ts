@@ -6,13 +6,13 @@
  */
 
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { listModels } from '@/lib/design/stitch';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
-  const { user, response } = await requireUser();
+export async function GET(request: Request) {
+  const { user, response } = await requirePlanActor(request);
   if (!user) return response;
   return NextResponse.json({ models: await listModels() });
 }

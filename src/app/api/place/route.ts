@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
 import { maxTokensFor } from '@/lib/jobs/queue';
@@ -45,9 +45,6 @@ function slugPath(name: string): string {
  * 정해야 하는 일이기 때문이다.
  */
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response;
-
   let body: { plan?: Plan };
   try {
     body = (await request.json()) as typeof body;
@@ -57,6 +54,8 @@ export async function POST(request: Request) {
 
   const plan = body.plan;
   if (!plan?.id) return NextResponse.json({ error: '플랜 정보가 없습니다.' }, { status: 400 });
+  const { user, response } = await requirePlanActor(request, plan.id);
+  if (!user) return response;
 
   const targets = unplacedFeatures(plan);
   if (targets.length === 0) {

@@ -22,6 +22,7 @@
  */
 
 import { useSyncExternalStore } from 'react';
+import { workspaceFetch as fetch } from '@/lib/admin-workspace';
 
 import { DEFAULT_ENGINE, isEngineTier, toEngineTier, type EngineTier } from './ai/engines';
 import { ARTIFACT_KEYS, type ArtifactKey } from './types';

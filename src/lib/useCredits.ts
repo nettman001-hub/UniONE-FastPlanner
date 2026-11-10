@@ -12,6 +12,7 @@
  */
 
 import { useSyncExternalStore } from 'react';
+import { workspaceFetch as fetch } from '@/lib/admin-workspace';
 
 import { DAILY_CREDIT_LIMIT, type CreditState } from './credits';
 

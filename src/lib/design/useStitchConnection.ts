@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { workspaceFetch as fetch } from '@/lib/admin-workspace';
 
 export interface StitchStatus {
   connected: boolean;

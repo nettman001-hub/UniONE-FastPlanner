@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { generateJson, isAiEnabled } from '@/lib/ai/client';
 import { resolveProvider } from '@/lib/ai/provider';
 import { userAgentEngine } from '@/lib/db/user-settings';
@@ -60,10 +60,6 @@ function offlineReply(plan: Plan): { reply: string; changes: string[] } {
 }
 
 export async function POST(request: Request) {
-  // 생성 API 와 같은 이유로 로그인을 요구한다 — 주인의 AI 키를 쓰는 요청이다.
-  const { user, response } = await requireUser();
-  if (!user) return response;
-
   let body: ChatBody;
   try {
     body = (await request.json()) as ChatBody;
@@ -72,9 +68,12 @@ export async function POST(request: Request) {
   }
 
   const { plan, message } = body;
-  if (!plan || !message?.trim()) {
+  if (!plan?.id || !message?.trim()) {
     return NextResponse.json({ error: '메시지를 입력해 주세요.' }, { status: 400 });
   }
+
+  const { user, response } = await requirePlanActor(request, plan.id);
+  if (!user) return response;
 
   const reviewNoteIds = Array.isArray(body.reviewNoteIds)
     ? [...new Set(body.reviewNoteIds.filter((id): id is string => typeof id === 'string'))]

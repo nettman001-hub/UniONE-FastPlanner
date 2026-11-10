@@ -11,7 +11,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { readSettings, writeSettings, type EngineMap } from '@/lib/db/user-settings';
 import { isEngineTier } from '@/lib/ai/engines';
 import { ARTIFACT_KEYS, type ArtifactKey } from '@/lib/types';
@@ -19,14 +19,14 @@ import { ARTIFACT_KEYS, type ArtifactKey } from '@/lib/types';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const { user, response } = await requireUser();
+export async function GET(request: Request) {
+  const { user, response } = await requirePlanActor(request);
   if (!user) return response;
   return NextResponse.json({ settings: await readSettings(user.id) });
 }
 
 export async function PATCH(request: Request) {
-  const { user, response } = await requireUser();
+  const { user, response } = await requirePlanActor(request);
   if (!user) return response;
 
   let body: { engine?: unknown; engines?: unknown; agentEngine?: unknown };

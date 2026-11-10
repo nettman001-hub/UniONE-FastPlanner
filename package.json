@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "check:ai": "node scripts/check-ai.mjs",
-    "check:review-fix": "tsx --test scripts/qa/qa-review-fix.ts scripts/qa/qa-review-runner.ts"
+    "check:review-fix": "tsx --test scripts/qa/qa-review-fix.ts scripts/qa/qa-review-runner.ts",
+    "check:admin-plans": "tsx --test scripts/qa/qa-admin-plan-access.ts scripts/qa/qa-admin-plan-runner.ts scripts/qa/qa-admin-plan-sync.ts",
+    "check:admin-plans:api": "tsx scripts/qa/qa-admin-plan-api.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nextId, uid } from './ids';
 import { normalizeUinAiScreens } from './design/uinai';
+import { workspaceStorageKey } from './admin-workspace';
 import type { ActiveRun, InterruptedRun } from './jobs/progress';
 import {
   approveIn,
@@ -44,6 +45,8 @@ import {
  * 굳이 정리하고 싶다면 옛 키를 읽어 새 키로 옮기는 이사 코드를 먼저 넣어야 한다.
  */
 const STORAGE_KEY = 'unione-fastplaner:v1';
+// 탭을 떠나며 지원 문맥을 비워도 남의 작업본이 개인 저장소로 쓰이지 않도록 고정한다.
+const WORKSPACE_STORAGE_KEY = workspaceStorageKey(STORAGE_KEY);
 
 /**
  * 크레딧은 **여기 없다.**
@@ -629,7 +632,11 @@ export const usePlannerStore = create<PlannerState>()(
     },
     {
       name: STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => ({
+        getItem: () => localStorage.getItem(WORKSPACE_STORAGE_KEY),
+        setItem: (_name, value) => localStorage.setItem(WORKSPACE_STORAGE_KEY, value),
+        removeItem: () => localStorage.removeItem(WORKSPACE_STORAGE_KEY),
+      })),
       version: CREDIT_POLICY_VERSION,
       partialize: (state) => ({
         plans: state.plans,

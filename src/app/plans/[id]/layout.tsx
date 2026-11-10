@@ -27,6 +27,7 @@ import { useCredits } from '@/lib/useCredits';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useGenerate } from '@/lib/useGenerate';
 import { ARTIFACT_LABEL, type ArtifactKey } from '@/lib/types';
+import { AdminWorkspaceBanner } from '@/components/AdminWorkspace';
 
 interface NavItem {
   href: string;
@@ -135,6 +136,8 @@ function PlanShell({ children }: { children: ReactNode }) {
           <UserMenu />
         </div>
       </header>
+
+      <AdminWorkspaceBanner />
 
       {/* 중간에 끊긴 전체 자동 생성이 있으면 어느 화면에서든 이어 갈 수 있게 한다. */}
       {interrupted && (

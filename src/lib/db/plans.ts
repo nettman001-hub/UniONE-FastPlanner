@@ -64,6 +64,13 @@ export async function getPlan(userId: string, planId: string): Promise<Plan | nu
   return rows[0] ? toPlan(rows[0]) : null;
 }
 
+/** 관리자 작업 권한 확인에는 큰 플랜 본문을 가져오지 않는다. */
+export async function planExists(userId: string, planId: string): Promise<boolean> {
+  const db = await getDb();
+  const { rows } = await db.query('select 1 from plans where user_id = $1 and id = $2', [userId, planId]);
+  return rows.length > 0;
+}
+
 /**
  * 저장(있으면 갱신).
  *

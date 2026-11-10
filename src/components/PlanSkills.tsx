@@ -28,6 +28,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, ExternalLink, PencilLine, Save } from 'lucide-react';
 
 import { SkillBody } from '@/components/SkillBody';
+import { workspaceFetch as fetch } from '@/lib/admin-workspace';
 import { SectionCard, Spinner, useToast } from '@/components/ui';
 import {
   SKILL_ARTIFACTS,

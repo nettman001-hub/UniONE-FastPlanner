@@ -16,7 +16,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { readIntegrationSecret } from '@/lib/db/integrations';
 import { screenPrompt, systemPrompt, type PromptEmphasis } from '@/lib/design-handoff';
 import {
@@ -80,9 +80,6 @@ function deviceOf(plan: Plan, page: IaPage, requested?: string): StitchDevice {
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response;
-
   let body: RunBody;
   try {
     body = (await request.json()) as RunBody;
@@ -92,6 +89,8 @@ export async function POST(request: Request) {
 
   const plan = body.plan;
   if (!plan?.id) return NextResponse.json({ error: '플랜 정보가 없습니다.' }, { status: 400 });
+  const { user, response } = await requirePlanActor(request, plan.id);
+  if (!user) return response;
 
   const page = (plan.iaPages ?? []).find((p) => p.type === 'page' && p.id === body.pageId);
   if (!page) return NextResponse.json({ error: '만들 화면을 찾지 못했습니다.' }, { status: 400 });

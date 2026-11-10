@@ -43,6 +43,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Gauge, Layers, Zap } from 'lucide-react';
 
 import { useToast } from '@/components/ui';
+import { workspaceFetch as fetch } from '@/lib/admin-workspace';
 import { ENGINE_LABEL, type EngineTier } from '@/lib/ai/engines';
 import { ENGINE_CREDIT_MULTIPLIER } from '@/lib/credits';
 import {

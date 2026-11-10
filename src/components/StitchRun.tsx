@@ -42,6 +42,7 @@ import {
   serverSnapshot,
 } from '@/lib/design/stitch-runner';
 import { useStitchConnection } from '@/lib/design/useStitchConnection';
+import { workspaceFetch as fetch } from '@/lib/admin-workspace';
 import { TARGET_DEVICE_LABEL, type TargetDevice } from '@/lib/design-handoff';
 import type { Plan } from '@/lib/types';
 

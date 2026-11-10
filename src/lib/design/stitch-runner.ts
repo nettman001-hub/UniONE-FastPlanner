@@ -23,6 +23,7 @@
  */
 
 import type { Plan } from '@/lib/types';
+import { workspaceFetch as fetch, workspaceStorageKey } from '@/lib/admin-workspace';
 import { recordCompletedTask } from '@/lib/tasks';
 
 export type ScreenState =
@@ -42,7 +43,7 @@ export type ScreenState =
  * 플랜 데이터가 아니라 이 브라우저에만 둔다. 스티치 프로젝트는 연결한 계정에
  * 딸린 것이라 플랜을 남에게 넘길 때 따라가면 안 된다.
  */
-const PROJECT_KEY = 'unione-fastplaner:stitch-projects';
+const PROJECT_KEY = workspaceStorageKey('unione-fastplaner:stitch-projects');
 
 export interface Remembered {
   projectId: string;

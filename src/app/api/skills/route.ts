@@ -6,7 +6,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { clearSkill, listSkills, saveSkill } from '@/lib/db/skills';
 import { ACCOUNT_SCOPE, SKILL_MAX_CHARS, isSkillArtifact } from '@/lib/skills';
 
@@ -30,7 +30,8 @@ function scopeOf(value: string | null): string | null {
 }
 
 export async function GET(request: Request) {
-  const { user, response } = await requireUser();
+  const requestedPlanId = new URL(request.url).searchParams.get('planId') ?? undefined;
+  const { user, response } = await requirePlanActor(request, requestedPlanId);
   if (!user) return response;
 
   const scope = scopeOf(new URL(request.url).searchParams.get('planId'));
@@ -55,15 +56,15 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response;
-
   let body: { artifact?: unknown; body?: unknown; enabled?: unknown; planId?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: '요청을 읽지 못했습니다.' }, { status: 400 });
   }
+
+  const { user, response } = await requirePlanActor(request, typeof body.planId === 'string' ? body.planId : undefined);
+  if (!user) return response;
 
   if (!isSkillArtifact(body.artifact)) {
     return NextResponse.json({ error: '어느 단계의 지침인지 알 수 없습니다.' }, { status: 400 });
@@ -86,7 +87,8 @@ export async function PUT(request: Request) {
 
 /** 플랜에 적어 둔 것을 지워 다시 계정 기본을 따르게 한다. */
 export async function DELETE(request: Request) {
-  const { user, response } = await requireUser();
+  const requestedPlanId = new URL(request.url).searchParams.get('planId') ?? undefined;
+  const { user, response } = await requirePlanActor(request, requestedPlanId);
   if (!user) return response;
 
   const params = new URL(request.url).searchParams;

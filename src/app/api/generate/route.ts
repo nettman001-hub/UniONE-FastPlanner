@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/auth/server';
+import { requirePlanActor } from '@/lib/auth/plan-actor';
 import { precondition, runPipeline } from '@/lib/jobs/queue';
 import { activeSkills } from '@/lib/db/skills';
 import { userEngines } from '@/lib/db/user-settings';
@@ -40,10 +40,6 @@ interface GenerateBody {
 export async function POST(request: Request) {
   // 기능명세서의 시간 예산을 라우트 제한(300초)에 맞춰 재는 기준.
   const startedAt = Date.now();
-  // 이 요청은 주인의 AI API 키를 쓴다. 로그인한 사람만 부를 수 있어야 한다.
-  const { user, response } = await requireUser();
-  if (!user) return response;
-
   let body: GenerateBody;
   try {
     body = (await request.json()) as GenerateBody;
@@ -60,6 +56,8 @@ export async function POST(request: Request) {
   if (!plan?.id) {
     return NextResponse.json({ error: '플랜 정보가 없습니다.' }, { status: 400 });
   }
+  const { user, response } = await requirePlanActor(request, plan.id);
+  if (!user) return response;
 
   // 첫 단계는 지금 바로 판단할 수 있다. 뒤 단계는 앞 결과에 달렸으므로 흐름 안에서 본다.
   const blocked = precondition(plan, artifacts[0]);
