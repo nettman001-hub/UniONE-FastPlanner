@@ -63,6 +63,8 @@ const CREDIT_POLICY_VERSION = 3;
 export interface PlannerState {
   plans: Plan[];
   hydrated: boolean;
+  /** 비동기 저장소 읽기가 끝났음을 구독자에게 알린다. */
+  markHydrated: () => void;
 
   /**
    * 지금 브라우저에 있는 플랜이 **누구 것인가**.
@@ -246,6 +248,7 @@ export const usePlannerStore = create<PlannerState>()(
       return {
         plans: [],
         hydrated: false,
+        markHydrated: () => set({ hydrated: true }),
         activeRun: null,
         interrupted: null,
         owner: null,
@@ -656,7 +659,8 @@ export const usePlannerStore = create<PlannerState>()(
       },
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        state.hydrated = true;
+        // 직접 대입하면 hydrated만 구독하는 경계·동기화 컴포넌트가 변경을 받지 못한다.
+        state.markHydrated();
       },
     },
   ),

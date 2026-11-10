@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { indexedDB, IDBKeyRange, IDBObjectStore } from 'fake-indexeddb';
 import type { Plan, PlanVersion } from '../../src/lib/types';
+import { compactPlan } from '../../src/lib/plan-transport';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -378,4 +379,30 @@ test('the actual Zustand store keeps all legacy versions when adding a new snaps
   assert.equal(writes.workspaces ?? 0, 0);
   assert.equal(writes.plans ?? 0, 0);
   assert.equal(writes.versions ?? 0, 0);
+});
+
+test('asynchronous Zustand hydration notifies hydrated-only subscribers when it becomes ready', async () => {
+  const { usePlannerStore } = await import('../../src/lib/store');
+  await storage.flushPlannerStorage();
+  const before = usePlannerStore.getState().plans.map(compactPlan);
+  usePlannerStore.setState({ hydrated: false });
+  let observed = false;
+  const transitions: boolean[] = [];
+  // useSyncExternalStore의 스칼라 선택자처럼 실제 알림에서 읽은 값만 반영한다.
+  const unsubscribe = usePlannerStore.subscribe((state) => {
+    if (state.hydrated !== observed) {
+      observed = state.hydrated;
+      transitions.push(observed);
+    }
+  });
+  try {
+    await usePlannerStore.persist.rehydrate();
+    assert.equal(usePlannerStore.getState().hydrated, true);
+    assert.equal(observed, true, '인증 응답이나 다른 편집 없이도 대기 중인 구독자가 깨어나야 한다.');
+    assert.deepEqual(transitions, [true]);
+    assert.deepEqual(usePlannerStore.getState().plans.map(compactPlan), before, '준비 알림이 문서·버전 목록을 바꾸지 않는다.');
+  } finally {
+    unsubscribe();
+  }
+  assert.equal(await storage.flushPlannerStorage(), true);
 });
