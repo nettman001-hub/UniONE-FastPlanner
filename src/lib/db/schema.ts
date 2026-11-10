@@ -30,6 +30,22 @@ create table if not exists plans (
 
 create index if not exists plans_user_updated_idx on plans (user_id, updated_at desc);
 
+-- 현재 문서와 버전 스냅샷을 분리한다. 기존 본문은 해당 플랜을 읽거나 쓸 때
+-- 트랜잭션 안에서 이관하므로 시작할 때 모든 사용자의 대형 문서를 다시 쓰지 않는다.
+create table if not exists plan_versions (
+  user_id    text not null,
+  plan_id    text not null,
+  id         text not null,
+  data       jsonb not null,
+  created_at text not null default '',
+  -- 명시적으로 지운 버전을 오래된 클라이언트의 전체 저장이 되살리지 않게 한다.
+  deleted_at timestamptz,
+  primary key (user_id, plan_id, id),
+  foreign key (user_id, plan_id) references plans(user_id, id) on delete cascade
+);
+create index if not exists plan_versions_owner_plan_time_idx
+  on plan_versions (user_id, plan_id, created_at desc);
+
 -- 계정마다 고른 것들. 지금은 만들기 엔진 하나뿐이다.
 --
 -- 칸을 하나씩 늘리지 않고 jsonb 한 칸에 담는다. 앞으로 들어올 것들(알림, 테마)이

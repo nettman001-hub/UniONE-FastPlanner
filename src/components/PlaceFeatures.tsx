@@ -16,6 +16,7 @@ import { AlertTriangle, Check, PlusCircle, Sparkles, Wand2 } from 'lucide-react'
 
 import { usePlannerStore } from '@/lib/store';
 import { workspaceFetch as fetch } from '@/lib/admin-workspace';
+import { planForAi } from '@/lib/plan-transport';
 import { refreshCredits, useCredits } from '@/lib/useCredits';
 import {
   applyPlacements,
@@ -69,7 +70,7 @@ export function PlaceFeaturesModal({
       const res = await fetch('/api/place', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan: planForAi(plan) }),
       });
       const data = (await res.json()) as {
         placements?: Placement[];

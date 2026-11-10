@@ -17,6 +17,8 @@ import { useAuth } from '@/lib/auth/client';
 import { download } from '@/lib/export';
 import { parsePlanFile, toBackup } from '@/lib/plan-file';
 import { usePlannerStore } from '@/lib/store';
+import { planWithHistory } from '@/lib/plan-history';
+import { exportPlannerRecovery } from '@/lib/planner-storage';
 
 /** 이 브라우저에만 남는 것들. 계정이 아니라 이 컴퓨터에 묶인 기록이다. */
 const LOCAL_KEYS = [
@@ -29,18 +31,26 @@ export default function DataSettings() {
   const { user, database } = useAuth();
   const { state, error } = useSyncStatus();
   const plans = usePlannerStore((s) => s.plans);
+  const owner = usePlannerStore((s) => s.owner);
   const importPlan = usePlannerStore((s) => s.importPlan);
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
-  const backup = () => {
+  const backup = async () => {
     if (plans.length === 0) {
       toast('내려받을 플랜이 없습니다.', 'warn');
       return;
     }
-    const stamp = new Date().toISOString().slice(0, 10);
-    download(`unione-backup-${stamp}.json`, toBackup(plans), 'application/json;charset=utf-8');
-    toast(`플랜 ${plans.length}개를 파일로 받았습니다.`, 'ok');
+    setBusy(true);
+    try {
+      const complete = [];
+      for (const plan of plans) complete.push(await planWithHistory(plan));
+      const stamp = new Date().toISOString().slice(0, 10);
+      download(`unione-backup-${stamp}.json`, toBackup(complete), 'application/json;charset=utf-8');
+      toast(`플랜 ${plans.length}개를 파일로 받았습니다.`, 'ok');
+    } catch {
+      toast('버전 기록을 모두 불러오지 못했습니다. 연결을 확인하고 다시 백업해 주세요.', 'danger');
+    } finally { setBusy(false); }
   };
 
   const restore = async (files: FileList | null) => {
@@ -90,7 +100,7 @@ export default function DataSettings() {
         description="플랜 전부를 파일 하나로 내려받아 둡니다. 계정을 지우기 전이나 다른 곳으로 옮길 때 쓰세요."
       >
         <div className="flex flex-wrap items-center gap-1.5">
-          <button className="btn btn-primary btn-sm" onClick={backup}>
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void backup()}>
             <Download size={13} />
             전체 백업 받기 ({plans.length}개)
           </button>
@@ -102,6 +112,13 @@ export default function DataSettings() {
             {busy ? <Spinner size={13} /> : <Upload size={13} />}
             백업 가져오기
           </button>
+          <button className="btn btn-sm" disabled={busy} onClick={async () => {
+            setBusy(true);
+            try {
+              download('uniboard-recovery.json', JSON.stringify(await exportPlannerRecovery(owner), null, 2), 'application/json;charset=utf-8');
+            } catch { toast('로컬 복구본을 불러오지 못했습니다.', 'danger'); }
+            finally { setBusy(false); }
+          }}>로컬 복구본 받기</button>
           <input
             ref={fileRef}
             type="file"

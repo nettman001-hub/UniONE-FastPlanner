@@ -6,6 +6,7 @@ import { BRAND_NAME } from '@/lib/brand';
 import { PlanSync } from '@/components/Account';
 import { WorkingBadge } from '@/components/WorkingBadge';
 import { AdminWorkspaceBoundary } from '@/components/AdminWorkspace';
+import { PlannerStorageNotice } from '@/components/PlannerStorageNotice';
 
 // 로고 파일이 있을 때만 파비콘으로 쓴다. 없는 경로를 걸면 매 페이지마다 400 이 난다.
 const hasLogo = process.env.NEXT_PUBLIC_HAS_LOGO === '1';
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <AdminWorkspaceBoundary>
               {/* 그리는 것은 없다. 로그인 상태에 맞춰 플랜을 서버와 맞춘다. */}
               <PlanSync />
+              <PlannerStorageNotice />
               {children}
               {/* 어느 화면에 있든 돌고 있는 일을 알린다. 나갔다고 멈추는 것이 아니다. */}
               <WorkingBadge />

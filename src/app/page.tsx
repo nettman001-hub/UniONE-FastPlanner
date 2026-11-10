@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 
 import { usePlannerStore } from '@/lib/store';
+import { planWithHistory } from '@/lib/plan-history';
 import { useCredits } from '@/lib/useCredits';
 import { hasArtifact } from '@/lib/artifact-status';
 import { useAiMode } from '@/lib/useGenerate';
@@ -39,7 +40,7 @@ import {
   type Platform,
 } from '@/lib/types';
 import { download, slugify, toJson } from '@/lib/export';
-import { asPlatform, parsePlan } from '@/lib/plan-file';
+import { asPlatform, parsePlanFile } from '@/lib/plan-file';
 import { ClientOnly, EmptyState, Field, Modal, Spinner, useConfirm, useToast } from '@/components/ui';
 import { GuestImportBanner, RequireAuth, SyncBadge, UserMenu } from '@/components/Account';
 import { HeaderAiStatus } from '@/components/HeaderAiStatus';
@@ -1729,13 +1730,13 @@ function Home() {
     }
     let ok = 0;
     for (const file of list) {
-      const parsed = parsePlan(await file.text());
-      if (!parsed) {
+      const parsed = parsePlanFile(await file.text());
+      if (parsed.length === 0) {
         toast(`${file.name} 은(는) ${BRAND_SHORT} 플랜 형식이 아닙니다.`, 'danger');
         continue;
       }
-      importPlan(parsed);
-      ok += 1;
+      for (const plan of parsed) importPlan(plan);
+      ok += parsed.length;
     }
     if (ok > 0) toast(`플랜 ${ok}개를 가져왔습니다.`, 'ok');
   };
@@ -1751,18 +1752,28 @@ function Home() {
     e.target.value = '';
   };
 
-  const handleDuplicate = (plan: Plan) => {
-    importPlan({ ...plan, brief: { ...plan.brief, title: `${plan.brief.title} 복사본` } });
-    toast('플랜을 복제했습니다.', 'ok');
+  const handleDuplicate = async (plan: Plan) => {
+    try {
+      const complete = await planWithHistory(plan);
+      importPlan({ ...complete, brief: { ...complete.brief, title: `${plan.brief.title} 복사본` } });
+      toast('플랜을 복제했습니다.', 'ok');
+    } catch {
+      toast('버전 기록을 불러오지 못해 복제하지 않았습니다. 연결을 확인해 주세요.', 'danger');
+    }
   };
 
-  const handleExport = (plan: Plan) => {
-    download(
+  const handleExport = async (plan: Plan) => {
+    try {
+      const complete = await planWithHistory(plan);
+      download(
       `${slugify(plan.brief.title)}.uniboard.json`,
-      toJson(plan),
+      toJson(complete),
       'application/json;charset=utf-8',
-    );
-    toast('JSON 파일을 내려받았습니다.', 'ok');
+      );
+      toast('JSON 파일을 내려받았습니다.', 'ok');
+    } catch {
+      toast('버전 기록을 불러오지 못해 백업을 만들지 않았습니다. 연결을 확인해 주세요.', 'danger');
+    }
   };
 
   const handleDelete = async (plan: Plan) => {

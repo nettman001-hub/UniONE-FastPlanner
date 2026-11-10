@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requirePlanActor } from '@/lib/auth/plan-actor';
-import { deletePlan, getPlan, savePlan } from '@/lib/db/plans';
+import { deletePlan, getPlan, savePlan, VersionSnapshotConflictError } from '@/lib/db/plans';
 import { serverErrorMessage } from '@/lib/api-error';
 import type { Plan } from '@/lib/types';
 
@@ -54,6 +54,7 @@ export async function PUT(request: Request, { params }: Context) {
   try {
     return NextResponse.json({ applied: await savePlan(user.id, plan) });
   } catch (error) {
+    if (error instanceof VersionSnapshotConflictError) return NextResponse.json({ error: error.message }, { status: 409 });
     return NextResponse.json({ error: describe(error) }, { status: 500 });
   }
 }

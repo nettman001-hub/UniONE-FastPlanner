@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
+import { indexedDB, IDBKeyRange } from 'fake-indexeddb';
 import type { Plan } from '../../src/lib/types';
 
 let planner: typeof import('../../src/lib/store');
@@ -11,6 +12,8 @@ let workspace: typeof import('../../src/lib/admin-workspace');
 const originalFetch = globalThis.fetch;
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+const originalIndexedDb = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+const originalKeyRange = Object.getOwnPropertyDescriptor(globalThis, 'IDBKeyRange');
 const requests: Array<{ url: string; headers: Headers; init?: RequestInit }> = [];
 let chatReply: Record<string, unknown>;
 let generationReply = '';
@@ -28,6 +31,8 @@ function memoryStorage(): Storage {
 }
 
 before(async () => {
+  Object.defineProperty(globalThis, 'indexedDB', { value: indexedDB, configurable: true });
+  Object.defineProperty(globalThis, 'IDBKeyRange', { value: IDBKeyRange, configurable: true });
   const storage = memoryStorage();
   const browser = {
     location: new URL('https://planner.test/plans/plan-selected?adminUserId=owner-target&adminActorId=admin-actor'),
@@ -42,6 +47,7 @@ before(async () => {
   generation = await import('../../src/lib/jobs/runner');
   credits = await import('../../src/lib/useCredits');
   engines = await import('../../src/lib/useEngine');
+  await planner.usePlannerStore.persist.rehydrate();
 });
 
 beforeEach(() => {
@@ -61,12 +67,17 @@ beforeEach(() => {
 });
 
 after(async () => {
+  await (await import('../../src/lib/planner-storage')).flushPlannerStorage();
   await credits.refreshCredits();
   globalThis.fetch = originalFetch;
   if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
   else Reflect.deleteProperty(globalThis, 'window');
   if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
   else Reflect.deleteProperty(globalThis, 'localStorage');
+  if (originalIndexedDb) Object.defineProperty(globalThis, 'indexedDB', originalIndexedDb);
+  else Reflect.deleteProperty(globalThis, 'indexedDB');
+  if (originalKeyRange) Object.defineProperty(globalThis, 'IDBKeyRange', originalKeyRange);
+  else Reflect.deleteProperty(globalThis, 'IDBKeyRange');
 });
 
 function fixture(): Plan {

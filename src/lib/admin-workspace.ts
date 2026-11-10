@@ -113,7 +113,8 @@ export function workspaceFetch(input: string, init?: RequestInit): Promise<Respo
   if (!scope && closedSupportContext) return Promise.reject(new Error('사용자 플랜 지원 작업이 종료되었습니다. 플랜을 다시 열어 주세요.'));
   if (!scope) return fetch(input, init);
   const selectedPlanPath = `/api/plans/${encodeURIComponent(scope.planId)}`;
-  if (planApi && url.pathname !== selectedPlanPath) return Promise.reject(new Error('지원 작업에서는 선택한 사용자 플랜만 요청할 수 있습니다.'));
+  const selectedPath = url.pathname === selectedPlanPath || url.pathname === `${selectedPlanPath}/versions` || url.pathname.startsWith(`${selectedPlanPath}/versions/`);
+  if (planApi && !selectedPath) return Promise.reject(new Error('지원 작업에서는 선택한 사용자 플랜만 요청할 수 있습니다.'));
   const headers = new Headers(init?.headers);
   headers.set('x-admin-user-id', scope.userId);
   headers.set('x-admin-plan-id', scope.planId);

@@ -41,6 +41,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { FixWithAi } from '@/components/FixWithAi';
+import { loadPlanVersion, deleteRemotePlanVersion } from '@/lib/plan-history';
 import { DismissNoteButton } from '@/components/IssueBar';
 import { PlanSkills } from '@/components/PlanSkills';
 import { EngineToggle } from '@/components/EngineToggle';
@@ -162,7 +163,6 @@ function PlanOverview() {
   const plan = usePlannerStore((s) => s.plans.find((p) => p.id === planId));
   const renamePlan = usePlannerStore((s) => s.renamePlan);
   const saveVersion = usePlannerStore((s) => s.saveVersion);
-  const restoreVersion = usePlannerStore((s) => s.restoreVersion);
   const removeVersion = usePlannerStore((s) => s.removeVersion);
   const addComment = usePlannerStore((s) => s.addComment);
   const toggleComment = usePlannerStore((s) => s.toggleComment);
@@ -274,8 +274,15 @@ function PlanOverview() {
       danger: true,
     });
     if (!ok) return;
-    restoreVersion(planId, versionId);
-    toast('선택한 버전으로 복원했습니다.', 'ok');
+    try {
+      const version = await loadPlanVersion(planId, versionId);
+      if (!version.snapshot) throw new Error('버전 본문을 불러오지 못했습니다.');
+      saveVersion(planId, '버전 복원 전');
+      usePlannerStore.getState().applyDocuments(planId, version.snapshot);
+      toast('선택한 버전으로 복원했습니다.', 'ok');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : '버전을 복원하지 못했습니다.', 'danger');
+    }
   };
 
   const handleRemoveVersion = async (versionId: string, label: string) => {
@@ -286,7 +293,12 @@ function PlanOverview() {
       danger: true,
     });
     if (!ok) return;
-    removeVersion(planId, versionId);
+    try {
+      await deleteRemotePlanVersion(planId, versionId);
+      removeVersion(planId, versionId);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : '버전을 삭제하지 못했습니다.', 'danger');
+    }
   };
 
   const handleAddComment = () => {
@@ -653,9 +665,8 @@ function PlanOverview() {
                   <div className="min-w-0">
                     <p className="truncate text-[13px] font-bold">{version.label}</p>
                     <p className="mt-0.5 text-[11.5px] text-[var(--fg-subtle)]">
-                      {formatDateTime(version.createdAt)} · 요구사항{' '}
-                      {version.snapshot.requirements.length} · 화면{' '}
-                      {version.snapshot.iaPages.length}
+                      {formatDateTime(version.createdAt)}
+                      {version.snapshot ? ` · 요구사항 ${version.snapshot.requirements.length} · 화면 ${version.snapshot.iaPages.length}` : ' · 복원할 때 본문을 불러옵니다'}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">

@@ -52,6 +52,7 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
     if (result === 'no-credits') toast('크레딧이 부족합니다. 내일 다시 충전됩니다.', 'warn');
     if (result === 'busy') toast('앞선 요청이 끝난 뒤에 보낼 수 있습니다.', 'warn');
     if (result === 'already-resolved') toast('이미 해소되었거나 확인한 지적입니다.', 'warn');
+    if (result === 'failed') toast('AI 요청을 마치지 못했습니다. 안내를 확인하고 다시 시도해 주세요.', 'warn');
   };
 
   const send = async (text: string) => {
@@ -168,7 +169,7 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
                 <button
                   className="btn btn-ghost btn-sm ml-auto"
                   onClick={() => cancelAgent(plan.id)}
-                  title="답변을 기다리지 않고 멈춥니다. 크레딧은 차감되지 않습니다."
+                  title="응답 대기를 멈춥니다. 이미 처리된 크레딧은 사용 내역에서 확인할 수 있습니다."
                 >
                   <Square size={11} />
                   멈추기
@@ -182,7 +183,7 @@ export function AgentPanel({ plan, onClose }: { plan: Plan; onClose: () => void 
             {stranded && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-2">
                 <p className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-[var(--fg-muted)]">
-                  이 질문은 아직 답을 받지 못했습니다. 크레딧은 차감되지 않았습니다.
+                  이 질문은 정상적으로 끝나지 않았습니다. 크레딧 사용 내역을 확인한 뒤 다시 보낼 수 있습니다.
                 </p>
                 <button className="btn btn-sm" onClick={() => void resend()} disabled={outOfCredits}>
                   <RotateCw size={12} />

@@ -24,6 +24,7 @@
 
 import type { Plan } from '@/lib/types';
 import { workspaceFetch as fetch, workspaceStorageKey } from '@/lib/admin-workspace';
+import { planForAi } from '@/lib/plan-transport';
 import { recordCompletedTask } from '@/lib/tasks';
 
 export type ScreenState =
@@ -414,7 +415,7 @@ export async function start(planId: string, options: RunOptions): Promise<void> 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            plan,
+            plan: planForAi(plan),
             pageId,
             projectId,
             first: index === 0,

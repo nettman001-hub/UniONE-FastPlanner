@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
+import { indexedDB, IDBKeyRange } from 'fake-indexeddb';
 import type { Plan, ReviewNote } from '../../src/lib/types';
 
 let planner: typeof import('../../src/lib/store');
@@ -7,11 +8,15 @@ let runner: typeof import('../../src/lib/agent/runner');
 let credits: typeof import('../../src/lib/useCredits');
 const originalFetch = globalThis.fetch;
 const originalStorage = globalThis.localStorage;
+const originalIndexedDb = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+const originalKeyRange = Object.getOwnPropertyDescriptor(globalThis, 'IDBKeyRange');
 const storageValues = new Map<string, string>();
 const chatRequests: Record<string, unknown>[] = [];
 let reply: (body: Record<string, unknown>) => Promise<Response>;
 
 before(async () => {
+  Object.defineProperty(globalThis, 'indexedDB', { value: indexedDB, configurable: true });
+  Object.defineProperty(globalThis, 'IDBKeyRange', { value: IDBKeyRange, configurable: true });
   globalThis.localStorage = {
     get length() { return storageValues.size; },
     clear: () => storageValues.clear(),
@@ -23,6 +28,7 @@ before(async () => {
   planner = await import('../../src/lib/store');
   runner = await import('../../src/lib/agent/runner');
   credits = await import('../../src/lib/useCredits');
+  await planner.usePlannerStore.persist.rehydrate();
 });
 
 beforeEach(() => {
@@ -39,10 +45,15 @@ beforeEach(() => {
 });
 
 after(async () => {
+  await (await import('../../src/lib/planner-storage')).flushPlannerStorage();
   await credits.refreshCredits();
   globalThis.fetch = originalFetch;
   if (originalStorage) globalThis.localStorage = originalStorage;
   else Reflect.deleteProperty(globalThis, 'localStorage');
+  if (originalIndexedDb) Object.defineProperty(globalThis, 'indexedDB', originalIndexedDb);
+  else Reflect.deleteProperty(globalThis, 'indexedDB');
+  if (originalKeyRange) Object.defineProperty(globalThis, 'IDBKeyRange', originalKeyRange);
+  else Reflect.deleteProperty(globalThis, 'IDBKeyRange');
 });
 
 function note(id: string, text = '활성 장비만 재노출하는지 확인'): ReviewNote {

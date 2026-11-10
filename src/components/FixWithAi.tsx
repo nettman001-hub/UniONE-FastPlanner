@@ -72,13 +72,16 @@ export function FixWithAi({
       return;
     }
     // 먼저 연다. 보내 놓고 아무 일도 안 일어나는 것처럼 보이면 안 된다.
-    setAgentOpen(true);
     setSending(true);
     try {
+      setAgentOpen(true);
       const result = await askAgent(planId, prompt, { reviewNoteIds, recheckOnly });
       if (result === 'busy') toast('앞선 요청이 끝난 뒤에 보낼 수 있습니다.', 'warn');
       if (result === 'no-credits') toast('크레딧이 부족합니다. 내일 다시 충전됩니다.', 'warn');
       if (result === 'already-resolved') toast('이미 해소되었거나 확인한 지적입니다.', 'warn');
+      if (result === 'failed') toast('AI 요청을 마치지 못했습니다. 에이전트 안내를 확인해 주세요.', 'warn');
+    } catch {
+      toast('AI 요청을 준비하지 못했습니다. 현재 문서를 보관하고 다시 시도해 주세요.', 'warn');
     } finally {
       setSending(false);
     }

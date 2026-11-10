@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { nextId, uid } from './ids';
 import { normalizeUinAiScreens } from './design/uinai';
 import { workspaceStorageKey } from './admin-workspace';
+import { createPlannerStorage } from './planner-storage';
 import type { ActiveRun, InterruptedRun } from './jobs/progress';
 import {
   approveIn,
@@ -611,14 +612,12 @@ export const usePlannerStore = create<PlannerState>()(
               createdAt: now(),
               snapshot: structuredClone(pickDocuments(plan)),
             });
-            // 저장 용량을 감안해 최근 20개만 유지한다.
-            plan.versions = plan.versions.slice(0, 20);
           }),
 
         restoreVersion: (planId, versionId) =>
           mutate(planId, (plan) => {
             const version = plan.versions.find((v) => v.id === versionId);
-            if (!version) return;
+            if (!version?.snapshot) return;
             Object.assign(plan, structuredClone(version.snapshot));
             // 복원된 IA가 같은 PG ID를 다른 화면에 쓸 수 있어 결과도 함께 비운다.
             plan.uinAiScreens = [];
@@ -632,11 +631,7 @@ export const usePlannerStore = create<PlannerState>()(
     },
     {
       name: STORAGE_KEY,
-      storage: createJSONStorage(() => ({
-        getItem: () => localStorage.getItem(WORKSPACE_STORAGE_KEY),
-        setItem: (_name, value) => localStorage.setItem(WORKSPACE_STORAGE_KEY, value),
-        removeItem: () => localStorage.removeItem(WORKSPACE_STORAGE_KEY),
-      })),
+      storage: createJSONStorage(() => createPlannerStorage(WORKSPACE_STORAGE_KEY)),
       version: CREDIT_POLICY_VERSION,
       partialize: (state) => ({
         plans: state.plans,

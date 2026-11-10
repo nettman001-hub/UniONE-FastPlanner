@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { signSession } from '../../src/lib/auth/session';
 import { SCHEMA_SQL } from '../../src/lib/db/schema';
-import { emptyDocuments, type Plan } from '../../src/lib/types';
+import { emptyDocuments, type Plan, type PlanVersion } from '../../src/lib/types';
 
 const ADMIN = { id: 'qa-admin', email: 'admin@qa.invalid', name: 'QA 관리자' };
 const TARGET = { id: 'qa-target', email: 'target@qa.invalid', name: 'QA 사용자' };
@@ -81,6 +81,11 @@ async function run() {
       await seed.query('insert into users (id,email,name) values ($1,$2,$3)', [user.id, user.email, user.name]);
     }
     const targetPlan = fixture('사용자 원본');
+    targetPlan.versions = Array.from({ length: 12 }, (_, index) => ({
+      id: `legacy-large-${index}`, label: `기존 큰 버전 ${index}`, createdAt: targetPlan.createdAt,
+      snapshot: { ...emptyDocuments(), prd: { ...emptyDocuments().prd, overview: `legacy-${index}:` + 'L'.repeat(512 * 1024) }, futureOptional: { preserved: true } },
+    }));
+    assert.ok(Buffer.byteLength(JSON.stringify(targetPlan)) > 5 * 1024 * 1024, '이관 전 실제 플랜 본문이 5MiB보다 커야 합니다.');
     const adminPlan = fixture('관리자 별도 원본');
     for (const [user, plan] of [[ADMIN, adminPlan], [TARGET, targetPlan]] as const) {
       await seed.query('insert into plans (id,user_id,title,data,updated_at) values ($1,$2,$3,$4,$5)',
@@ -153,6 +158,9 @@ async function run() {
       assert.equal(opened.status, 200);
       assert.equal(opened.body.plan.brief.title, '사용자 원본');
       assert.deepEqual(opened.body.owner, TARGET);
+      assert.equal(opened.body.plan.versions.length, 12);
+      assert.ok(opened.body.plan.versions.every((version: PlanVersion) => !Object.hasOwn(version, 'snapshot')));
+      assert.ok(Buffer.byteLength(JSON.stringify(opened.body)) < 512 * 1024, '6MiB 이상의 내장 이력을 작은 현재 플랜 응답으로 분리한다.');
     });
     const changed = structuredClone(opened.body.plan) as Plan;
     changed.brief.title = '관리자가 사용자 원본을 수정함';
@@ -220,8 +228,60 @@ async function run() {
       assert.ok(localChat.body.reply.includes(changed.brief.title));
     });
 
+    const history = await call(`${endpoint}/versions`, scoped);
+    const legacyDetail = await call(`${endpoint}/versions/legacy-large-0`, scoped);
+    check('기존 6MiB 내장 이력은 목록·개별 스냅샷으로 나눠 원형 보존한다', () => {
+      assert.equal(history.status, 200);
+      assert.equal(history.body.versions.length, 12);
+      assert.ok(history.body.versions.every((version: PlanVersion) => !Object.hasOwn(version, 'snapshot')));
+      assert.equal(legacyDetail.status, 200);
+      assert.deepEqual(legacyDetail.body.version.snapshot, targetPlan.versions[0].snapshot);
+    });
+    const uploaded: PlanVersion = { id: 'new-api-version', label: '개별 업로드', createdAt: new Date().toISOString(), snapshot: { ...emptyDocuments(), prd: { ...emptyDocuments().prd, overview: '개별 원본' } } };
+    const versionPosted = await call(`${endpoint}/versions`, { ...scoped, method: 'POST', body: { version: uploaded } });
+    const versionRetried = await call(`${endpoint}/versions/${uploaded.id}`, { ...scoped, method: 'PUT', body: { version: uploaded } });
+    const afterVersion = await call(`${endpoint}/versions`, { actor: TARGET });
+    const wrongOwnerVersion = await call(`${endpoint}/versions/${uploaded.id}`, { actor: ADMIN });
+    check('개별 버전 업로드 재시도는 한 원본만 만들고 소유자를 분리한다', () => {
+      assert.equal(versionPosted.status, 200);
+      assert.equal(versionRetried.status, 200);
+      assert.equal(afterVersion.body.versions.length, 13);
+      assert.equal(afterVersion.body.versions.filter((version: PlanVersion) => version.id === uploaded.id).length, 1);
+      assert.equal(wrongOwnerVersion.status, 404);
+    });
+    const conflicting = { ...uploaded, snapshot: { ...emptyDocuments(), prd: { ...emptyDocuments().prd, overview: '다른 본문' } } };
+    const conflictingResult = await call(`${endpoint}/versions/${uploaded.id}`, { ...scoped, method: 'PUT', body: { version: conflicting } });
+    const explicitDelete = await call(`${endpoint}/versions/${uploaded.id}`, { ...scoped, method: 'DELETE' });
+    const deletedDetail = await call(`${endpoint}/versions/${uploaded.id}`, { actor: TARGET });
+    const resurrect = await call(`${endpoint}/versions/${uploaded.id}`, { ...scoped, method: 'PUT', body: { version: uploaded } });
+    check('다른 스냅샷 덮어쓰기와 명시적 삭제 후 재업로드를 거절한다', () => {
+      assert.equal(conflictingResult.status, 409);
+      assert.equal(explicitDelete.status, 200);
+      assert.equal(explicitDelete.body.deleted, true);
+      assert.equal(deletedDetail.status, 404);
+      assert.equal(resurrect.status, 404);
+    });
+    const missingDelete = await call(`${endpoint}/versions/not-uploaded-yet`, { ...scoped, method: 'DELETE' });
+    const missingLateUpload = await call(`${endpoint}/versions`, { ...scoped, method: 'POST', body: { version: { ...uploaded, id: 'not-uploaded-yet' } } });
+    check('미전송 버전의 삭제가 늦게 도착한 업로드보다 우선한다', () => {
+      assert.equal(missingDelete.status, 200);
+      assert.equal(missingDelete.body.deleted, true);
+      assert.equal(missingLateUpload.status, 404);
+    });
+    const page = await call('/api/plans?pageSize=1', { actor: TARGET });
+    check('초기 플랜 동기화는 현재 문서를 한 플랜씩 읽고 이력 본문을 제외한다', () => {
+      assert.equal(page.status, 200);
+      assert.equal(page.body.plans.length, 1);
+      assert.equal(page.body.nextCursor, null);
+      assert.ok(page.body.plans[0].versions.every((version: PlanVersion) => !Object.hasOwn(version, 'snapshot')));
+      assert.ok(Buffer.byteLength(JSON.stringify(page.body)) < 512 * 1024);
+    });
+
     const rejectedRoutes: Array<[string, string, unknown?]> = [
       [endpoint, 'PUT', { plan: changed }], [endpoint, 'DELETE'],
+      [`${endpoint}/versions`, 'GET'], [`${endpoint}/versions`, 'POST', { version: uploaded }],
+      [`${endpoint}/versions/legacy-large-0`, 'GET'], [`${endpoint}/versions/legacy-large-0`, 'PUT', { version: { ...uploaded, id: 'legacy-large-0' } }],
+      [`${endpoint}/versions/legacy-large-0`, 'DELETE'],
       ['/api/credits', 'GET'], ['/api/settings', 'GET'], ['/api/settings', 'PATCH', { agentEngine: 'basic' }],
       [`/api/skills?planId=${PLAN_ID}`, 'GET'], ['/api/skills', 'PUT', { planId: PLAN_ID, artifact: 'fs', body: '위조' }],
       [`/api/skills?planId=${PLAN_ID}&artifact=fs`, 'DELETE'],

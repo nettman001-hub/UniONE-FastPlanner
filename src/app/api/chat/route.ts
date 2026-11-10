@@ -17,6 +17,20 @@ import { ARTIFACT_LABEL, type ArtifactKey, type Plan } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
+const CHAT_HANDLER_TIMEOUT_MS = 280_000;
+
+/** Bound database/auth waits as well as model calls, even if a dependency ignores cancellation. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+    signal.addEventListener('abort', abort, { once: true });
+    work.then(
+      (value) => { signal.removeEventListener('abort', abort); resolve(value); },
+      (error) => { signal.removeEventListener('abort', abort); reject(error); },
+    );
+    if (signal.aborted) abort();
+  });
+}
 
 interface ChatBody {
   plan: Plan;
@@ -60,19 +74,37 @@ function offlineReply(plan: Plan): { reply: string; changes: string[] } {
 }
 
 export async function POST(request: Request) {
+  const deadline = Date.now() + CHAT_HANDLER_TIMEOUT_MS;
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(CHAT_HANDLER_TIMEOUT_MS)]);
+  try {
+    return await untilAborted(handleChat(request, signal, deadline), signal);
+  } catch (error) {
+    const timedOut = signal.aborted && !request.signal.aborted;
+    return NextResponse.json({
+      error: timedOut
+        ? '응답 제한 시간을 초과했습니다. 크레딧 사용 내역을 확인한 뒤 다시 시도해 주세요.'
+        : request.signal.aborted
+          ? '요청 대기가 취소되었습니다. 이미 처리된 크레딧은 사용 내역에서 확인할 수 있습니다.'
+          : aiErrorMessage(error),
+    }, { status: timedOut ? 504 : request.signal.aborted ? 408 : 500 });
+  }
+}
+
+async function handleChat(request: Request, signal: AbortSignal, deadline: number) {
   let body: ChatBody;
   try {
-    body = (await request.json()) as ChatBody;
+    body = (await untilAborted(request.json(), signal)) as ChatBody;
   } catch {
+    signal.throwIfAborted();
     return NextResponse.json({ error: '요청 본문을 읽지 못했습니다.' }, { status: 400 });
   }
 
-  const { plan, message } = body;
-  if (!plan?.id || !message?.trim()) {
+  const { plan, message } = body ?? {};
+  if (!plan?.id || typeof message !== 'string' || !message.trim()) {
     return NextResponse.json({ error: '메시지를 입력해 주세요.' }, { status: 400 });
   }
 
-  const { user, response } = await requirePlanActor(request, plan.id);
+  const { user, response } = await untilAborted(requirePlanActor(request, plan.id), signal);
   if (!user) return response;
 
   const reviewNoteIds = Array.isArray(body.reviewNoteIds)
@@ -87,8 +119,9 @@ export async function POST(request: Request) {
   }
 
   // 설정·키·등급은 여기서 한 번만 읽는다. 아래에서 그대로 돌려 쓴다.
-  const runtime = await readAiRuntime();
-  const engine = await userAgentEngine(user.id);
+  const [runtime, engine] = await untilAborted(Promise.all([
+    readAiRuntime(), userAgentEngine(user.id),
+  ]), signal);
   const cost = costWithEngine(CHAT_CREDIT_COST, engine);
 
   if (!isAiEnabled(runtime.config, runtime.apiKey)) {
@@ -100,7 +133,7 @@ export async function POST(request: Request) {
    *
    * 예전에는 브라우저만 셌다. 브라우저가 안 깎으면 그만이라 사실상 무제한이었다.
    */
-  if (!(await canAfford(user.id, cost))) {
+  if (!(await untilAborted(canAfford(user.id, cost), signal))) {
     return NextResponse.json(
       { error: '크레딧이 부족합니다. 내일 다시 충전됩니다.' },
       { status: 402 },
@@ -108,9 +141,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const deadline = Date.now() + 280_000;
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(280_000)]);
-    const result = body.recheckOnly ? undefined : await generateJson<AgentResult>({
+    const result = body.recheckOnly ? undefined : await untilAborted(generateJson<AgentResult>({
       prompt: buildChatPrompt(plan, message),
       schema: CHAT_SCHEMA,
       /*
@@ -122,27 +153,33 @@ export async function POST(request: Request) {
       config: runtime.config,
       apiKey: runtime.apiKey,
       signal,
-    });
+    }), signal);
     const completed = await finalizeAgentResponse(plan, result, {
       reviewNoteIds,
-      verify: (prompt, schema) => generateJson({
-        system: '당신은 기획 문서의 정합성을 재검증하는 검토자입니다. 문서를 수정하거나 새 기능을 제안하지 않고 지정된 지적만 판정합니다.',
-        prompt,
-        schema,
-        maxTokens: 4096,
-        effort: 'high',
-        engine,
-        config: runtime.config,
-        apiKey: runtime.apiKey,
-        signal: AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, Math.min(60_000, deadline - Date.now())))]),
-        retryFormat: false,
-      }),
+      verify: (prompt, schema) => {
+        // Keep a response/billing margin so a review timeout preserves the completed edit.
+        const verifySignal = AbortSignal.any([
+          signal, AbortSignal.timeout(Math.max(1, Math.min(60_000, deadline - Date.now() - 5_000))),
+        ]);
+        return untilAborted(generateJson({
+          system: '당신은 기획 문서의 정합성을 재검증하는 검토자입니다. 문서를 수정하거나 새 기능을 제안하지 않고 지정된 지적만 판정합니다.',
+          prompt,
+          schema,
+          maxTokens: 4096,
+          effort: 'high',
+          engine,
+          config: runtime.config,
+          apiKey: runtime.apiKey,
+          signal: verifySignal,
+          retryFormat: false,
+        }), verifySignal);
+      },
     });
 
     // 검증 취소를 실패 상태로 보존했더라도 사용자가 취소한 요청은 청구하지 않는다.
-    request.signal.throwIfAborted();
+    signal.throwIfAborted();
     const charged = body.recheckOnly && !completed.verification?.resolved && !completed.verification?.unresolved ? 0 : cost;
-    if (charged > 0) await spendCredits(user.id, 'chat', charged);
+    if (charged > 0) await untilAborted(spendCredits(user.id, 'chat', charged), signal);
 
     return NextResponse.json({
       ...completed,
@@ -150,6 +187,7 @@ export async function POST(request: Request) {
       source: 'ai',
     });
   } catch (error) {
+    signal.throwIfAborted();
     /*
      * 호출이 실패해도 대화가 끊기지 않도록 사유를 밝히고 문서 현황이라도 돌려준다.
      * 사유는 **사용자에게 보여도 되는 문장**이어야 한다 — 어떤 모델을 쓰는지,

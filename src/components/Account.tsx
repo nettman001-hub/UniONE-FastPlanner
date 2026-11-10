@@ -15,6 +15,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Check, CloudOff, LogOut, RefreshCw, Settings, ShieldCheck, Upload, User, X } from 'lucide-react';
 
 import { useAuth } from '@/lib/auth/client';
+import { adminWorkspace } from '@/lib/admin-workspace';
 import {
   adoptUser,
   clearGuestBackup,
@@ -48,7 +49,7 @@ export function PlanSync() {
   useEffect(() => {
     if (loading || !hydrated) return;
     if (user) void adoptUser(user.id);
-    else releaseUser();
+    else void releaseUser();
   }, [user, loading, hydrated]);
 
   /*
@@ -97,6 +98,8 @@ export function SyncBadge() {
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const owner = usePlannerStore((state) => state.owner);
+  const scope = adminWorkspace();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -110,6 +113,14 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     return (
       <div className="empty" style={{ minHeight: '60vh' }}>
         <Spinner size={18} />
+      </div>
+    );
+  }
+  if (owner && owner !== (scope?.userId ?? user.id)) {
+    return (
+      <div className="mx-auto flex max-w-lg flex-col gap-3 p-8 text-[13px]">
+        <p>이전 계정의 작업을 안전하게 보관하는 중입니다. 저장이 완료되어야 현재 계정의 문서를 열 수 있습니다.</p>
+        <button className="btn self-start" onClick={() => void adoptUser(user.id)}>저장 다시 시도</button>
       </div>
     );
   }
@@ -196,9 +207,11 @@ export function GuestImportBanner() {
   const [count, setCount] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  // 보관함은 localStorage 라서 첫 렌더 뒤에 읽어야 서버 렌더와 어긋나지 않는다.
   useEffect(() => {
-    setCount(user ? readGuestBackup().length : 0);
+    let alive = true;
+    if (!user) setCount(0);
+    else void readGuestBackup().then((plans) => { if (alive) setCount(plans.length); });
+    return () => { alive = false; };
   }, [user]);
 
   if (!user || count === 0) return null;
@@ -234,8 +247,8 @@ export function GuestImportBanner() {
         type="button"
         className="btn btn-ghost btn-sm"
         title="보관함을 비웁니다. 되돌릴 수 없습니다."
-        onClick={() => {
-          clearGuestBackup();
+        onClick={async () => {
+          await clearGuestBackup();
           setCount(0);
         }}
       >

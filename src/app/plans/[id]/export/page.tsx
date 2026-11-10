@@ -25,6 +25,7 @@ import {
 import { EmptyState, SectionCard, useToast } from '@/components/ui';
 import { DesignHandoff } from '@/components/DesignHandoff';
 import { usePlannerStore } from '@/lib/store';
+import { planWithHistory } from '@/lib/plan-history';
 import { hasArtifact } from '@/lib/artifact-status';
 import {
   download,
@@ -515,7 +516,8 @@ export default function ExportPage() {
 
   const copyText = async (key: string, text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      const complete = key === 'json' && plan ? toJson(await planWithHistory(plan)) : text;
+      await navigator.clipboard.writeText(complete);
       setCopied(key);
       window.setTimeout(() => setCopied((prev) => (prev === key ? null : prev)), 1800);
       toast('클립보드에 복사했습니다.', 'ok');
@@ -524,12 +526,16 @@ export default function ExportPage() {
     }
   };
 
-  const downloadFormat = (format: FormatSpec) => {
+  const downloadFormat = async (format: FormatSpec) => {
     if (!format.available) return;
-    // CSV 는 엑셀 한글 깨짐을 막기 위해 BOM 을 앞에 붙인다.
-    const body = format.bom ? '\uFEFF' + format.content : format.content;
-    download(format.filename, body, format.mime);
-    toast(`${format.filename} 을 내려받았습니다.`, 'ok');
+    try {
+      const content = format.key === 'json' && plan ? toJson(await planWithHistory(plan)) : format.content;
+      const body = format.bom ? '\uFEFF' + content : content;
+      download(format.filename, body, format.mime);
+      toast(`${format.filename} 을 내려받았습니다.`, 'ok');
+    } catch {
+      toast('버전 기록을 불러오지 못해 파일을 만들지 않았습니다. 연결을 확인해 주세요.', 'danger');
+    }
   };
 
   const printDocument = () => {

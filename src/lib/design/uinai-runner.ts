@@ -5,6 +5,7 @@
 
 import { uinAiScreenHref } from '@/lib/design/uinai';
 import { workspaceFetch as fetch } from '@/lib/admin-workspace';
+import { planForAi } from '@/lib/plan-transport';
 import { usePlannerStore } from '@/lib/store';
 import type { Plan, UinAiScreen } from '@/lib/types';
 import { refreshCredits } from '@/lib/useCredits';
@@ -188,13 +189,7 @@ export async function startUinAi(planId: string, options: StartUinAiOptions): Pr
   const mark = (pageId: string, state: UinAiScreenState) =>
     patch(planId, { progress: { ...get(planId).progress, [pageId]: state } });
   // 이전 UniAI 결과는 서버 프롬프트에 필요 없고 요청 크기만 키운다.
-  const requestPlan: Plan = {
-    ...options.plan,
-    chat: [],
-    comments: [],
-    versions: [],
-    uinAiScreens: undefined,
-  };
+  const requestPlan = planForAi(options.plan);
   let made = 0;
   let stopped = false;
   let firstFailure = '';

@@ -4,6 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { indexedDB, IDBKeyRange } from 'fake-indexeddb';
 import type { Plan } from '../../src/lib/types';
 
 const ACTOR = 'admin-actor';
@@ -17,9 +18,12 @@ const session = new Map<string, string>();
 const originalFetch = globalThis.fetch;
 const originalWindow = globalThis.window;
 const originalStorage = globalThis.localStorage;
+const originalIndexedDB = globalThis.indexedDB;
+const originalKeyRange = globalThis.IDBKeyRange;
 let planner: typeof import('../../src/lib/store');
 let sync: typeof import('../../src/lib/sync');
 let workspace: typeof import('../../src/lib/admin-workspace');
+let durable: typeof import('../../src/lib/planner-storage');
 let serverPlan: Plan;
 let respond: (url: string, init?: RequestInit) => Promise<Response>;
 const requests: Array<{ url: string; method: string; headers: Headers; body?: { plan?: Plan } }> = [];
@@ -61,7 +65,28 @@ function assertScopedRequests() {
   }
 }
 
+async function persisted(namespace: string): Promise<{ owner?: string; plans: Plan[]; syncItems?: Record<string, string> }> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const opening = indexedDB.open(durable.PLANNER_DATABASE);
+    opening.onsuccess = () => resolve(opening.result);
+    opening.onerror = () => reject(opening.error);
+  });
+  const transaction = db.transaction(['workspaces', 'plans'], 'readonly');
+  const result = <T>(operation: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
+    operation.onsuccess = () => resolve(operation.result);
+    operation.onerror = () => reject(operation.error);
+  });
+  const [metadata, plans] = await Promise.all([
+    result(transaction.objectStore('workspaces').get(namespace)) as Promise<{ envelope: { state: { owner?: string; syncItems?: Record<string, string> } }; planIds: string[] } | undefined>,
+    result(transaction.objectStore('plans').index('namespace').getAll(namespace)) as Promise<Array<{ id: string; body: Plan }>>,
+  ]);
+  db.close();
+  return { ...metadata?.envelope.state, plans: metadata?.planIds.map((id) => plans.find((row) => row.id === id)!.body) ?? [] };
+}
+
 before(async () => {
+  globalThis.indexedDB = indexedDB;
+  globalThis.IDBKeyRange = IDBKeyRange;
   globalThis.localStorage = storage(memory);
   globalThis.window = {
     location: new URL(`https://uniboard.cloud/plans/${PLAN}?adminUserId=${OWNER}&adminActorId=${ACTOR}`),
@@ -73,11 +98,15 @@ before(async () => {
   memory.set(GUEST_KEY, JSON.stringify([{ id: 'private-guest-plan' }]));
   workspace = await import('../../src/lib/admin-workspace');
   planner = await import('../../src/lib/store');
+  durable = await import('../../src/lib/planner-storage');
+  await until(() => planner.usePlannerStore.getState().hydrated);
+  await durable.flushPlannerStorage();
   sync = await import('../../src/lib/sync');
 });
 
-beforeEach(() => {
-  sync.releaseUser();
+beforeEach(async () => {
+  await sync.releaseUser();
+  await durable.flushPlannerStorage();
   requests.length = 0;
   serverPlan = fixture('사용자 원본');
   globalThis.fetch = async (input, init) => {
@@ -95,32 +124,37 @@ beforeEach(() => {
     : Response.json({ plan: serverPlan });
 });
 
-afterEach(() => { sync.releaseUser(); });
-after(() => {
+afterEach(async () => { await sync.releaseUser(); await durable.flushPlannerStorage(); });
+after(async () => {
+  await durable.flushPlannerStorage();
   globalThis.fetch = originalFetch;
   if (originalWindow) globalThis.window = originalWindow;
   else Reflect.deleteProperty(globalThis, 'window');
   if (originalStorage) globalThis.localStorage = originalStorage;
   else Reflect.deleteProperty(globalThis, 'localStorage');
+  globalThis.indexedDB = originalIndexedDB;
+  globalThis.IDBKeyRange = originalKeyRange;
 });
 
 test('support loads only the selected original; personal colliding ID and storage remain isolated', async () => {
-  const personal = memory.get(PLANNER_KEY);
-  const ownSynced = memory.get(SYNC_KEY);
+  const personal = await persisted(PLANNER_KEY);
+  const ownSynced = await persisted(SYNC_KEY);
   await sync.adoptUser(ACTOR);
   await delay(20);
   assert.equal(requests.length, 1);
   assertScopedRequests();
   assert.equal(planner.usePlannerStore.getState().owner, OWNER);
   assert.deepEqual(planner.usePlannerStore.getState().plans.map((plan) => plan.brief.title), ['사용자 원본']);
-  assert.equal(memory.get(PLANNER_KEY), personal);
-  assert.equal(memory.get(SYNC_KEY), ownSynced);
+  await durable.flushPlannerStorage();
+  assert.deepEqual(await persisted(PLANNER_KEY), personal);
+  assert.deepEqual(await persisted(SYNC_KEY), ownSynced);
   const supportKey = workspace.workspaceStorageKey(PLANNER_KEY);
   assert.notEqual(supportKey, PLANNER_KEY);
   assert.match(supportKey, /admin-actor:selected-owner:shared-plan-id$/);
-  const persisted = JSON.parse(memory.get(supportKey)!) as { state: { owner: string; plans: Plan[] } };
-  assert.equal(persisted.state.owner, OWNER);
-  assert.equal(persisted.state.plans[0].brief.title, '사용자 원본');
+  const saved = await persisted(supportKey);
+  assert.equal(saved.owner, OWNER);
+  assert.equal(saved.plans[0].brief.title, '사용자 원본');
+  assert.equal(memory.has(supportKey), false, 'the new support workspace must not use quota-limited localStorage');
 });
 
 test('dirty offline support work is preserved and saved to the selected user only', async () => {
@@ -133,7 +167,7 @@ test('dirty offline support work is preserved and saved to the selected user onl
   assert.equal(write.body?.plan?.brief.title, dirty.brief.title);
   assert.deepEqual(planner.usePlannerStore.getState().plans.map((plan) => plan.id), [PLAN]);
   assertScopedRequests();
-  assert.equal(JSON.parse(memory.get(PLANNER_KEY)!).state.owner, ACTOR);
+  assert.equal((await persisted(PLANNER_KEY)).owner, ACTOR);
 });
 
 test('a newer user edit wins a rejected support write and is fetched from the same owner', async () => {
@@ -153,11 +187,11 @@ test('a newer user edit wins a rejected support write and is fetched from the sa
 });
 
 test('support mode never imports guest plans or infers deleting the selected plan', async () => {
-  const guest = memory.get(GUEST_KEY);
-  assert.deepEqual(sync.readGuestBackup(), []);
+  const guest = await persisted(GUEST_KEY);
+  assert.deepEqual(await sync.readGuestBackup(), []);
   assert.equal(await sync.importGuestBackup(), 0);
-  sync.clearGuestBackup();
-  assert.equal(memory.get(GUEST_KEY), guest);
+  await sync.clearGuestBackup();
+  assert.deepEqual(await persisted(GUEST_KEY), guest);
   await sync.adoptUser(ACTOR);
   planner.usePlannerStore.getState().deletePlan(PLAN);
   await delay(1250);
@@ -186,7 +220,7 @@ test('another signed-in actor cannot adopt the cached support workspace', async 
   assert.deepEqual(planner.usePlannerStore.getState().plans, []);
   assert.equal(planner.usePlannerStore.getState().owner, null);
   assert.equal(requests.length, 0);
-  assert.equal(JSON.parse(memory.get(PLANNER_KEY)!).state.owner, ACTOR);
+  assert.equal((await persisted(PLANNER_KEY)).owner, ACTOR);
 });
 
 test('malformed support URLs fail closed without selecting or purging personal storage', () => {
@@ -243,7 +277,8 @@ test('a failed initial load with no local changes does not trap the administrato
 
 test('an obsolete load error does not block exit when the cached plan is already fully saved', async () => {
   planner.usePlannerStore.getState().setPlans([serverPlan], OWNER);
-  memory.set(workspace.workspaceStorageKey(SYNC_KEY), JSON.stringify({ owner: OWNER, items: { [PLAN]: serverPlan.updatedAt } }));
+  const syncKey = workspace.workspaceStorageKey(SYNC_KEY);
+  await durable.createPlannerStorage(syncKey).setItem(syncKey, JSON.stringify({ state: { plans: [], owner: OWNER, syncItems: { [PLAN]: serverPlan.updatedAt } }, version: 3 }));
   respond = async () => Response.json({ error: 'temporary read failure' }, { status: 503 });
   await sync.adoptUser(ACTOR);
   assert.equal(sync.syncSnapshot().state, 'error');
@@ -253,16 +288,17 @@ test('an obsolete load error does not block exit when the cached plan is already
 });
 
 test('clearing support scope stops late writes and cannot promote cached plans to personal storage', async () => {
-  const personal = memory.get(PLANNER_KEY);
-  const ownSynced = memory.get(SYNC_KEY);
+  const personal = await persisted(PLANNER_KEY);
+  const ownSynced = await persisted(SYNC_KEY);
   await sync.adoptUser(ACTOR);
   await delay(20);
   workspace.clearAdminWorkspace();
   planner.usePlannerStore.getState().renamePlan(PLAN, '종료 직후 늦게 도착한 수정');
   await delay(1250);
   assert.equal(requests.length, 1);
-  assert.equal(memory.get(PLANNER_KEY), personal);
-  assert.equal(memory.get(SYNC_KEY), ownSynced);
+  await durable.flushPlannerStorage();
+  assert.deepEqual(await persisted(PLANNER_KEY), personal);
+  assert.deepEqual(await persisted(SYNC_KEY), ownSynced);
   assert.equal(workspace.adminWorkspace(), null);
   await assert.rejects(workspace.workspaceFetch('/api/chat', { method: 'POST' }), /지원 작업이 종료/);
   await assert.rejects(workspace.workspaceFetch('/api/generate', { method: 'POST' }), /지원 작업이 종료/);

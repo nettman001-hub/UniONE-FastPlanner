@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/server';
-import { listPlans, savePlans } from '@/lib/db/plans';
+import { listPlans, listPlansPage, savePlans, VersionSnapshotConflictError } from '@/lib/db/plans';
 import { serverErrorMessage } from '@/lib/api-error';
 import type { Plan } from '@/lib/types';
 
@@ -8,13 +8,22 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** 내 플랜 전부. 브라우저가 로그인 직후 한 번 받아 간다. */
-export async function GET() {
+export async function GET(request: Request) {
   const { user, response } = await requireUser();
   if (!user) return response;
 
   try {
+    const params = new URL(request.url).searchParams;
+    if (params.has('pageSize')) {
+      const size = Number(params.get('pageSize'));
+      if (!Number.isInteger(size) || size < 1 || size > 10) {
+        return NextResponse.json({ error: '페이지 크기는 1~10 사이여야 합니다.' }, { status: 400 });
+      }
+      return NextResponse.json(await listPlansPage(user.id, params.get('afterId') ?? undefined, size));
+    }
     return NextResponse.json({ plans: await listPlans(user.id) });
   } catch (error) {
+    if (error instanceof VersionSnapshotConflictError) return NextResponse.json({ error: error.message }, { status: 409 });
     return NextResponse.json({ error: describe(error) }, { status: 500 });
   }
 }
@@ -43,6 +52,7 @@ export async function POST(request: Request) {
   try {
     return NextResponse.json({ saved: await savePlans(user.id, plans) });
   } catch (error) {
+    if (error instanceof VersionSnapshotConflictError) return NextResponse.json({ error: error.message }, { status: 409 });
     return NextResponse.json({ error: describe(error) }, { status: 500 });
   }
 }

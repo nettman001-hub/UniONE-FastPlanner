@@ -76,6 +76,7 @@ export function planFromValue(raw: unknown): Plan | null {
   }
 
   return {
+    ...value,
     ...base,
     createdAt: asString(value.createdAt, base.createdAt),
     updatedAt: asString(value.updatedAt, base.updatedAt),
@@ -144,6 +145,32 @@ export function parsePlanFile(text: string): Plan[] {
     raw = JSON.parse(text);
   } catch {
     return [];
+  }
+
+  if (raw && typeof raw === 'object' && (raw as { format?: string }).format === 'uniboard-planner-recovery-v1') {
+    const recovery = raw as {
+      current?: { state?: { plans?: unknown[] } };
+      recoveries?: { plan?: unknown }[];
+      legacy?: string;
+      archives?: { raw?: string }[];
+    };
+    const candidates: unknown[] = [...(recovery.current?.state?.plans ?? []), ...(recovery.recoveries ?? []).map((row) => row.plan)];
+    for (const source of [recovery.legacy, ...(recovery.archives ?? []).map((row) => row.raw)]) {
+      if (!source) continue;
+      try {
+        const archived = JSON.parse(source) as { state?: { plans?: unknown[] } } | unknown[];
+        candidates.push(...(Array.isArray(archived) ? archived : archived.state?.plans ?? []));
+      } catch { /* 훼손된 한 원본 때문에 다른 복구본을 버리지 않는다. */ }
+    }
+    // 같은 제목이어도 내용이 다른 복구본은 각각 가져와 사람이 비교할 수 있게 한다.
+    const seen = new Set<string>();
+    return candidates.flatMap((candidate) => {
+      const key = JSON.stringify(candidate);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      const plan = planFromValue(candidate);
+      return plan ? [plan] : [];
+    });
   }
 
   if (raw && typeof raw === 'object' && Array.isArray((raw as BackupFile).plans)) {

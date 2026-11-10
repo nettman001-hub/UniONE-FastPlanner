@@ -15,6 +15,7 @@
 
 import { usePlannerStore } from '../store';
 import { workspaceFetch as fetch } from '@/lib/admin-workspace';
+import { planForAi } from '@/lib/plan-transport';
 import { creditSnapshot, refreshCredits } from '../useCredits';
 import { ARTIFACT_LABEL, type ArtifactKey, type PlanDocuments } from '../types';
 import { REVIEW_COST, SPEC_DETAIL_COST, SPEC_FILL_COST, costOfArtifact, costWithEngine } from '../credits';
@@ -174,7 +175,7 @@ export async function runGeneration(
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ artifacts: [artifact], plan: current, ...stepArgs }),
+        body: JSON.stringify({ artifacts: [artifact], plan: planForAi(current), ...stepArgs }),
         signal: controller.signal,
       });
 

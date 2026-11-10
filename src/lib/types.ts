@@ -456,8 +456,8 @@ export interface PlanVersion {
   id: string;
   label: string;
   createdAt: string;
-  /** 스냅샷 (문서 부분만 저장) */
-  snapshot: PlanDocuments;
+  /** 상세 스냅샷은 복원·내보내기 시 서버 또는 브라우저 보관소에서 따로 읽는다. */
+  snapshot?: PlanDocuments;
 }
 
 /* ------------------------------------------------------------------ */
